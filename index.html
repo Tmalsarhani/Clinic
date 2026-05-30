@@ -9,7 +9,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: 'Segoe UI', Tahoma, sans-serif; background:#eef1f6; }
+  body { margin: 0; font-family: 'Segoe UI', Tahoma, sans-serif; background:#f0f4f8; }
   #root { min-height: 100vh; }
   .loading { display:flex; align-items:center; justify-content:center; height:100vh; font-family:Tahoma; color:#64748b; direction:rtl; }
   ::-webkit-scrollbar { width:8px; height:8px; }
@@ -33,7 +33,7 @@ const SLOT_COLORS = {
   "clinic":    { bg:"#dbeafe", text:"#1d4ed8", icon:"🦷", label:"عيادة" },
   "clinic_am": { bg:"#dbeafe", text:"#1d4ed8", icon:"🦷", label:"عيادة" },
   "clinic_pm": { bg:"#dbeafe", text:"#1d4ed8", icon:"🦷", label:"عيادة" },
-  "admin":     { bg:"#ede9fe", text:"#7c3aed", icon:"📋", label:"إداري" },
+  "admin":     { bg:"#ede9fe", text:"#1e3a5f", icon:"📋", label:"إداري" },
   "training":  { bg:"#dcfce7", text:"#15803d", icon:"🎓", label:"تدريب" },
   "audit":     { bg:"#fce7f3", text:"#be185d", icon:"📊", label:"تدقيق" },
   "virtual":   { bg:"#fef9c3", text:"#a16207", icon:"💻", label:"افتراضية" },
@@ -41,7 +41,7 @@ const SLOT_COLORS = {
 };
 
 const INIT_DOCTORS = [
-  {id:1,  name:"د.إلهام البيعيجان", color:"#6366f1", nightDays:[], email:"",
+  {id:1,  name:"د.إلهام البيعيجان", color:"#2c5282", nightDays:[], email:"",
    sched:{0:{am:"clinic_am",pm:"clinic_pm"},1:{am:"",pm:""},2:{am:"",pm:""},3:{am:"",pm:""},4:{am:"",pm:""}}},
   {id:2,  name:"د.محمد القحطاني",   color:"#0ea5e9", nightDays:[], email:"",
    sched:{0:{am:"clinic_am",pm:""},1:{am:"clinic_am",pm:""},2:{am:"training",pm:"admin"},3:{am:"",pm:"clinic_pm"},4:{am:"",pm:"clinic_pm"}}},
@@ -49,7 +49,7 @@ const INIT_DOCTORS = [
    sched:{0:{am:"",pm:""},1:{am:"",pm:""},2:{am:"clinic_am",pm:""},3:{am:"clinic_am",pm:""},4:{am:"clinic_am",pm:""}}},
   {id:4,  name:"د.حنان المحيسن",    color:"#f59e0b", nightDays:[], email:"",
    sched:{0:{am:"clinic_am",pm:""},1:{am:"clinic_am",pm:""},2:{am:"clinic_am",pm:"clinic_pm"},3:{am:"",pm:""},4:{am:"clinic_am",pm:""}}},
-  {id:5,  name:"د.عزيزة الدريهم",   color:"#ec4899", nightDays:[], email:"",
+  {id:5,  name:"د.عزيزة الدريهم",   color:"#3b6ca8", nightDays:[], email:"",
    sched:{0:{am:"",pm:""},1:{am:"",pm:""},2:{am:"clinic_am",pm:"clinic_pm"},3:{am:"clinic_am",pm:""},4:{am:"clinic_am",pm:"clinic_pm"}}},
   {id:6,  name:"د.طارق السرحاني",   color:"#84cc16", nightDays:[], email:"",
    sched:{0:{am:"",pm:""},1:{am:"",pm:"clinic_pm"},2:{am:"",pm:"clinic_pm"},3:{am:"",pm:"clinic_pm"},4:{am:"clinic_am",pm:""}}},
@@ -116,6 +116,12 @@ const nextWork = dateStr => {
   d.setDate(d.getDate()+1);
   while(d.getDay()>=5) d.setDate(d.getDate()+1);
   return d.toISOString().split("T")[0];
+};
+
+const mailtoAlert = (doc, subject, body) => {
+  const to = doc.email || "";
+  const url = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.location.href = url;
 };
 
 const fmtDate = dateStr => {
@@ -247,7 +253,7 @@ function LoginGate({ onSuccess }) {
   };
 
   return (
-    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"linear-gradient(135deg,#0f172a,#1e1b4b,#312e81)", direction:"rtl", fontFamily:"'Segoe UI',Tahoma,sans-serif" }}>
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"linear-gradient(135deg,#0f1e36,#1e3a5f,#2c5282)", direction:"rtl", fontFamily:"'Segoe UI',Tahoma,sans-serif" }}>
       <div style={{ background:"#fff", borderRadius:20, padding:"32px 28px", width:320, boxShadow:"0 20px 60px rgba(0,0,0,.3)", textAlign:"center" }}>
         <div style={{ fontSize:44, marginBottom:8 }}>⚕</div>
         <div style={{ fontWeight:800, fontSize:18, color:"#1e293b" }}>نظام الدوام المسائي</div>
@@ -256,7 +262,7 @@ function LoginGate({ onSuccess }) {
         {/* PIN dots */}
         <div style={{ display:"flex", justifyContent:"center", gap:12, marginBottom:8 }}>
           {[0,1,2,3].map(i => (
-            <div key={i} style={{ width:16, height:16, borderRadius:"50%", border:`2px solid ${error?"#dc2626":"#6366f1"}`, background: i<pin.length ? (error?"#dc2626":"#6366f1") : "transparent", transition:"all .15s" }} />
+            <div key={i} style={{ width:16, height:16, borderRadius:"50%", border:`2px solid ${error?"#dc2626":"#2c5282"}`, background: i<pin.length ? (error?"#dc2626":"#2c5282") : "transparent", transition:"all .15s" }} />
           ))}
         </div>
         <div style={{ height:18, fontSize:12, color:"#dc2626", fontWeight:700, marginBottom:8 }}>{error ? "رقم سري خاطئ" : ""}</div>
@@ -416,12 +422,12 @@ function App() {
   if (!authed) return <LoginGate onSuccess={() => { setAuthed(true); S.set("fin_auth", true); }} />;
 
   return (
-    <div style={{ display:"flex", minHeight:"100vh", background:"#eef1f6", direction:"rtl", fontFamily:"'Segoe UI',Tahoma,sans-serif", fontSize:14 }}>
+    <div style={{ display:"flex", minHeight:"100vh", background:"#f0f4f8", direction:"rtl", fontFamily:"'Segoe UI',Tahoma,sans-serif", fontSize:14 }}>
       {/* SIDEBAR */}
       <aside style={{ width:210, background:"#fff", display:"flex", flexDirection:"column", flexShrink:0, boxShadow:"2px 0 12px rgba(0,0,0,.04)", zIndex:2 }}>
         <div style={{ padding:"22px 18px 16px" }}>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <div style={{ width:38, height:38, borderRadius:11, background:"linear-gradient(135deg,#9333ea,#ec4899)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, color:"#fff", boxShadow:"0 4px 12px rgba(147,51,234,.4)" }}>⚕</div>
+            <div style={{ width:38, height:38, borderRadius:11, background:"linear-gradient(135deg,#1e3a5f,#2c5282)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, color:"#fff", boxShadow:"0 4px 12px rgba(30,58,95,.35)" }}>⚕</div>
             <div>
               <div style={{ color:"#1e293b", fontWeight:800, fontSize:14 }}>الجداول الطبية</div>
               <div style={{ color:"#94a3b8", fontSize:10 }}>مركز دمام الطبي</div>
@@ -435,9 +441,9 @@ function App() {
             return (
               <button key={t.id} onClick={() => setPage(t.id)}
                 style={{ display:"flex", alignItems:"center", gap:10, width:"100%", padding:"11px 14px", borderRadius:10, border:"none", cursor:"pointer", fontSize:13, fontWeight:active?700:500, marginBottom:4, transition:"all .15s", position:"relative",
-                  background: active ? "linear-gradient(135deg,#9333ea,#ec4899)" : "transparent",
+                  background: active ? "linear-gradient(135deg,#1e3a5f,#2c5282)" : "transparent",
                   color: active ? "#fff" : "#64748b",
-                  boxShadow: active ? "0 4px 12px rgba(147,51,234,.35)" : "none",
+                  boxShadow: active ? "0 4px 12px rgba(30,58,95,.3)" : "none",
                 }}>
                 <span style={{ width:26, height:26, borderRadius:7, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, background: active?"rgba(255,255,255,.2)":"#f1f5f9" }}>{t.icon}</span>
                 {t.label}
@@ -448,14 +454,14 @@ function App() {
             );
           })}
         </nav>
-        <div style={{ padding:14, margin:12, borderRadius:12, background:"linear-gradient(135deg,#f5f3ff,#fae8ff)" }}>
+        <div style={{ padding:14, margin:12, borderRadius:12, background:"linear-gradient(135deg,#eff4fa,#e2ecf7)" }}>
           <div style={{ color:"#94a3b8", fontSize:10, marginBottom:8 }}>📅 {today}</div>
           <button onClick={() => { save(); showToast("✅ تم الحفظ"); }}
-            style={{ width:"100%", padding:"8px", background:"linear-gradient(135deg,#9333ea,#ec4899)", border:"none", borderRadius:8, color:"#fff", cursor:"pointer", fontSize:11, fontWeight:700, boxShadow:"0 3px 10px rgba(147,51,234,.3)" }}>
+            style={{ width:"100%", padding:"8px", background:"linear-gradient(135deg,#1e3a5f,#2c5282)", border:"none", borderRadius:8, color:"#fff", cursor:"pointer", fontSize:11, fontWeight:700, boxShadow:"0 3px 10px rgba(30,58,95,.25)" }}>
             💾 حفظ الكل
           </button>
           <button onClick={() => { S.set("fin_auth", false); setAuthed(false); }}
-            style={{ width:"100%", padding:"6px", marginTop:6, background:"transparent", border:"1px solid #e9d5ff", borderRadius:8, color:"#a855f7", cursor:"pointer", fontSize:10, fontWeight:600 }}>
+            style={{ width:"100%", padding:"6px", marginTop:6, background:"transparent", border:"1px solid #cdddec", borderRadius:8, color:"#2c5282", cursor:"pointer", fontSize:10, fontWeight:600 }}>
             🔒 قفل
           </button>
         </div>
@@ -470,7 +476,7 @@ function App() {
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
             <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{MONTHS[new Date().getMonth()]} {new Date().getFullYear()}</span>
-            <div style={{ width:36, height:36, borderRadius:10, background:"linear-gradient(135deg,#9333ea,#ec4899)", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontWeight:700, fontSize:14 }}>د</div>
+            <div style={{ width:36, height:36, borderRadius:10, background:"linear-gradient(135deg,#1e3a5f,#2c5282)", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontWeight:700, fontSize:14 }}>د</div>
           </div>
         </div>
         <div style={{ flex:1, overflowY:"auto", padding:22 }}>
@@ -516,10 +522,10 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
   });
 
   const cards = [
-    { icon:"🌙", label:"الدوام المسائي (الشهر)", val:totalNightAssigns, grad:"linear-gradient(135deg,#9333ea,#c026d3)", page:"monthly" },
-    { icon:"🔄", label:"التغطيات (الشهر)", val:totalCovs, grad:"linear-gradient(135deg,#0891b2,#06b6d4)", page:"coverage" },
-    { icon:"⚠️", label:"تغطيات معلّقة", val:pending, grad:"linear-gradient(135deg,#e11d48,#f43f5e)", page:"monthly" },
-    { icon:"🏖", label:"إجازات حالية", val:activeLeaves, grad:"linear-gradient(135deg,#ea580c,#f59e0b)", page:"leaves" },
+    { icon:"🌙", label:"الدوام المسائي (الشهر)", val:totalNightAssigns, grad:"linear-gradient(135deg,#1e3a5f,#2c5282)", page:"monthly" },
+    { icon:"🔄", label:"التغطيات (الشهر)", val:totalCovs, grad:"linear-gradient(135deg,#2c5282,#3b6ca8)", page:"coverage" },
+    { icon:"⚠️", label:"تغطيات معلّقة", val:pending, grad:"linear-gradient(135deg,#b91c1c,#dc2626)", page:"monthly" },
+    { icon:"🏖", label:"إجازات حالية", val:activeLeaves, grad:"linear-gradient(135deg,#1e3a5f,#2c5282)", page:"leaves" },
   ];
 
   // Per-day distribution chart (this month) — nights count per day-of-week
@@ -569,8 +575,8 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
           <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-around", height:140, gap:8 }}>
             {byWeekday.map((v,di)=>(
               <div key={di} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:6 }}>
-                <div style={{ fontSize:11, fontWeight:700, color:"#9333ea" }}>{v}</div>
-                <div style={{ width:"100%", maxWidth:40, height:`${(v/maxWd)*100}%`, minHeight:4, background:"linear-gradient(180deg,#c026d3,#9333ea)", borderRadius:"6px 6px 0 0", transition:"height .3s" }} />
+                <div style={{ fontSize:11, fontWeight:700, color:"#1e3a5f" }}>{v}</div>
+                <div style={{ width:"100%", maxWidth:40, height:`${(v/maxWd)*100}%`, minHeight:4, background:"linear-gradient(180deg,#c026d3,#1e3a5f)", borderRadius:"6px 6px 0 0", transition:"height .3s" }} />
                 <div style={{ fontSize:10, color:"#64748b", fontWeight:600 }}>{DAYS[di].slice(0,3)}</div>
               </div>
             ))}
@@ -584,7 +590,7 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
           {loads.length===0 ? <div style={{ fontSize:12, color:"#cbd5e1", textAlign:"center", padding:"30px 0" }}>لا يوجد عبء إضافي بعد</div> :
             loads.map(({doc,load})=>(
               <div key={doc.id} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:9 }}>
-                <span style={{ fontSize:11, fontWeight:600, minWidth:80, color:"#475569", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{sn(doc.name)}</span>
+                <span style={{ fontSize:11, fontWeight:600, minWidth:90, maxWidth:110, color:"#475569" }}>{doc.name}</span>
                 <div style={{ flex:1, height:10, background:"#f1f5f9", borderRadius:6, overflow:"hidden" }}>
                   <div style={{ height:"100%", width:`${(load/maxLoad)*100}%`, background:`linear-gradient(90deg,${doc.color},${doc.color}aa)`, borderRadius:6 }} />
                 </div>
@@ -599,10 +605,10 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
       <div style={{ background:"#fff", borderRadius:16, padding:18, boxShadow:"0 2px 12px rgba(0,0,0,.05)" }}>
         <div style={{ fontWeight:700, fontSize:14, marginBottom:12 }}>⚡ إجراءات سريعة</div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:10 }}>
-          {[{l:"🌙 الدوام المسائي",p:"monthly",g:"linear-gradient(135deg,#9333ea,#ec4899)"},
-            {l:"🔄 تغطية فردية",p:"coverage",g:"linear-gradient(135deg,#0891b2,#06b6d4)"},
-            {l:"👨‍⚕️ الأطباء",p:"doctors",g:"linear-gradient(135deg,#16a34a,#22c55e)"},
-            {l:"📈 الإحصائيات",p:"stats",g:"linear-gradient(135deg,#ea580c,#f59e0b)"},
+          {[{l:"🌙 الدوام المسائي",p:"monthly",g:"linear-gradient(135deg,#1e3a5f,#2c5282)"},
+            {l:"🔄 تغطية فردية",p:"coverage",g:"linear-gradient(135deg,#2c5282,#3b6ca8)"},
+            {l:"👨‍⚕️ الأطباء",p:"doctors",g:"linear-gradient(135deg,#0f1e36,#1e3a5f)"},
+            {l:"📈 الإحصائيات",p:"stats",g:"linear-gradient(135deg,#3b6ca8,#5a8bc4)"},
           ].map(b=>(
             <button key={b.p} onClick={()=>onGoto(b.p)} style={{ padding:"14px", borderRadius:12, border:"none", cursor:"pointer", color:"#fff", fontWeight:700, fontSize:13, background:b.g, boxShadow:"0 4px 12px rgba(0,0,0,.12)" }}>{b.l}</button>
           ))}
@@ -645,17 +651,28 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
         const nd = nightData[date];
         const covs = nd.coverages || {};
         const docs = (nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
-        // Describe coverages: clinic owner (night doctor) first, then who covers, then period
-        const ownerName = docs.map(d=>d.name).join("، ");
-        const covDesc = [];
-        (covs.am||[]).forEach(id=>{ const cd=fd(id); if(cd) covDesc.push(`عيادة ${ownerName} — يغطّيها ${cd.name} — صباحاً`); });
-        (covs.pm||[]).forEach(id=>{ const cd=fd(id); if(cd) covDesc.push(`عيادة ${ownerName} — يغطّيها ${cd.name} — ظهراً`); });
-        (covs.nextAm||[]).forEach(id=>{ const cd=fd(id); if(cd) covDesc.push(`عيادة ${ownerName} — يغطّيها ${cd.name} — اليوم التالي صباحاً`); });
+        const nextDi = dayIdx(nextWork(date));
+        // For EACH night doctor, build their own coverage status block
+        const perDoc = docs.map(d => {
+          const needs = [];
+          if (isClinic(getSlot(d,di,"am")))     needs.push({ key:"am", label:"صباحاً" });
+          if (isClinic(getSlot(d,di,"pm")))     needs.push({ key:"pm", label:"ظهراً" });
+          if (isClinic(getSlot(d,nextDi,"am"))) needs.push({ key:"nextAm", label:"اليوم التالي صباحاً" });
+          if (needs.length === 0) {
+            return `<div style="margin-bottom:6px"><strong style="color:${d.color}">🌙 ${d.name}</strong> <span style="color:#16a34a;font-size:11px">— لا يحتاج تغطية (لا عيادة)</span></div>`;
+          }
+          const lines = needs.map(n => {
+            const coverIds = covs[n.key]||[];
+            if (!coverIds.length) return `<div style="font-size:11px;color:#dc2626;margin-right:14px">• عيادة ${n.label}: ⚠️ تحتاج تغطية (غير معيّنة)</div>`;
+            const names = coverIds.map(id=>fd(id)?.name).filter(Boolean).join("، ");
+            return `<div style="font-size:11px;color:#15803d;margin-right:14px">• عيادة ${n.label}: يغطّيها ${names}</div>`;
+          }).join("");
+          return `<div style="margin-bottom:6px"><strong style="color:${d.color}">🌙 ${d.name}</strong>${lines}</div>`;
+        }).join("");
         return `<tr>
-          <td style="text-align:center"><strong>${dmy(date)}</strong></td>
-          <td style="text-align:center">${DAYS[di]}</td>
-          <td>${docs.map(chip).join(" ")}</td>
-          <td style="font-size:12px">${covDesc.length ? covDesc.map(t=>`• ${t}`).join("<br>") : "<span style='color:#94a3b8'>— لا تغطية</span>"}</td>
+          <td style="text-align:center;vertical-align:top"><strong>${dmy(date)}</strong></td>
+          <td style="text-align:center;vertical-align:top">${DAYS[di]}</td>
+          <td>${perDoc}</td>
         </tr>`;
       }).join("");
 
@@ -696,7 +713,7 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
     }).join("");
 
     const eveTable = eveRows
-      ? `<table><thead><tr><th>التاريخ</th><th>اليوم</th><th>الدوام المسائي</th><th>التغطيات المطلوبة</th></tr></thead><tbody>${eveRows}</tbody></table>`
+      ? `<table><thead><tr><th>التاريخ</th><th>اليوم</th><th>الدوام المسائي والتغطيات لكل طبيب</th></tr></thead><tbody>${eveRows}</tbody></table>`
       : `<p style="text-align:center;color:#94a3b8">لا يوجد دوام مسائي مسجّل</p>`;
     const covTable = covRows
       ? `<table><thead><tr><th>التاريخ الفعلي</th><th>الطبيب المُغطّي</th><th>الفترة</th><th>العيادة المُغطّاة</th></tr></thead><tbody>${covRows}</tbody></table>`
@@ -736,17 +753,31 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
         const nd = nightData[date] || {};
         const covs = nd.coverages || {};
         const docs = (nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
-        const ownerName = docs.map(d=>d.name).join("، ");
-        const lines = [];
-        (covs.am||[]).forEach(id=>{ const cd=fd(id); if(cd) lines.push(`☀️ صباحاً: يغطّيها ${cd.name}`); });
-        (covs.pm||[]).forEach(id=>{ const cd=fd(id); if(cd) lines.push(`🌅 ظهراً: يغطّيها ${cd.name}`); });
-        (covs.nextAm||[]).forEach(id=>{ const cd=fd(id); if(cd) lines.push(`🌄 الغد صباحاً: يغطّيها ${cd.name}`); });
-        const indivItems = coverages.filter(c=>c.date===date).map(c=>{ const cd=fd(c.coverDoctorId); return cd?`🔄 ${cd.name} (${c.period==="am"?"صباحاً":"ظهراً"})`:""; }).filter(Boolean);
+        const nextDi = dayIdx(nextWork(date));
+        // Per night doctor: their name + coverage status
+        const docBlocks = docs.map(d => {
+          const needs = [];
+          if (isClinic(getSlot(d,di,"am")))     needs.push({ key:"am", label:"صباحاً" });
+          if (isClinic(getSlot(d,di,"pm")))     needs.push({ key:"pm", label:"ظهراً" });
+          if (isClinic(getSlot(d,nextDi,"am"))) needs.push({ key:"nextAm", label:"اليوم التالي صباحاً" });
+          let inner = "";
+          if (needs.length === 0) {
+            inner = `<div class="cov-line" style="color:#16a34a">لا يحتاج تغطية</div>`;
+          } else {
+            inner = needs.map(n=>{
+              const ids = covs[n.key]||[];
+              if (!ids.length) return `<div class="cov-line" style="color:#dc2626">${n.label}: ⚠️ غير معيّنة</div>`;
+              const names = ids.map(id=>fd(id)?.name).filter(Boolean).join("، ");
+              return `<div class="cov-line">${n.label}: يغطّيها ${names}</div>`;
+            }).join("");
+          }
+          return `<div class="doc-block"><span class="doc" style="background:${d.color}22;color:${d.color};border-color:${d.color}55">🌙 ${d.name}</span>${inner}</div>`;
+        }).join("");
+        const indivItems = coverages.filter(c=>c.date===date).map(c=>{ const cd=fd(c.coverDoctorId); const ad=c.absentId?fd(c.absentId):null; return cd?`🔄 ${cd.name} (${c.period==="am"?"صباحاً":"ظهراً"})${ad?` بدلاً من ${ad.name}`:""}`:""; }).filter(Boolean);
         return `<div class="box">
           <div class="box-head"><span class="box-date">${dmy(date)}</span><span class="box-day">${DAYS[di]}</span></div>
-          <div class="box-docs">${docs.length ? docs.map(d=>`<span class="doc" style="background:${d.color}22;color:${d.color};border-color:${d.color}55">🌙 ${d.name}</span>`).join("") : '<span class="empty">لا دوام مسائي</span>'}</div>
-          ${lines.length ? `<div class="box-cov"><div class="cov-title">العيادة: ${ownerName}</div>${lines.map(l=>`<div class="cov-line">${l}</div>`).join("")}</div>` : ""}
-          ${indivItems.length ? `<div class="box-indiv">${indivItems.map(l=>`<div class="cov-line">${l}</div>`).join("")}</div>` : ""}
+          <div class="box-body">${docs.length ? docBlocks : '<span class="empty">لا دوام مسائي</span>'}</div>
+          ${indivItems.length ? `<div class="box-indiv"><div class="cov-title">تغطيات فردية</div>${indivItems.map(l=>`<div class="cov-line">${l}</div>`).join("")}</div>` : ""}
         </div>`;
       }).join("");
 
@@ -756,12 +787,15 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
       h1{text-align:center;font-size:20px;margin-bottom:2px}
       .sub{text-align:center;color:#64748b;font-size:13px;margin-bottom:18px}
       .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
-      .box{border:1.5px solid #c7d2fe;border-radius:12px;overflow:hidden;page-break-inside:avoid}
-      .box-head{background:linear-gradient(135deg,#4338ca,#6366f1);color:#fff;padding:8px 12px;display:flex;justify-content:space-between;align-items:center}
+      .box{border:1.5px solid #cdddec;border-radius:12px;overflow:hidden;page-break-inside:avoid}
+      .box-head{background:linear-gradient(135deg,#1e3a5f,#2c5282);color:#fff;padding:8px 12px;display:flex;justify-content:space-between;align-items:center}
       .box-date{font-size:18px;font-weight:800}
       .box-day{font-size:13px;font-weight:700}
       .box-docs{padding:10px 12px;display:flex;flex-wrap:wrap;gap:5px}
-      .doc{border:1px solid;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700}
+      .box-body{padding:10px 12px}
+      .doc-block{margin-bottom:8px;padding-bottom:8px;border-bottom:1px dashed #eef2f7}
+      .doc-block:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+      .doc{display:inline-block;margin-bottom:4px;border:1px solid;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700}
       .empty{color:#94a3b8;font-size:12px}
       .box-cov{padding:0 12px 10px}
       .cov-title{font-size:11px;font-weight:700;color:#475569;margin-bottom:4px;border-top:1px dashed #e2e8f0;padding-top:6px}
@@ -830,9 +864,9 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
           <div style={{ fontWeight:800, fontSize:16, minWidth:120, textAlign:"center" }}>{MONTHS[month.m]} {month.y}</div>
           <button onClick={()=>setMonth(p=>p.m===11?{y:p.y+1,m:0}:{y:p.y,m:p.m+1})} style={Btn.nav}>←</button>
           <div style={{ flex:1 }} />
-          <button onClick={()=>onAutoFill(month.y,month.m)} style={{ ...Btn.primary, background:"linear-gradient(135deg,#7c3aed,#4338ca)" }}>⚡ توزيع تلقائي</button>
+          <button onClick={()=>onAutoFill(month.y,month.m)} style={{ ...Btn.primary, background:"linear-gradient(135deg,#1e3a5f,#2c5282)" }}>⚡ توزيع تلقائي</button>
           <button onClick={printPDF} style={{ ...Btn.nav, color:"#15803d", borderColor:"#bbf7d0" }}>🖨️ جدول</button>
-          <button onClick={printBoxes} style={{ ...Btn.nav, color:"#7c3aed", borderColor:"#ddd6fe" }}>🔲 مربعات</button>
+          <button onClick={printBoxes} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>🔲 مربعات</button>
           {confirmClear ? (
             <span style={{ display:"inline-flex", gap:4, alignItems:"center" }}>
               <span style={{ fontSize:11, color:"#dc2626", fontWeight:700 }}>متأكد؟</span>
@@ -864,16 +898,16 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
           <span style={{ fontSize:11, color:"#94a3b8" }}>← اختر تاريخاً لإضافة يوم دوام مسائي</span>
           <div style={{ flex:1 }} />
           {[["all","الكل"],["pending","⚠️ معلّق"],["done","✅ مكتمل"]].map(([k,l])=>(
-            <button key={k} onClick={()=>setFilter(k)} style={{ padding:"5px 12px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", border: filter===k?"2px solid #4338ca":"1px solid #e2e8f0", background: filter===k?"#eef2ff":"#fff", color: filter===k?"#4338ca":"#64748b" }}>{l}</button>
+            <button key={k} onClick={()=>setFilter(k)} style={{ padding:"5px 12px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", border: filter===k?"2px solid #1e3a5f":"1px solid #e2e8f0", background: filter===k?"#eff4fa":"#fff", color: filter===k?"#1e3a5f":"#64748b" }}>{l}</button>
           ))}
-          <button onClick={()=>setShowCal(s=>!s)} style={{ ...Btn.nav, color: showCal?"#4338ca":"#64748b" }}>{showCal?"📋 إخفاء التقويم":"📅 عرض التقويم"}</button>
+          <button onClick={()=>setShowCal(s=>!s)} style={{ ...Btn.nav, color: showCal?"#1e3a5f":"#64748b" }}>{showCal?"📋 إخفاء التقويم":"📅 عرض التقويم"}</button>
         </div>
 
         {/* Calendar (secondary, toggle) */}
         {showCal && (
           <div style={{ background:"#fff", borderRadius:12, overflow:"hidden", border:"1px solid #e2e8f0", marginBottom:16 }}>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", background:"#0f172a" }}>
-              {DAYS.map(d => <div key={d} style={{ padding:"8px", textAlign:"center", color:"#a5b4fc", fontWeight:700, fontSize:11 }}>{d}</div>)}
+              {DAYS.map(d => <div key={d} style={{ padding:"8px", textAlign:"center", color:"#93b4d8", fontWeight:700, fontSize:11 }}>{d}</div>)}
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)" }}>
               {Array.from({ length:firstOffset }, (_,i) => <div key={`e${i}`} style={{ minHeight:70, background:"#f8fafc", borderBottom:"1px solid #f1f5f9", borderLeft:"1px solid #f1f5f9" }} />)}
@@ -887,12 +921,12 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
                     style={{ minHeight:70, padding:"4px 5px", cursor:"pointer", borderBottom:"1px solid #f1f5f9", borderLeft:"1px solid #f1f5f9",
                       background: isSel?"#eff6ff":isT?"#fffbeb":"#fff", outline: isSel?"2px solid #2563eb":isT?"2px solid #f59e0b":"none" }}>
                     <div style={{ fontSize:9, color:isT?"#d97706":"#94a3b8", fontWeight:isT?700:400, marginBottom:2 }}>{day}</div>
-                    {docs.map(d => <div key={d.id} style={{ background:d.color+"22", border:`1px solid ${d.color}55`, borderRadius:3, padding:"1px 4px", marginBottom:1, fontSize:8, fontWeight:700, color:d.color }}>🌙 {sn(d.name)}</div>)}
+                    {docs.map(d => <div key={d.id} style={{ background:d.color+"22", border:`1px solid ${d.color}55`, borderRadius:3, padding:"1px 4px", marginBottom:1, fontSize:8, fontWeight:700, color:d.color }}>🌙 {d.name}</div>)}
                     {!docs.length && <div style={{ fontSize:8, color:"#d1d5db", textAlign:"center", paddingTop:8 }}>—</div>}
-                    {(covs.am||[]).map(id=>fd(id)).filter(Boolean).map(d=><div key={d.id} style={{ fontSize:7, color:"#15803d" }}>☀️{sn(d.name)}</div>)}
-                    {(covs.pm||[]).map(id=>fd(id)).filter(Boolean).map(d=><div key={d.id} style={{ fontSize:7, color:"#0891b2" }}>🌅{sn(d.name)}</div>)}
-                    {(covs.nextAm||[]).map(id=>fd(id)).filter(Boolean).map(d=><div key={d.id} style={{ fontSize:7, color:"#7c3aed" }}>🌄{sn(d.name)}</div>)}
-                    {coverages.filter(c=>c.date===date).map(c=>{const cd=fd(c.coverDoctorId);return cd&&<div key={c.id} style={{ fontSize:7, color:"#ea580c" }}>🔄{sn(cd.name)}</div>;})}
+                    {(covs.am||[]).map(id=>fd(id)).filter(Boolean).map(d=><div key={d.id} style={{ fontSize:7, color:"#15803d" }}>(ص) {d.name}</div>)}
+                    {(covs.pm||[]).map(id=>fd(id)).filter(Boolean).map(d=><div key={d.id} style={{ fontSize:7, color:"#0891b2" }}>(ظ) {d.name}</div>)}
+                    {(covs.nextAm||[]).map(id=>fd(id)).filter(Boolean).map(d=><div key={d.id} style={{ fontSize:7, color:"#1e3a5f" }}>(غد ص) {d.name}</div>)}
+                    {coverages.filter(c=>c.date===date).map(c=>{const cd=fd(c.coverDoctorId);return cd&&<div key={c.id} style={{ fontSize:7, color:"#ea580c" }}>(تغطية) {cd.name}</div>;})}
                   </div>
                 );
               })}
@@ -907,7 +941,7 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
             <span style={{ fontSize:11, fontWeight:400, color:"#94a3b8" }}>({filledDays.length} يوم)</span>
           </div>
           {filledDays.length === 0 ? (
-            <div style={{ textAlign:"center", color:"#94a3b8", padding:"34px 16px", fontSize:13, background:"linear-gradient(135deg,#f8fafc,#eef2ff)", borderRadius:14, border:"2px dashed #c7d2fe" }}>
+            <div style={{ textAlign:"center", color:"#94a3b8", padding:"34px 16px", fontSize:13, background:"linear-gradient(135deg,#f8fafc,#eff4fa)", borderRadius:14, border:"2px dashed #cdddec" }}>
               ✨ لا توجد أيام بعد — اضغط <strong>⚡ توزيع تلقائي</strong> أو اختر تاريخاً لإضافة دوام مسائي
             </div>
           ) : (
@@ -947,11 +981,11 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
 // DAY CARD — vibrant, inline-editable day card
 // ══════════════════════════════════════════════════════
 const DAY_GRADIENTS = [
-  "linear-gradient(135deg,#6366f1,#8b5cf6)", // Sun
-  "linear-gradient(135deg,#0ea5e9,#06b6d4)", // Mon
-  "linear-gradient(135deg,#10b981,#14b8a6)", // Tue
-  "linear-gradient(135deg,#f59e0b,#f97316)", // Wed
-  "linear-gradient(135deg,#ec4899,#d946ef)", // Thu
+  "linear-gradient(135deg,#0f1e36,#1e3a5f)", // Sun
+  "linear-gradient(135deg,#1e3a5f,#2c5282)", // Mon
+  "linear-gradient(135deg,#2c5282,#3b6ca8)", // Tue
+  "linear-gradient(135deg,#1e3a5f,#3b6ca8)", // Wed
+  "linear-gradient(135deg,#0f1e36,#2c5282)", // Thu
 ];
 
 function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverages, fd, expanded, onToggle, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onResetDay }) {
@@ -980,7 +1014,7 @@ function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverag
   const done = pending===0 && nightDocs.length>0;
 
   return (
-    <div style={{ background:"#fff", borderRadius:10, overflow:"hidden", boxShadow: expanded?"0 6px 20px rgba(79,70,229,.15)":"0 1px 3px rgba(0,0,0,.05)", border: expanded?"2px solid #6366f1":"1px solid #eef2f7", transition:"all .15s" }}>
+    <div style={{ background:"#fff", borderRadius:10, overflow:"hidden", boxShadow: expanded?"0 6px 20px rgba(79,70,229,.15)":"0 1px 3px rgba(0,0,0,.05)", border: expanded?"2px solid #2c5282":"1px solid #eef2f7", transition:"all .15s" }}>
       {/* Thin compact header row */}
       <div onClick={onToggle} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", cursor:"pointer", borderRight:`5px solid transparent`, borderImage:`${grad} 1` }}>
         {/* Day badge */}
@@ -996,10 +1030,10 @@ function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverag
         {/* Inline chips (collapsed preview) */}
         <div style={{ flex:1, display:"flex", flexWrap:"wrap", gap:4, alignItems:"center", minWidth:0 }}>
           {nightDocs.map(id=>fd(id)).filter(Boolean).map(d=>(
-            <span key={d.id} style={{ background:d.color+"18", color:d.color, border:`1px solid ${d.color}44`, borderRadius:5, padding:"2px 8px", fontSize:10, fontWeight:700 }}>🌙 {sn(d.name)}</span>
+            <span key={d.id} style={{ background:d.color+"18", color:d.color, border:`1px solid ${d.color}44`, borderRadius:5, padding:"2px 8px", fontSize:10, fontWeight:700 }}>🌙 {d.name}</span>
           ))}
           {nightDocs.length===0 && <span style={{ fontSize:10, color:"#cbd5e1" }}>— لا دوام</span>}
-          {indiv.map(c=>{const cd=fd(c.coverDoctorId);return cd&&<span key={c.id} style={{ background:"#fff7ed", color:"#ea580c", border:"1px solid #fed7aa", borderRadius:5, padding:"2px 8px", fontSize:10 }}>🔄 {sn(cd.name)}</span>;})}
+          {indiv.map(c=>{const cd=fd(c.coverDoctorId);return cd&&<span key={c.id} style={{ background:"#fff7ed", color:"#ea580c", border:"1px solid #fed7aa", borderRadius:5, padding:"2px 8px", fontSize:10 }}>🔄 {cd.name}</span>;})}
         </div>
         {/* Status + chevron */}
         {done && <span style={{ background:"#f0fdf4", color:"#15803d", borderRadius:14, padding:"2px 9px", fontSize:10, fontWeight:700, flexShrink:0 }}>✅</span>}
@@ -1018,6 +1052,11 @@ function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverag
                 <div style={{ display:"flex", alignItems:"center", gap:8, background:d.color+"14", padding:"7px 10px" }}>
                   <div style={{ ...AV, background:d.color, width:26, height:26, fontSize:9 }}>{sn(d.name).slice(0,2)}</div>
                   <span style={{ flex:1, fontSize:13, fontWeight:700, color:d.color }}>🌙 {d.name}</span>
+                  <button onClick={()=>{
+                    const covLines = docNeeds(d).map(n=>{ const ids=covs[n.key]||[]; const nm=ids.map(id=>fd(id)?.name).filter(Boolean).join("، "); return `- ${n.label}: ${nm?("يغطّيها "+nm):"تحتاج تغطية"}`; }).join("\n");
+                    mailtoAlert(d, `تنبيه دوام مسائي — ${DAYS[di]} ${date}`,
+                      `عزيزي الطبيب ${d.name}،\n\nلديك دوام مسائي يوم ${DAYS[di]} الموافق ${date}.\n${covLines?("\nالتغطيات:\n"+covLines):""}\n\nمركز دمام الطبي`);
+                  }} style={{ background:"#fff", border:`1px solid ${d.color}44`, color:d.color, cursor:"pointer", fontSize:11, borderRadius:6, padding:"2px 8px", fontWeight:700 }} title={d.email?`إرسال تنبيه إلى ${d.email}`:"لا يوجد إيميل — أضفه في صفحة الأطباء"}>📧 تنبيه</button>
                   <button onClick={()=>onRemoveDoc(date,d.id)} style={{ background:"#fff", border:`1px solid ${d.color}44`, color:"#dc2626", cursor:"pointer", fontSize:12, borderRadius:6, padding:"2px 7px" }}>✕</button>
                 </div>
                 <div style={{ padding:"8px 10px" }}>
@@ -1127,7 +1166,7 @@ function DoctorsPage({ doctors, leaves, today, fd, onUpdateDocs, showToast }) {
   const addDoc = () => {
     const name = newDocName.trim();
     if (!name) return;
-    const colors = ["#6366f1","#0ea5e9","#10b981","#f59e0b","#ec4899","#84cc16","#f97316","#14b8a6"];
+    const colors = ["#2c5282","#0ea5e9","#10b981","#f59e0b","#3b6ca8","#84cc16","#f97316","#14b8a6"];
     const nd = { id:Date.now(), name, color:colors[Math.floor(Math.random()*colors.length)], nightDays:[], email:"", sched:Object.fromEntries([0,1,2,3,4].map(d=>[d,{am:"",pm:""}])) };
     onUpdateDocs([...doctors, nd]);
     setExpanded(nd.id);
@@ -1163,7 +1202,7 @@ function DoctorsPage({ doctors, leaves, today, fd, onUpdateDocs, showToast }) {
                   <div style={{ fontWeight:700, fontSize:14 }}>{doc.name}</div>
                   <div style={{ color:"#94a3b8", fontSize:11, display:"flex", gap:6 }}>
                     <span>{wSlots(doc)} فترة/أسبوع</span>
-                    {(doc.nightDays||[]).length>0 && <span style={{ background:"#1e1b4b", color:"#a5b4fc", borderRadius:4, padding:"1px 6px", fontSize:10 }}>🌙 {(doc.nightDays||[]).map(d=>DAYS[d]).join("، ")}</span>}
+                    {(doc.nightDays||[]).length>0 && <span style={{ background:"#0f1e36", color:"#93b4d8", borderRadius:4, padding:"1px 6px", fontSize:10 }}>🌙 {(doc.nightDays||[]).map(d=>DAYS[d]).join("، ")}</span>}
                   </div>
                 </div>
                 {/* Mini grid */}
@@ -1197,6 +1236,16 @@ function DoctorsPage({ doctors, leaves, today, fd, onUpdateDocs, showToast }) {
               {/* Expanded */}
               {isExp && (
                 <div style={{ borderTop:"1px solid #f1f5f9", padding:14, background:"#f8fafc" }}>
+                  {/* Email field */}
+                  <div style={{ marginBottom:12, padding:"10px 12px", background:"#fff", borderRadius:8, border:"1px solid #e2e8f0" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <span>📧</span>
+                      <div style={{ fontSize:12, fontWeight:600, whiteSpace:"nowrap" }}>البريد للتنبيهات</div>
+                      <input type="email" value={doc.email||""} placeholder="doctor@example.com"
+                        onChange={e=>onUpdateDocs(doctors.map(x=>x.id!==doc.id?x:{...x,email:e.target.value}))}
+                        style={{ flex:1, padding:"7px 10px", border:"1px solid #e2e8f0", borderRadius:7, fontSize:12, outline:"none", direction:"ltr", textAlign:"left" }} />
+                    </div>
+                  </div>
                   {/* Night days - multi select toggle */}
                   <div style={{ marginBottom:12, padding:"10px 12px", background:"#fff", borderRadius:8, border:"1px solid #e2e8f0" }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
@@ -1208,8 +1257,8 @@ function DoctorsPage({ doctors, leaves, today, fd, onUpdateDocs, showToast }) {
                         const active = (doc.nightDays||[]).includes(i);
                         return (
                           <button key={i} onClick={() => toggleNightDay(doc.id, i)}
-                            style={{ padding:"6px 12px", borderRadius:7, fontSize:12, fontWeight:700, cursor:"pointer", border: active?"2px solid #4338ca":"1px solid #e2e8f0",
-                              background: active?"#1e1b4b":"#f8fafc", color: active?"#a5b4fc":"#64748b" }}>
+                            style={{ padding:"6px 12px", borderRadius:7, fontSize:12, fontWeight:700, cursor:"pointer", border: active?"2px solid #1e3a5f":"1px solid #e2e8f0",
+                              background: active?"#0f1e36":"#f8fafc", color: active?"#93b4d8":"#64748b" }}>
                             {active?"🌙 ":""}{d}
                           </button>
                         );
@@ -1249,7 +1298,7 @@ function DoctorsPage({ doctors, leaves, today, fd, onUpdateDocs, showToast }) {
                               {/* Evening column - reflects fixed night day */}
                               <td style={{ padding:"3px 4px", textAlign:"center" }}>
                                 {isFixedEve ? (
-                                  <div style={{ background:"#1e1b4b", color:"#a5b4fc", borderRadius:6, padding:"6px 3px", fontSize:11, fontWeight:700 }}>🌙 عيادة</div>
+                                  <div style={{ background:"#0f1e36", color:"#93b4d8", borderRadius:6, padding:"6px 3px", fontSize:11, fontWeight:700 }}>🌙 عيادة</div>
                                 ) : (
                                   <div style={{ color:"#cbd5e1", fontSize:11 }}>—</div>
                                 )}
@@ -1557,8 +1606,8 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
   return (
     <div>
       {/* Doctor selector */}
-      <div style={{ background:"linear-gradient(135deg,#1e1b4b,#4338ca)", borderRadius:14, padding:"16px 18px", marginBottom:16 }}>
-        <div style={{ color:"#c7d2fe", fontSize:12, fontWeight:700, marginBottom:8 }}>👨‍⚕️ اختر طبيباً لعرض تفاصيله الكاملة</div>
+      <div style={{ background:"linear-gradient(135deg,#1e3a5f,#2c5282)", borderRadius:14, padding:"16px 18px", marginBottom:16 }}>
+        <div style={{ color:"#cdddec", fontSize:12, fontWeight:700, marginBottom:8 }}>👨‍⚕️ اختر طبيباً لعرض تفاصيله الكاملة</div>
         <select value={selId} onChange={e=>setSelId(e.target.value)} style={{ width:"100%", padding:"11px 12px", borderRadius:9, border:"none", fontSize:14, fontWeight:700, color:"#1e293b", cursor:"pointer", outline:"none" }}>
           <option value="">— عرض النظرة العامة لكل الأطباء —</option>
           {doctors.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
@@ -1578,7 +1627,7 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
                 <div style={{ fontWeight:800, fontSize:18 }}>{selDoc.name}</div>
                 <div style={{ fontSize:12, color:"#64748b", display:"flex", gap:8, flexWrap:"wrap", marginTop:4 }}>
                   <span>{wSlots(selDoc)} فترة/أسبوع</span>
-                  {(selDoc.nightDays||[]).length>0 && <span style={{ background:"#1e1b4b", color:"#a5b4fc", borderRadius:5, padding:"1px 8px" }}>🌙 مسائي ثابت: {(selDoc.nightDays||[]).map(d=>DAYS[d]).join("، ")}</span>}
+                  {(selDoc.nightDays||[]).length>0 && <span style={{ background:"#0f1e36", color:"#93b4d8", borderRadius:5, padding:"1px 8px" }}>🌙 مسائي ثابت: {(selDoc.nightDays||[]).map(d=>DAYS[d]).join("، ")}</span>}
                 </div>
               </div>
             </div>
@@ -1586,7 +1635,7 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
             {/* Period toggle */}
             <div style={{ display:"flex", gap:6, marginBottom:14 }}>
               {Object.entries(PERIODS).map(([k,l])=>(
-                <button key={k} onClick={()=>setPeriod(k)} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, fontWeight:700, cursor:"pointer", border: period===k?"2px solid #4338ca":"1px solid #e2e8f0", background: period===k?"#eef2ff":"#fff", color: period===k?"#4338ca":"#64748b" }}>{l}</button>
+                <button key={k} onClick={()=>setPeriod(k)} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, fontWeight:700, cursor:"pointer", border: period===k?"2px solid #1e3a5f":"1px solid #e2e8f0", background: period===k?"#eff4fa":"#fff", color: period===k?"#1e3a5f":"#64748b" }}>{l}</button>
               ))}
             </div>
 
@@ -1636,7 +1685,7 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
                           <td style={{ padding:"6px", fontSize:11, fontWeight:700, color:"#fff", background:"#7ea4e6", textAlign:"center" }}>{DAYS[di]}</td>
                           <td style={cellStyle(am)}>{am?SLOT_LABEL[am]:"—"}</td>
                           <td style={cellStyle(pm)}>{pm?SLOT_LABEL[pm]:"—"}</td>
-                          <td style={{ padding:"6px", fontSize:11, textAlign:"center", border:"1px solid #f1f5f9", background:isEve?"#1e1b4b":"#fff", color:isEve?"#a5b4fc":"#cbd5e1", fontWeight:700 }}>{isEve?"🌙 عيادة":"—"}</td>
+                          <td style={{ padding:"6px", fontSize:11, textAlign:"center", border:"1px solid #f1f5f9", background:isEve?"#0f1e36":"#fff", color:isEve?"#93b4d8":"#cbd5e1", fontWeight:700 }}>{isEve?"🌙 عيادة":"—"}</td>
                         </tr>
                       );
                     })}
@@ -1667,9 +1716,9 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
         /* OVERVIEW — compact list of all doctors (current month) */
         <div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginBottom:14 }}>
-            <div style={{ background:"#fff", border:"1px solid #ddd6fe", borderTop:"3px solid #7c3aed", borderRadius:12, padding:14, textAlign:"center" }}>
+            <div style={{ background:"#fff", border:"1px solid #cdddec", borderTop:"3px solid #1e3a5f", borderRadius:12, padding:14, textAlign:"center" }}>
               <div style={{ fontSize:24 }}>📊</div>
-              <div style={{ fontSize:26, fontWeight:800, color:"#7c3aed" }}>{avgTasks.toFixed(1)}</div>
+              <div style={{ fontSize:26, fontWeight:800, color:"#1e3a5f" }}>{avgTasks.toFixed(1)}</div>
               <div style={{ fontSize:10, color:"#64748b" }}>متوسط العبء/طبيب</div>
             </div>
             <div style={{ background:"#fff", border:"1px solid #bfdbfe", borderTop:"3px solid #1d4ed8", borderRadius:12, padding:14, textAlign:"center" }}>
@@ -1718,7 +1767,7 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
 const AV = { width:36, height:36, borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800, fontSize:13, color:"#fff", flexShrink:0 };
 const SEL = { width:"100%", padding:"7px 8px", border:"1px solid #e2e8f0", borderRadius:7, fontSize:12, background:"#fff", outline:"none", boxSizing:"border-box" };
 const Btn = {
-  primary:   { background:"linear-gradient(135deg,#2563eb,#7c3aed)", border:"none", borderRadius:7, color:"#fff", fontWeight:700, padding:"7px 14px", cursor:"pointer", fontSize:12 },
+  primary:   { background:"linear-gradient(135deg,#1e3a5f,#3b6ca8)", border:"none", borderRadius:7, color:"#fff", fontWeight:700, padding:"7px 14px", cursor:"pointer", fontSize:12 },
   secondary: { background:"#f1f5f9", border:"1px solid #e2e8f0", borderRadius:7, color:"#64748b", fontWeight:600, padding:"7px 14px", cursor:"pointer", fontSize:12 },
   danger:    { padding:"5px 9px", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:6, color:"#dc2626", cursor:"pointer", fontSize:11 },
   nav:       { padding:"5px 10px", background:"#f1f5f9", border:"1px solid #e2e8f0", borderRadius:6, color:"#64748b", cursor:"pointer", fontSize:11, fontWeight:600 },
