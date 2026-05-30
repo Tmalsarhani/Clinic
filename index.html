@@ -16,7 +16,6 @@
 </head>
 <body>
 <div id="root"><div class="loading">⏳ جاري تحميل النظام...</div></div>
-
 <script type="text/babel" data-presets="react">
 const { useState, useMemo } = React;
 
@@ -197,8 +196,17 @@ function autoFill(year, month, doctors, leaves, nightData) {
       result[date] = { doctors: fixedDocs.slice(0,3).map(d=>d.id), coverages: { am: [], pm: [], nextAm: [] } };
       fixedDocs.forEach(d => usage[d.id] = (usage[d.id]||0) + 1);
     } else {
+      const nextDi = dayIdx(nextWork(date));
+      // needsCoverage = has clinic am/pm today OR clinic am next work day
+      const coverageNeed = d => (isClinic(getSlot(d,di,"am"))?1:0) + (isClinic(getSlot(d,di,"pm"))?1:0) + (isClinic(getSlot(d,nextDi,"am"))?1:0);
       const avail = rotate.filter(d => !onLeave(d, date, leaves))
-        .sort((a,b) => (usage[a.id]||0) - (usage[b.id]||0));
+        .sort((a,b) => {
+          // PRIORITY 1: doctors who need NO coverage come first
+          const ca = coverageNeed(a), cb = coverageNeed(b);
+          if (ca !== cb) return ca - cb;
+          // PRIORITY 2: least loaded (fair distribution)
+          return (usage[a.id]||0) - (usage[b.id]||0);
+        });
       if (avail.length) {
         result[date] = { doctors: [avail[0].id], coverages: { am: [], pm: [], nextAm: [] } };
         usage[avail[0].id] = (usage[avail[0].id]||0) + 1;
@@ -254,6 +262,12 @@ function App() {
   const removeIndivCoverage = (id) => {
     updateCoverages(coverages.filter(c => c.id !== id));
     showToast("تم الحذف", "warn");
+  };
+
+  const ensureDay = (date) => {
+    if (!nightData[date]) {
+      updateNight({ ...nightData, [date]: { doctors:[], coverages:{ am:[], pm:[], nextAm:[] } } });
+    }
   };
 
   const addNightDoc = (date, docId) => {
@@ -382,7 +396,7 @@ function App() {
           <div style={{ fontSize:11, color:"#94a3b8" }}>{MONTHS[new Date().getMonth()]} {new Date().getFullYear()}</div>
         </div>
         <div style={{ flex:1, overflowY:"auto", padding:18 }}>
-          {page==="monthly" && <MonthlyPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onAutoFill={(y,m) => { const next=autoFill(y,m,doctors,leaves,nightData); updateNight(next); showToast("✅ تم التوزيع التلقائي"); }} onAddDoc={addNightDoc} onRemoveDoc={removeNightDoc} onAddCov={addCoverage} onRemoveCov={removeCoverage} onClearMonth={clearMonth} onResetDay={resetDay} onCopyDay={copyDay} onSetNote={setDayNote} />}
+          {page==="monthly" && <MonthlyPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onAutoFill={(y,m) => { const next=autoFill(y,m,doctors,leaves,nightData); updateNight(next); showToast("✅ تم التوزيع التلقائي"); }} onAddDoc={addNightDoc} onRemoveDoc={removeNightDoc} onAddCov={addCoverage} onRemoveCov={removeCoverage} onClearMonth={clearMonth} onResetDay={resetDay} onCopyDay={copyDay} onSetNote={setDayNote} onEnsureDay={ensureDay} />}
           {page==="coverage" && <CoveragePage doctors={doctors} leaves={leaves} coverages={coverages} nightData={nightData} fd={fd} onAdd={addIndivCoverage} onRemove={removeIndivCoverage} showToast={showToast} />}
           {page==="doctors"  && <DoctorsPage doctors={doctors} leaves={leaves} today={today} fd={fd} onUpdateDocs={updateDocs} showToast={showToast} />}
           {page==="leaves"   && <LeavesPage doctors={doctors} leaves={leaves} fd={fd} onUpdate={(next) => { setLeaves(next); S.set("fin_leaves",next); }} showToast={showToast} />}
@@ -402,7 +416,7 @@ function App() {
 // ══════════════════════════════════════════════════════
 // MONTHLY PAGE
 // ══════════════════════════════════════════════════════
-function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoFill, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onClearMonth, onResetDay, onCopyDay, onSetNote }) {
+function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoFill, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onClearMonth, onResetDay, onCopyDay, onSetNote, onEnsureDay }) {
   const now = new Date();
   const [month, setMonth] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [selDate, setSelDate] = useState(null);
@@ -421,7 +435,6 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
   }, [month]);
 
   const firstOffset = calDays[0]?.di ?? 0;
-  const selNd = selDate ? (nightData[selDate] || { doctors:[], coverages:{ am:[], pm:[], nextAm:[] } }) : null;
 
   const printPDF = () => {
     const chip = (d) => `<span style="display:inline-block;background:${d.color}22;color:${d.color};border:1px solid ${d.color}55;border-radius:5px;padding:2px 10px;margin:2px;font-weight:700">${d.name}</span>`;
@@ -433,11 +446,12 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
         const nd = nightData[date];
         const covs = nd.coverages || {};
         const docs = (nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
-        // Describe coverages relative to the shift
+        // Describe coverages: clinic owner (night doctor) first, then who covers, then period
+        const ownerName = docs.map(d=>d.name).join("، ");
         const covDesc = [];
-        (covs.am||[]).forEach(id=>{ const cd=fd(id); if(cd) covDesc.push(`تغطية عيادة ${cd.name} نفس اليوم صباحاً`); });
-        (covs.pm||[]).forEach(id=>{ const cd=fd(id); if(cd) covDesc.push(`تغطية عيادة ${cd.name} نفس اليوم ظهراً`); });
-        (covs.nextAm||[]).forEach(id=>{ const cd=fd(id); if(cd) covDesc.push(`تغطية عيادة ${cd.name} اليوم التالي صباحاً`); });
+        (covs.am||[]).forEach(id=>{ const cd=fd(id); if(cd) covDesc.push(`عيادة ${ownerName} — يغطّيها ${cd.name} — صباحاً`); });
+        (covs.pm||[]).forEach(id=>{ const cd=fd(id); if(cd) covDesc.push(`عيادة ${ownerName} — يغطّيها ${cd.name} — ظهراً`); });
+        (covs.nextAm||[]).forEach(id=>{ const cd=fd(id); if(cd) covDesc.push(`عيادة ${ownerName} — يغطّيها ${cd.name} — اليوم التالي صباحاً`); });
         return `<tr>
           <td style="text-align:center"><strong>${dmy(date)}</strong></td>
           <td style="text-align:center">${DAYS[di]}</td>
@@ -460,9 +474,9 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
       const covs = nd.coverages || {};
       const nightNames = (nd.doctors||[]).map(id=>fd(id)?.name).filter(Boolean).join("، ");
       const nextDate = nextWork(date);
-      (covs.am||[]).forEach(id=>pushCov(date,   id, "صباحاً", `تغطية عيادة صباح (مناوبة ${DAYS[di]} ${dmy(date)} — ${nightNames})`));
-      (covs.pm||[]).forEach(id=>pushCov(date,   id, "ظهراً",  `تغطية عيادة ظهر (مناوبة ${DAYS[di]} ${dmy(date)} — ${nightNames})`));
-      (covs.nextAm||[]).forEach(id=>pushCov(nextDate, id, "صباحاً", `تغطية عيادة صباح (نتيجة مناوبة ${DAYS[di]} ${dmy(date)} — ${nightNames})`));
+      (covs.am||[]).forEach(id=>pushCov(date,   id, "صباحاً", `عيادة ${nightNames} (مناوب ${DAYS[di]} ${dmy(date)})`));
+      (covs.pm||[]).forEach(id=>pushCov(date,   id, "ظهراً",  `عيادة ${nightNames} (مناوب ${DAYS[di]} ${dmy(date)})`));
+      (covs.nextAm||[]).forEach(id=>pushCov(nextDate, id, "صباحاً", `عيادة ${nightNames} (مناوب ${DAYS[di]} ${dmy(date)} — اليوم التالي)`));
     });
     // From individual coverages
     (coverages||[]).forEach(c => {
@@ -486,7 +500,7 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
       ? `<table><thead><tr><th>التاريخ</th><th>اليوم</th><th>المناوب المسائي</th><th>التغطيات المطلوبة</th></tr></thead><tbody>${eveRows}</tbody></table>`
       : `<p style="text-align:center;color:#94a3b8">لا يوجد دوام مسائي مسجّل</p>`;
     const covTable = covRows
-      ? `<table><thead><tr><th>التاريخ الفعلي</th><th>الطبيب المُغطّي</th><th>الفترة</th><th>التفاصيل</th></tr></thead><tbody>${covRows}</tbody></table>`
+      ? `<table><thead><tr><th>التاريخ الفعلي</th><th>الطبيب المُغطّي</th><th>الفترة</th><th>العيادة المُغطّاة</th></tr></thead><tbody>${covRows}</tbody></table>`
       : `<p style="text-align:center;color:#94a3b8">لا توجد تغطيات</p>`;
 
     const html = `<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><title>جدول ${MONTHS[month.m]} ${month.y}</title>
@@ -539,7 +553,8 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
   const filledDays = calDays.filter(({date}) => {
     const nd = nightData[date];
     const hasCov = coverages.some(c=>c.date===date);
-    const has = (nd?.doctors?.length) || hasCov;
+    // show any day that exists in nightData (even empty, just created), has coverages, or is selected
+    const has = (nd?.doctors?.length) || hasCov || (nd && date===selDate);
     if (filter==="all") return has;
     if (filter==="pending") {
       if (!nd?.doctors?.length) return false;
@@ -594,8 +609,8 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
 
         {/* Add specific evening shift + filter row */}
         <div style={{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap", alignItems:"center" }}>
-          <input type="date" style={{ ...SEL, width:"auto", flex:"0 0 auto" }} onChange={e=>{ if(e.target.value){ if(dayIdx(e.target.value)<0){alert("اختر يوم عمل (أحد-خميس)");return;} setSelDate(e.target.value); } }} value="" />
-          <span style={{ fontSize:11, color:"#94a3b8" }}>← اختر تاريخاً لإضافة دوام مسائي فردي</span>
+          <input type="date" style={{ ...SEL, width:"auto", flex:"0 0 auto" }} onChange={e=>{ if(e.target.value){ if(dayIdx(e.target.value)<0){ return; } onEnsureDay(e.target.value); setSelDate(e.target.value); setMonth({ y:+e.target.value.split("-")[0], m:+e.target.value.split("-")[1]-1 }); } }} value="" />
+          <span style={{ fontSize:11, color:"#94a3b8" }}>← اختر تاريخاً لإضافة يوم دوام مسائي</span>
           <div style={{ flex:1 }} />
           {[["all","الكل"],["pending","⚠️ معلّق"],["done","✅ مكتمل"]].map(([k,l])=>(
             <button key={k} onClick={()=>setFilter(k)} style={{ padding:"5px 12px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", border: filter===k?"2px solid #4338ca":"1px solid #e2e8f0", background: filter===k?"#eef2ff":"#fff", color: filter===k?"#4338ca":"#64748b" }}>{l}</button>
@@ -634,75 +649,29 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
           </div>
         )}
 
-        {/* MAIN: Day-by-day list */}
+        {/* MAIN: Vibrant day cards with inline editing */}
         <div>
           <div style={{ fontWeight:800, fontSize:14, marginBottom:10, display:"flex", alignItems:"center", gap:8 }}>
             📋 أيام الدوام المسائي
             <span style={{ fontSize:11, fontWeight:400, color:"#94a3b8" }}>({filledDays.length} يوم)</span>
           </div>
           {filledDays.length === 0 ? (
-            <div style={{ textAlign:"center", color:"#94a3b8", padding:"30px 16px", fontSize:13, background:"#fff", borderRadius:10, border:"1px dashed #cbd5e1" }}>
-              لا توجد أيام مطابقة — اضغط <strong>⚡ توزيع تلقائي</strong> أو اختر تاريخاً لإضافة دوام مسائي
+            <div style={{ textAlign:"center", color:"#94a3b8", padding:"34px 16px", fontSize:13, background:"linear-gradient(135deg,#f8fafc,#eef2ff)", borderRadius:14, border:"2px dashed #c7d2fe" }}>
+              ✨ لا توجد أيام بعد — اضغط <strong>⚡ توزيع تلقائي</strong> أو اختر تاريخاً لإضافة دوام مسائي
             </div>
-          ) : filledDays.map(({ date, di, day }) => {
-            const nd = nightData[date] || {};
-            const docs = (nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
-            const covs = nd.coverages || {};
-            const indiv = coverages.filter(c=>c.date===date);
-            const isSel = selDate===date;
-            // pending check
-            const nextDi = dayIdx(nextWork(date));
-            let pending = 0;
-            docs.forEach(d=>{
-              if (isClinic(getSlot(d,di,"am")) && !(covs.am||[]).length) pending++;
-              if (isClinic(getSlot(d,di,"pm")) && !(covs.pm||[]).length) pending++;
-              if (isClinic(getSlot(d,nextDi,"am")) && !(covs.nextAm||[]).length) pending++;
-            });
-            return (
-              <div key={date} style={{ background: isSel?"#eff6ff":"#fff", border:`1px solid ${isSel?"#2563eb":"#e2e8f0"}`, borderRadius:10, marginBottom:7, overflow:"hidden" }}>
-                <div onClick={()=>setSelDate(isSel?null:date)} style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", cursor:"pointer" }}>
-                  <span style={{ background:"#0f172a", color:"#a5b4fc", borderRadius:6, padding:"3px 9px", fontSize:12, fontWeight:700 }}>{day}</span>
-                  <span style={{ fontWeight:700, fontSize:13 }}>{DAYS[di]}</span>
-                  <span style={{ fontSize:11, color:"#94a3b8" }}>{date}</span>
-                  <div style={{ flex:1 }} />
-                  {pending>0 && <span style={{ background:"#fef2f2", color:"#dc2626", borderRadius:5, padding:"2px 8px", fontSize:10, fontWeight:700 }}>⚠️ {pending} تغطية معلّقة</span>}
-                  {pending===0 && docs.length>0 && <span style={{ background:"#f0fdf4", color:"#15803d", borderRadius:5, padding:"2px 8px", fontSize:10, fontWeight:700 }}>✅ مكتمل</span>}
-                  <span style={{ fontSize:11, color:"#2563eb", fontWeight:700 }}>{isSel?"▲":"▼ تعديل"}</span>
-                </div>
-                <div style={{ padding:"0 14px 10px" }}>
-                  {docs.map(d => {
-                    const myCovs = [];
-                    (covs.am||[]).forEach(id=>myCovs.push({slot:"☀️ ص",doc:fd(id)}));
-                    (covs.pm||[]).forEach(id=>myCovs.push({slot:"🌅 ظ",doc:fd(id)}));
-                    (covs.nextAm||[]).forEach(id=>myCovs.push({slot:"🌄 غد ص",doc:fd(id)}));
-                    return (
-                      <div key={d.id} style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:4 }}>
-                        <span style={{ background:d.color+"22", color:d.color, border:`1px solid ${d.color}55`, borderRadius:5, padding:"3px 10px", fontSize:12, fontWeight:700 }}>🌙 {d.name}</span>
-                        {myCovs.map((mc,i)=>mc.doc&&(
-                          <span key={i} style={{ fontSize:10, color:"#15803d", background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:4, padding:"2px 7px" }}>{mc.slot}: {sn(mc.doc.name)}</span>
-                        ))}
-                      </div>
-                    );
-                  })}
-                  {indiv.map(c => { const cd=fd(c.coverDoctorId); return cd&&(
-                    <div key={c.id} style={{ marginBottom:3 }}>
-                      <span style={{ fontSize:10, color:"#ea580c", background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:4, padding:"2px 7px" }}>🔄 تغطية فردية: {cd.name} ({c.period==="am"?"صباح":"ظهر"})</span>
-                    </div>
-                  );})}
-                  {docs.length===0 && indiv.length===0 && <div style={{ fontSize:11, color:"#cbd5e1" }}>فارغ</div>}
-                </div>
-              </div>
-            );
-          })}
+          ) : (
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))", gap:12 }}>
+              {filledDays.map(({ date, di, day }) => (
+                <DayCard key={date} date={date} di={di} day={day}
+                  nd={nightData[date]||{}} indiv={coverages.filter(c=>c.date===date)}
+                  doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd}
+                  expanded={selDate===date} onToggle={()=>setSelDate(selDate===date?null:date)}
+                  onAddDoc={onAddDoc} onRemoveDoc={onRemoveDoc} onAddCov={onAddCov} onRemoveCov={onRemoveCov} onResetDay={onResetDay} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Day Panel */}
-      {selDate && selNd && (
-        <DayPanel date={selDate} nd={selNd} doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd}
-          onAddDoc={onAddDoc} onRemoveDoc={onRemoveDoc} onAddCov={onAddCov} onRemoveCov={onRemoveCov}
-          onResetDay={onResetDay} onClose={() => setSelDate(null)} />
-      )}
 
       {/* PDF preview modal (fallback if download blocked) */}
       {previewHtml && (
@@ -724,108 +693,149 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
 }
 
 // ══════════════════════════════════════════════════════
-// DAY PANEL  (coverages shown PER doctor)
+// DAY CARD — vibrant, inline-editable day card
 // ══════════════════════════════════════════════════════
-function DayPanel({ date, nd, doctors, leaves, nightData, coverages, fd, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onResetDay, onClose }) {
-  const di = dayIdx(date);
-  const nextDate = nextWork(date);
-  const nextDi = dayIdx(nextDate);
+const DAY_GRADIENTS = [
+  "linear-gradient(135deg,#6366f1,#8b5cf6)", // Sun
+  "linear-gradient(135deg,#0ea5e9,#06b6d4)", // Mon
+  "linear-gradient(135deg,#10b981,#14b8a6)", // Tue
+  "linear-gradient(135deg,#f59e0b,#f97316)", // Wed
+  "linear-gradient(135deg,#ec4899,#d946ef)", // Thu
+];
+
+function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverages, fd, expanded, onToggle, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onResetDay }) {
+  const [confirmReset, setConfirmReset] = useState(false);
   const nightDocs = nd.doctors || [];
   const covs = nd.coverages || { am:[], pm:[], nextAm:[] };
-  const [confirmReset, setConfirmReset] = useState(false);
+  const nextDate = nextWork(date);
+  const nextDi = dayIdx(nextDate);
+  const grad = DAY_GRADIENTS[di] || DAY_GRADIENTS[0];
 
-  // Build per-doctor coverage needs
+  // coverage needs per night doctor
   const docNeeds = (doc) => {
     const needs = [];
-    if (isClinic(getSlot(doc,di,"am")))     needs.push({ key:"am",     label:"☀️ صباح اليوم",      date, di });
-    if (isClinic(getSlot(doc,di,"pm")))     needs.push({ key:"pm",     label:"🌅 ظهر اليوم",       date, di });
-    if (isClinic(getSlot(doc,nextDi,"am"))) needs.push({ key:"nextAm", label:"🌄 صباح الغد",        date:nextDate, di:nextDi });
+    if (isClinic(getSlot(doc,di,"am")))     needs.push({ key:"am",     label:"☀️ صباحاً",     covDate:date,     covDi:di });
+    if (isClinic(getSlot(doc,di,"pm")))     needs.push({ key:"pm",     label:"🌅 ظهراً",      covDate:date,     covDi:di });
+    if (isClinic(getSlot(doc,nextDi,"am"))) needs.push({ key:"nextAm", label:"🌄 الغد صباحاً", covDate:nextDate, covDi:nextDi });
     return needs;
   };
 
+  let pending = 0;
+  nightDocs.map(id=>fd(id)).filter(Boolean).forEach(d=>{
+    if (isClinic(getSlot(d,di,"am")) && !(covs.am||[]).length) pending++;
+    if (isClinic(getSlot(d,di,"pm")) && !(covs.pm||[]).length) pending++;
+    if (isClinic(getSlot(d,nextDi,"am")) && !(covs.nextAm||[]).length) pending++;
+  });
+  const done = pending===0 && nightDocs.length>0;
+
   return (
-    <div style={{ width:285, flexShrink:0, background:"#fff", border:"1px solid #e2e8f0", borderRadius:12, overflow:"hidden", display:"flex", flexDirection:"column", maxHeight:"calc(100vh - 80px)" }}>
-      <div style={{ background:"linear-gradient(135deg,#0f172a,#1e1b4b)", padding:"12px 14px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div style={{ color:"#fff", fontWeight:800, fontSize:14 }}>{DAYS[di]} {fmtDate(date)}</div>
-        <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-          {nightDocs.length>0 && (confirmReset ? (
-            <span style={{ display:"inline-flex", gap:4 }}>
-              <button onClick={() => { onResetDay(date); onClose(); }} style={{ background:"#dc2626", border:"none", color:"#fff", cursor:"pointer", fontSize:10, fontWeight:700, borderRadius:6, padding:"3px 8px" }}>نعم، امسح</button>
-              <button onClick={() => setConfirmReset(false)} style={{ background:"rgba(255,255,255,.15)", border:"none", color:"#fff", cursor:"pointer", fontSize:10, borderRadius:6, padding:"3px 8px" }}>لا</button>
-            </span>
-          ) : (
-            <button onClick={() => setConfirmReset(true)} style={{ background:"rgba(239,68,68,.2)", border:"1px solid rgba(239,68,68,.3)", color:"#fca5a5", cursor:"pointer", fontSize:10, fontWeight:700, borderRadius:6, padding:"3px 8px" }}>🔁 إعادة تعيين</button>
-          ))}
-          <button onClick={onClose} style={{ background:"none", border:"none", color:"rgba(255,255,255,.6)", cursor:"pointer", fontSize:18 }}>✕</button>
+    <div style={{ background:"#fff", borderRadius:16, overflow:"hidden", boxShadow: expanded?"0 8px 28px rgba(79,70,229,.18)":"0 2px 8px rgba(0,0,0,.06)", border: expanded?"2px solid #6366f1":"1px solid #eef2f7", transition:"all .2s", transform: expanded?"translateY(-2px)":"none" }}>
+      {/* Header with gradient */}
+      <div onClick={onToggle} style={{ background:grad, padding:"12px 14px", cursor:"pointer", color:"#fff", position:"relative" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ background:"rgba(255,255,255,.25)", borderRadius:10, width:42, height:42, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", backdropFilter:"blur(4px)" }}>
+            <span style={{ fontSize:16, fontWeight:800, lineHeight:1 }}>{day}</span>
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontWeight:800, fontSize:15 }}>{DAYS[di]}</div>
+            <div style={{ fontSize:11, opacity:.9 }}>{date}</div>
+          </div>
+          {done && <span style={{ background:"rgba(255,255,255,.25)", borderRadius:20, padding:"3px 10px", fontSize:10, fontWeight:700 }}>✅ مكتمل</span>}
+          {pending>0 && <span style={{ background:"rgba(239,68,68,.9)", borderRadius:20, padding:"3px 10px", fontSize:10, fontWeight:700 }}>⚠️ {pending}</span>}
+          <span style={{ fontSize:13, opacity:.85 }}>{expanded?"▲":"▼"}</span>
         </div>
-      </div>
-
-      <div style={{ flex:1, overflowY:"auto", padding:12 }}>
-        <div style={{ fontWeight:700, fontSize:12, color:"#1e293b", marginBottom:8, paddingBottom:5, borderBottom:"1px solid #f1f5f9" }}>🌙 الدوام المسائي</div>
-        {nightDocs.length===0 && <div style={{ fontSize:11, color:"#94a3b8", marginBottom:8 }}>لم يُعيَّن طبيب بعد</div>}
-
-        {/* Per-doctor cards with their coverage needs */}
-        {nightDocs.map(did => {
-          const d = fd(did); if (!d) return null;
-          const needs = docNeeds(d);
-          return (
-            <div key={did} style={{ border:`1px solid ${d.color}44`, borderRadius:9, marginBottom:10, overflow:"hidden" }}>
-              {/* Doctor header */}
-              <div style={{ display:"flex", alignItems:"center", gap:8, background:d.color+"15", padding:"7px 10px" }}>
-                <div style={{ ...AV, background:d.color, width:26, height:26, fontSize:9 }}>{sn(d.name).slice(0,2)}</div>
-                <span style={{ flex:1, fontSize:12, fontWeight:700, color:d.color }}>{d.name}</span>
-                <button onClick={() => onRemoveDoc(date, did)} style={{ background:"none", border:"none", color:"#dc2626", cursor:"pointer", fontSize:14 }}>✕</button>
-              </div>
-              {/* His coverage needs */}
-              <div style={{ padding:"8px 10px" }}>
-                {needs.length===0 && <div style={{ fontSize:10, color:"#15803d", background:"#f0fdf4", borderRadius:5, padding:"4px 8px" }}>✅ لا يحتاج تغطية</div>}
-                {needs.map(({ key, label, date:covDate, di:covDi }) => {
-                  const assigned = (covs[key]||[]).map(id=>fd(id)).filter(Boolean);
-                  const avail = getAvailable(doctors, nightDocs, covDi, covDate, key==="pm"?"pm":"am", leaves, nightData, { [key]: covs[key]||[] }, coverages);
-                  const freeDocs = avail.filter(x=>x.status==="free");
-                  const warnDocs = avail.filter(x=>x.status==="warn");
-                  return (
-                    <div key={key} style={{ marginBottom:8 }}>
-                      <div style={{ fontSize:10, fontWeight:700, color:"#64748b", marginBottom:4 }}>{label} — يحتاج تغطية</div>
-                      {assigned.map(cd => (
-                        <div key={cd.id} style={{ display:"flex", alignItems:"center", gap:5, background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:5, padding:"3px 7px", marginBottom:3 }}>
-                          <div style={{ ...AV, background:cd.color, width:16, height:16, fontSize:7 }}>{sn(cd.name).slice(0,2)}</div>
-                          <span style={{ flex:1, fontSize:10, color:"#15803d", fontWeight:600 }}>{cd.name}</span>
-                          <button onClick={() => onRemoveCov(date, key, cd.id)} style={{ background:"none", border:"none", color:"#94a3b8", cursor:"pointer", fontSize:11 }}>✕</button>
-                        </div>
-                      ))}
-                      <select style={{ ...SEL, fontSize:10, padding:"5px 7px" }} value="" onChange={e => { if(e.target.value) onAddCov(date, key, +e.target.value); }}>
-                        <option value="">+ تثبيت طبيب متاح ({freeDocs.length})</option>
-                        {freeDocs.length > 0 && (
-                          <optgroup label="✅ أطباء فارغون (متاحون)">
-                            {freeDocs.map(({doc:fdoc}) => <option key={fdoc.id} value={fdoc.id}>{fdoc.name}</option>)}
-                          </optgroup>
-                        )}
-                        {warnDocs.length > 0 && (
-                          <optgroup label="⚠️ لديه التزام آخر">
-                            {warnDocs.map(({doc:fdoc}) => <option key={fdoc.id} value={fdoc.id}>⚠️ {fdoc.name}</option>)}
-                          </optgroup>
-                        )}
-                      </select>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Add doctor */}
-        {nightDocs.length < 3 && (
-          <select style={{ ...SEL, marginTop:4 }} value="" onChange={e => { if(e.target.value) onAddDoc(date, +e.target.value); }}>
-            <option value="">+ إضافة طبيب للدوام المسائي...</option>
-            {doctors.filter(d => !nightDocs.includes(d.id)).map(d => {
-              const ol = onLeave(d, date, leaves);
-              return <option key={d.id} value={d.id} disabled={ol}>{ol ? `🚫 ${d.name} (إجازة)` : d.name}{(d.nightDays||[]).includes(di)?" (ثابت)":""}</option>;
-            })}
-          </select>
+        {/* Quick chips preview when collapsed */}
+        {!expanded && (
+          <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginTop:8 }}>
+            {nightDocs.map(id=>fd(id)).filter(Boolean).map(d=>(
+              <span key={d.id} style={{ background:"rgba(255,255,255,.22)", borderRadius:6, padding:"2px 8px", fontSize:10, fontWeight:700 }}>🌙 {sn(d.name)}</span>
+            ))}
+            {nightDocs.length===0 && <span style={{ fontSize:10, opacity:.8 }}>لا مناوب</span>}
+            {indiv.map(c=>{const cd=fd(c.coverDoctorId);return cd&&<span key={c.id} style={{ background:"rgba(255,255,255,.22)", borderRadius:6, padding:"2px 8px", fontSize:10 }}>🔄 {sn(cd.name)}</span>;})}
+          </div>
         )}
       </div>
+
+      {/* Expanded body - inline editing */}
+      {expanded && (
+        <div style={{ padding:"12px 14px" }}>
+          {/* Night doctors with their coverage needs */}
+          {nightDocs.map(id=>fd(id)).filter(Boolean).map(d => {
+            const needs = docNeeds(d);
+            return (
+              <div key={d.id} style={{ marginBottom:10, border:`1px solid ${d.color}33`, borderRadius:11, overflow:"hidden" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, background:d.color+"14", padding:"7px 10px" }}>
+                  <div style={{ ...AV, background:d.color, width:26, height:26, fontSize:9 }}>{sn(d.name).slice(0,2)}</div>
+                  <span style={{ flex:1, fontSize:13, fontWeight:700, color:d.color }}>🌙 {d.name}</span>
+                  <button onClick={()=>onRemoveDoc(date,d.id)} style={{ background:"#fff", border:`1px solid ${d.color}44`, color:"#dc2626", cursor:"pointer", fontSize:12, borderRadius:6, padding:"2px 7px" }}>✕</button>
+                </div>
+                <div style={{ padding:"8px 10px" }}>
+                  {needs.length===0 ? (
+                    <div style={{ fontSize:10, color:"#15803d", background:"#f0fdf4", borderRadius:6, padding:"4px 8px" }}>✅ لا يحتاج تغطية (لا عيادة)</div>
+                  ) : needs.map(({key,label,covDate,covDi}) => {
+                    const assigned = (covs[key]||[]).map(id=>fd(id)).filter(Boolean);
+                    const avail = getAvailable(doctors, nightDocs, covDi, covDate, key==="pm"?"pm":"am", leaves, nightData, { [key]: covs[key]||[] }, coverages);
+                    const freeDocs = avail.filter(x=>x.status==="free");
+                    const warnDocs = avail.filter(x=>x.status==="warn");
+                    return (
+                      <div key={key} style={{ marginBottom:7 }}>
+                        <div style={{ fontSize:10, fontWeight:700, color:"#64748b", marginBottom:3 }}>{label} — تحتاج تغطية</div>
+                        {assigned.map(cd=>(
+                          <div key={cd.id} style={{ display:"flex", alignItems:"center", gap:5, background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:6, padding:"3px 7px", marginBottom:3 }}>
+                            <span style={{ flex:1, fontSize:11, color:"#15803d", fontWeight:600 }}>✓ يغطّيها {cd.name}</span>
+                            <button onClick={()=>onRemoveCov(date,key,cd.id)} style={{ background:"none", border:"none", color:"#94a3b8", cursor:"pointer", fontSize:11 }}>✕</button>
+                          </div>
+                        ))}
+                        <select style={{ ...SEL, fontSize:11, padding:"6px 7px" }} value="" onChange={e=>{ if(e.target.value) onAddCov(date,key,+e.target.value); }}>
+                          <option value="">➕ تثبيت طبيب متاح ({freeDocs.length})</option>
+                          {freeDocs.length>0 && <optgroup label="✅ متاح (فارغ)">{freeDocs.map(({doc:fdoc})=><option key={fdoc.id} value={fdoc.id}>{fdoc.name}</option>)}</optgroup>}
+                          {warnDocs.length>0 && <optgroup label="⚠️ لديه التزام">{warnDocs.map(({doc:fdoc})=><option key={fdoc.id} value={fdoc.id}>⚠️ {fdoc.name}</option>)}</optgroup>}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Add night doctor */}
+          {nightDocs.length<3 && (
+            <select style={{ ...SEL, marginBottom:8 }} value="" onChange={e=>{ if(e.target.value) onAddDoc(date,+e.target.value); }}>
+              <option value="">➕ إضافة طبيب للدوام المسائي...</option>
+              {doctors.filter(d=>!nightDocs.includes(d.id)).map(d=>{
+                const ol = onLeave(d,date,leaves);
+                return <option key={d.id} value={d.id} disabled={ol}>{ol?`🚫 ${d.name} (إجازة)`:d.name}{(d.nightDays||[]).includes(di)?" (ثابت)":""}</option>;
+              })}
+            </select>
+          )}
+
+          {/* Individual coverages on this day */}
+          {indiv.length>0 && (
+            <div style={{ marginTop:4, paddingTop:8, borderTop:"1px dashed #e2e8f0" }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"#ea580c", marginBottom:4 }}>🔄 تغطيات فردية (من صفحة التغطيات)</div>
+              {indiv.map(c=>{const cd=fd(c.coverDoctorId);return cd&&(
+                <div key={c.id} style={{ fontSize:10, color:"#ea580c", background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:5, padding:"3px 8px", marginBottom:3 }}>{cd.name} — {c.period==="am"?"صباحاً":"ظهراً"}</div>
+              );})}
+            </div>
+          )}
+
+          {/* Footer actions */}
+          {nightDocs.length>0 && (
+            <div style={{ marginTop:6, display:"flex", justifyContent:"flex-end" }}>
+              {confirmReset ? (
+                <span style={{ display:"inline-flex", gap:6, alignItems:"center" }}>
+                  <span style={{ fontSize:11, color:"#dc2626", fontWeight:700 }}>مسح اليوم؟</span>
+                  <button onClick={()=>{ onResetDay(date); setConfirmReset(false); }} style={{ ...Btn.danger, background:"#dc2626", color:"#fff", border:"none" }}>نعم</button>
+                  <button onClick={()=>setConfirmReset(false)} style={Btn.secondary}>لا</button>
+                </span>
+              ) : (
+                <button onClick={()=>setConfirmReset(true)} style={{ ...Btn.danger }}>🔁 إعادة تعيين اليوم</button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
