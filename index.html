@@ -9,9 +9,11 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: 'Segoe UI', Tahoma, sans-serif; }
+  body { margin: 0; font-family: 'Segoe UI', Tahoma, sans-serif; background:#eef1f6; }
   #root { min-height: 100vh; }
   .loading { display:flex; align-items:center; justify-content:center; height:100vh; font-family:Tahoma; color:#64748b; direction:rtl; }
+  ::-webkit-scrollbar { width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:4px; }
 </style>
 </head>
 <body>
@@ -225,13 +227,66 @@ const S = {
 // ══════════════════════════════════════════════════════
 // APP
 // ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════
+// LOGIN GATE
+// ══════════════════════════════════════════════════════
+const PIN_CODE = "1133";
+function LoginGate({ onSuccess }) {
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState(false);
+
+  const submit = (val) => {
+    if (val === PIN_CODE) { onSuccess(); }
+    else { setError(true); setPin(""); setTimeout(()=>setError(false), 1500); }
+  };
+
+  const press = (n) => {
+    const next = (pin + n).slice(0,4);
+    setPin(next);
+    if (next.length === 4) setTimeout(()=>submit(next), 150);
+  };
+
+  return (
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"linear-gradient(135deg,#0f172a,#1e1b4b,#312e81)", direction:"rtl", fontFamily:"'Segoe UI',Tahoma,sans-serif" }}>
+      <div style={{ background:"#fff", borderRadius:20, padding:"32px 28px", width:320, boxShadow:"0 20px 60px rgba(0,0,0,.3)", textAlign:"center" }}>
+        <div style={{ fontSize:44, marginBottom:8 }}>⚕</div>
+        <div style={{ fontWeight:800, fontSize:18, color:"#1e293b" }}>نظام الدوام المسائي</div>
+        <div style={{ fontSize:12, color:"#94a3b8", marginBottom:20 }}>مركز دمام الطبي</div>
+
+        {/* PIN dots */}
+        <div style={{ display:"flex", justifyContent:"center", gap:12, marginBottom:8 }}>
+          {[0,1,2,3].map(i => (
+            <div key={i} style={{ width:16, height:16, borderRadius:"50%", border:`2px solid ${error?"#dc2626":"#6366f1"}`, background: i<pin.length ? (error?"#dc2626":"#6366f1") : "transparent", transition:"all .15s" }} />
+          ))}
+        </div>
+        <div style={{ height:18, fontSize:12, color:"#dc2626", fontWeight:700, marginBottom:8 }}>{error ? "رقم سري خاطئ" : ""}</div>
+
+        {/* Keypad */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10 }}>
+          {[1,2,3,4,5,6,7,8,9].map(n => (
+            <button key={n} onClick={()=>press(String(n))} style={keyBtn}>{n}</button>
+          ))}
+          <button onClick={()=>setPin("")} style={{ ...keyBtn, fontSize:14, color:"#94a3b8" }}>مسح</button>
+          <button onClick={()=>press("0")} style={keyBtn}>0</button>
+          <button onClick={()=>setPin(p=>p.slice(0,-1))} style={{ ...keyBtn, fontSize:18, color:"#94a3b8" }}>⌫</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+const keyBtn = { padding:"16px 0", fontSize:22, fontWeight:700, color:"#1e293b", background:"#f1f5f9", border:"none", borderRadius:12, cursor:"pointer", transition:"all .1s" };
+
+// ══════════════════════════════════════════════════════
+// APP
+// ══════════════════════════════════════════════════════
 function App() {
+  const [authed, setAuthed] = useState(() => S.get("fin_auth") === true);
   const [doctors,   setDoctors]   = useState(() => S.get("fin_docs")   || INIT_DOCTORS);
   const [leaves,    setLeaves]    = useState(() => S.get("fin_leaves")  || []);
   const [nightData, setNightData] = useState(() => S.get("fin_night")   || {});
   const [absences,  setAbsences]  = useState(() => S.get("fin_abs")     || []);
   const [coverages, setCoverages] = useState(() => S.get("fin_cov")     || []);
-  const [page,      setPage]      = useState("monthly");
+  const [page,      setPage]      = useState("dashboard");
   const [toast,     setToast]     = useState(null);
   const today = new Date().toISOString().split("T")[0];
 
@@ -350,52 +405,76 @@ function App() {
   }, [nightData, doctors]);
 
   const TABS = [
+    { id:"dashboard",icon:"📊", label:"لوحة التحكم" },
     { id:"monthly",  icon:"🌙", label:"الدوام المسائي" },
     { id:"coverage", icon:"🔄", label:"التغطيات الفردية" },
     { id:"doctors",  icon:"👨‍⚕️", label:"الأطباء" },
     { id:"leaves",   icon:"🏖", label:"الإجازات" },
-    { id:"stats",    icon:"📊", label:"الإحصائيات" },
+    { id:"stats",    icon:"📈", label:"الإحصائيات" },
   ];
 
+  if (!authed) return <LoginGate onSuccess={() => { setAuthed(true); S.set("fin_auth", true); }} />;
+
   return (
-    <div style={{ display:"flex", minHeight:"100vh", background:"#f8fafc", direction:"rtl", fontFamily:"'Segoe UI',Tahoma,sans-serif", fontSize:14 }}>
+    <div style={{ display:"flex", minHeight:"100vh", background:"#eef1f6", direction:"rtl", fontFamily:"'Segoe UI',Tahoma,sans-serif", fontSize:14 }}>
       {/* SIDEBAR */}
-      <aside style={{ width:190, background:"linear-gradient(180deg,#0f172a,#1e1b4b)", display:"flex", flexDirection:"column", flexShrink:0 }}>
-        <div style={{ padding:"20px 16px", borderBottom:"1px solid rgba(255,255,255,.08)" }}>
-          <div style={{ fontSize:32, marginBottom:6 }}>⚕</div>
-          <div style={{ color:"#fff", fontWeight:800, fontSize:14 }}>الجداول الطبية</div>
-          <div style={{ color:"#818cf8", fontSize:11 }}>مركز دمام الطبي</div>
+      <aside style={{ width:210, background:"#fff", display:"flex", flexDirection:"column", flexShrink:0, boxShadow:"2px 0 12px rgba(0,0,0,.04)", zIndex:2 }}>
+        <div style={{ padding:"22px 18px 16px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ width:38, height:38, borderRadius:11, background:"linear-gradient(135deg,#9333ea,#ec4899)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, color:"#fff", boxShadow:"0 4px 12px rgba(147,51,234,.4)" }}>⚕</div>
+            <div>
+              <div style={{ color:"#1e293b", fontWeight:800, fontSize:14 }}>الجداول الطبية</div>
+              <div style={{ color:"#94a3b8", fontSize:10 }}>مركز دمام الطبي</div>
+            </div>
+          </div>
         </div>
-        <nav style={{ padding:10, flex:1 }}>
-          {TABS.map(t => (
-            <button key={t.id} onClick={() => setPage(t.id)}
-              style={{ display:"flex", alignItems:"center", gap:8, width:"100%", padding:"10px 12px", borderRadius:8, border:"none", cursor:"pointer", fontSize:13, fontWeight:500, marginBottom:3, transition:"all .15s", position:"relative",
-                background: page===t.id ? "rgba(99,102,241,.25)" : "transparent",
-                color: page===t.id ? "#a5b4fc" : "rgba(255,255,255,.6)",
-              }}>
-              {t.icon} {t.label}
-              {t.id==="monthly" && pendingCount>0 && (
-                <span style={{ position:"absolute", left:10, background:"#ef4444", color:"#fff", borderRadius:10, padding:"1px 6px", fontSize:10, fontWeight:700 }}>{pendingCount}</span>
-              )}
-            </button>
-          ))}
+        <div style={{ height:1, background:"#f1f5f9", margin:"0 16px 10px" }} />
+        <nav style={{ padding:"0 12px", flex:1 }}>
+          {TABS.map(t => {
+            const active = page===t.id;
+            return (
+              <button key={t.id} onClick={() => setPage(t.id)}
+                style={{ display:"flex", alignItems:"center", gap:10, width:"100%", padding:"11px 14px", borderRadius:10, border:"none", cursor:"pointer", fontSize:13, fontWeight:active?700:500, marginBottom:4, transition:"all .15s", position:"relative",
+                  background: active ? "linear-gradient(135deg,#9333ea,#ec4899)" : "transparent",
+                  color: active ? "#fff" : "#64748b",
+                  boxShadow: active ? "0 4px 12px rgba(147,51,234,.35)" : "none",
+                }}>
+                <span style={{ width:26, height:26, borderRadius:7, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, background: active?"rgba(255,255,255,.2)":"#f1f5f9" }}>{t.icon}</span>
+                {t.label}
+                {t.id==="monthly" && pendingCount>0 && (
+                  <span style={{ position:"absolute", left:10, background:"#ef4444", color:"#fff", borderRadius:10, padding:"1px 7px", fontSize:10, fontWeight:700 }}>{pendingCount}</span>
+                )}
+              </button>
+            );
+          })}
         </nav>
-        <div style={{ padding:12, borderTop:"1px solid rgba(255,255,255,.08)" }}>
-          <div style={{ color:"rgba(255,255,255,.4)", fontSize:10, marginBottom:6 }}>اليوم: {today}</div>
+        <div style={{ padding:14, margin:12, borderRadius:12, background:"linear-gradient(135deg,#f5f3ff,#fae8ff)" }}>
+          <div style={{ color:"#94a3b8", fontSize:10, marginBottom:8 }}>📅 {today}</div>
           <button onClick={() => { save(); showToast("✅ تم الحفظ"); }}
-            style={{ width:"100%", padding:"7px", background:"rgba(99,102,241,.2)", border:"1px solid rgba(99,102,241,.3)", borderRadius:7, color:"#a5b4fc", cursor:"pointer", fontSize:11, fontWeight:700 }}>
+            style={{ width:"100%", padding:"8px", background:"linear-gradient(135deg,#9333ea,#ec4899)", border:"none", borderRadius:8, color:"#fff", cursor:"pointer", fontSize:11, fontWeight:700, boxShadow:"0 3px 10px rgba(147,51,234,.3)" }}>
             💾 حفظ الكل
+          </button>
+          <button onClick={() => { S.set("fin_auth", false); setAuthed(false); }}
+            style={{ width:"100%", padding:"6px", marginTop:6, background:"transparent", border:"1px solid #e9d5ff", borderRadius:8, color:"#a855f7", cursor:"pointer", fontSize:10, fontWeight:600 }}>
+            🔒 قفل
           </button>
         </div>
       </aside>
 
       {/* MAIN */}
       <main style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
-        <div style={{ background:"#fff", borderBottom:"1px solid #e2e8f0", padding:"14px 22px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <div style={{ fontWeight:800, fontSize:17 }}>{TABS.find(t=>t.id===page)?.icon} {TABS.find(t=>t.id===page)?.label}</div>
-          <div style={{ fontSize:11, color:"#94a3b8" }}>{MONTHS[new Date().getMonth()]} {new Date().getFullYear()}</div>
+        <div style={{ background:"#fff", padding:"16px 24px", display:"flex", justifyContent:"space-between", alignItems:"center", boxShadow:"0 1px 8px rgba(0,0,0,.03)" }}>
+          <div>
+            <div style={{ fontWeight:800, fontSize:18, color:"#1e293b" }}>{TABS.find(t=>t.id===page)?.label}</div>
+            <div style={{ fontSize:11, color:"#94a3b8" }}>الرئيسية / {TABS.find(t=>t.id===page)?.label}</div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{MONTHS[new Date().getMonth()]} {new Date().getFullYear()}</span>
+            <div style={{ width:36, height:36, borderRadius:10, background:"linear-gradient(135deg,#9333ea,#ec4899)", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontWeight:700, fontSize:14 }}>د</div>
+          </div>
         </div>
-        <div style={{ flex:1, overflowY:"auto", padding:18 }}>
+        <div style={{ flex:1, overflowY:"auto", padding:22 }}>
+          {page==="dashboard" && <DashboardPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onGoto={setPage} />}
           {page==="monthly" && <MonthlyPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onAutoFill={(y,m) => { const next=autoFill(y,m,doctors,leaves,nightData); updateNight(next); showToast("✅ تم التوزيع التلقائي"); }} onAddDoc={addNightDoc} onRemoveDoc={removeNightDoc} onAddCov={addCoverage} onRemoveCov={removeCoverage} onClearMonth={clearMonth} onResetDay={resetDay} onCopyDay={copyDay} onSetNote={setDayNote} onEnsureDay={ensureDay} />}
           {page==="coverage" && <CoveragePage doctors={doctors} leaves={leaves} coverages={coverages} nightData={nightData} fd={fd} onAdd={addIndivCoverage} onRemove={removeIndivCoverage} showToast={showToast} />}
           {page==="doctors"  && <DoctorsPage doctors={doctors} leaves={leaves} today={today} fd={fd} onUpdateDocs={updateDocs} showToast={showToast} />}
@@ -409,6 +488,126 @@ function App() {
           {toast.msg}
         </div>
       )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════
+// DASHBOARD PAGE (Material-style)
+// ══════════════════════════════════════════════════════
+function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGoto }) {
+  const now = new Date();
+  const thisMonth = (ds) => { const [y,m]=ds.split("-"); return +y===now.getFullYear() && +m===now.getMonth()+1; };
+
+  // Stats
+  const monthNights = Object.entries(nightData).filter(([d,nd])=>thisMonth(d)&&(nd.doctors||[]).length);
+  const totalNightAssigns = monthNights.reduce((a,[,nd])=>a+(nd.doctors||[]).length,0);
+  const totalCovs = Object.entries(nightData).filter(([d])=>thisMonth(d)).reduce((a,[,nd])=>{const c=nd.coverages||{};return a+(c.am||[]).length+(c.pm||[]).length+(c.nextAm||[]).length;},0) + coverages.filter(c=>thisMonth(c.date)).length;
+  const activeLeaves = leaves.filter(l=>l.start<=today && today<=l.end).length;
+  let pending = 0;
+  Object.entries(nightData).forEach(([date,nd])=>{
+    if(!thisMonth(date)) return;
+    const di=dayIdx(date), nextDi=dayIdx(nextWork(date)), covs=nd.coverages||{};
+    (nd.doctors||[]).map(id=>fd(id)).filter(Boolean).forEach(d=>{
+      if(isClinic(getSlot(d,di,"am"))&&!(covs.am||[]).length)pending++;
+      if(isClinic(getSlot(d,di,"pm"))&&!(covs.pm||[]).length)pending++;
+      if(isClinic(getSlot(d,nextDi,"am"))&&!(covs.nextAm||[]).length)pending++;
+    });
+  });
+
+  const cards = [
+    { icon:"🌙", label:"الدوام المسائي (الشهر)", val:totalNightAssigns, grad:"linear-gradient(135deg,#9333ea,#c026d3)", page:"monthly" },
+    { icon:"🔄", label:"التغطيات (الشهر)", val:totalCovs, grad:"linear-gradient(135deg,#0891b2,#06b6d4)", page:"coverage" },
+    { icon:"⚠️", label:"تغطيات معلّقة", val:pending, grad:"linear-gradient(135deg,#e11d48,#f43f5e)", page:"monthly" },
+    { icon:"🏖", label:"إجازات حالية", val:activeLeaves, grad:"linear-gradient(135deg,#ea580c,#f59e0b)", page:"leaves" },
+  ];
+
+  // Per-day distribution chart (this month) — nights count per day-of-week
+  const byWeekday = [0,1,2,3,4].map(di => {
+    let count = 0;
+    Object.entries(nightData).forEach(([date,nd])=>{ if(thisMonth(date)&&dayIdx(date)===di) count+=(nd.doctors||[]).length; });
+    return count;
+  });
+  const maxWd = Math.max(...byWeekday, 1);
+
+  // Top loaded doctors (this month extra load)
+  const loads = doctors.map(doc=>{
+    const fixedDays = doc.nightDays||[];
+    let extra=0, covCount=0;
+    Object.entries(nightData).forEach(([date,nd])=>{
+      if(!thisMonth(date)) return;
+      if((nd.doctors||[]).includes(doc.id) && !fixedDays.includes(dayIdx(date))) extra++;
+      const c=nd.coverages||{};
+      covCount += ((c.am||[]).includes(doc.id)?1:0)+((c.pm||[]).includes(doc.id)?1:0)+((c.nextAm||[]).includes(doc.id)?1:0);
+    });
+    covCount += coverages.filter(c=>c.coverDoctorId===doc.id && thisMonth(c.date)).length;
+    return { doc, load: extra+covCount };
+  }).filter(x=>x.load>0).sort((a,b)=>b.load-a.load).slice(0,6);
+  const maxLoad = Math.max(...loads.map(l=>l.load), 1);
+
+  return (
+    <div>
+      {/* Stat cards */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:16, marginBottom:20 }}>
+        {cards.map(c => (
+          <div key={c.label} onClick={()=>onGoto(c.page)} style={{ background:"#fff", borderRadius:16, padding:"18px", cursor:"pointer", boxShadow:"0 2px 12px rgba(0,0,0,.05)", position:"relative", overflow:"hidden", transition:"transform .15s" }}>
+            <div style={{ position:"absolute", top:-12, left:16, width:52, height:52, borderRadius:14, background:c.grad, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, boxShadow:"0 6px 16px rgba(0,0,0,.18)" }}>{c.icon}</div>
+            <div style={{ textAlign:"left", paddingTop:6 }}>
+              <div style={{ fontSize:11, color:"#94a3b8", fontWeight:600, marginBottom:2 }}>{c.label}</div>
+              <div style={{ fontSize:30, fontWeight:800, color:"#1e293b" }}>{c.val}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Charts row */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 }}>
+        {/* Bar chart: nights per weekday */}
+        <div style={{ background:"#fff", borderRadius:16, padding:18, boxShadow:"0 2px 12px rgba(0,0,0,.05)" }}>
+          <div style={{ fontWeight:700, fontSize:14, marginBottom:4 }}>🌙 توزيع الدوام المسائي</div>
+          <div style={{ fontSize:11, color:"#94a3b8", marginBottom:16 }}>عدد المناوبات حسب اليوم (هذا الشهر)</div>
+          <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-around", height:140, gap:8 }}>
+            {byWeekday.map((v,di)=>(
+              <div key={di} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:6 }}>
+                <div style={{ fontSize:11, fontWeight:700, color:"#9333ea" }}>{v}</div>
+                <div style={{ width:"100%", maxWidth:40, height:`${(v/maxWd)*100}%`, minHeight:4, background:"linear-gradient(180deg,#c026d3,#9333ea)", borderRadius:"6px 6px 0 0", transition:"height .3s" }} />
+                <div style={{ fontSize:10, color:"#64748b", fontWeight:600 }}>{DAYS[di].slice(0,3)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Top loaded doctors */}
+        <div style={{ background:"#fff", borderRadius:16, padding:18, boxShadow:"0 2px 12px rgba(0,0,0,.05)" }}>
+          <div style={{ fontWeight:700, fontSize:14, marginBottom:4 }}>📈 أكثر الأطباء عبئاً</div>
+          <div style={{ fontSize:11, color:"#94a3b8", marginBottom:16 }}>العبء الإضافي (هذا الشهر)</div>
+          {loads.length===0 ? <div style={{ fontSize:12, color:"#cbd5e1", textAlign:"center", padding:"30px 0" }}>لا يوجد عبء إضافي بعد</div> :
+            loads.map(({doc,load})=>(
+              <div key={doc.id} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:9 }}>
+                <span style={{ fontSize:11, fontWeight:600, minWidth:80, color:"#475569", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{sn(doc.name)}</span>
+                <div style={{ flex:1, height:10, background:"#f1f5f9", borderRadius:6, overflow:"hidden" }}>
+                  <div style={{ height:"100%", width:`${(load/maxLoad)*100}%`, background:`linear-gradient(90deg,${doc.color},${doc.color}aa)`, borderRadius:6 }} />
+                </div>
+                <span style={{ fontSize:12, fontWeight:800, color:doc.color, minWidth:18, textAlign:"center" }}>{load}</span>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+
+      {/* Quick actions */}
+      <div style={{ background:"#fff", borderRadius:16, padding:18, boxShadow:"0 2px 12px rgba(0,0,0,.05)" }}>
+        <div style={{ fontWeight:700, fontSize:14, marginBottom:12 }}>⚡ إجراءات سريعة</div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:10 }}>
+          {[{l:"🌙 الدوام المسائي",p:"monthly",g:"linear-gradient(135deg,#9333ea,#ec4899)"},
+            {l:"🔄 تغطية فردية",p:"coverage",g:"linear-gradient(135deg,#0891b2,#06b6d4)"},
+            {l:"👨‍⚕️ الأطباء",p:"doctors",g:"linear-gradient(135deg,#16a34a,#22c55e)"},
+            {l:"📈 الإحصائيات",p:"stats",g:"linear-gradient(135deg,#ea580c,#f59e0b)"},
+          ].map(b=>(
+            <button key={b.p} onClick={()=>onGoto(b.p)} style={{ padding:"14px", borderRadius:12, border:"none", cursor:"pointer", color:"#fff", fontWeight:700, fontSize:13, background:b.g, boxShadow:"0 4px 12px rgba(0,0,0,.12)" }}>{b.l}</button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -497,7 +696,7 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
     }).join("");
 
     const eveTable = eveRows
-      ? `<table><thead><tr><th>التاريخ</th><th>اليوم</th><th>المناوب المسائي</th><th>التغطيات المطلوبة</th></tr></thead><tbody>${eveRows}</tbody></table>`
+      ? `<table><thead><tr><th>التاريخ</th><th>اليوم</th><th>الدوام المسائي</th><th>التغطيات المطلوبة</th></tr></thead><tbody>${eveRows}</tbody></table>`
       : `<p style="text-align:center;color:#94a3b8">لا يوجد دوام مسائي مسجّل</p>`;
     const covTable = covRows
       ? `<table><thead><tr><th>التاريخ الفعلي</th><th>الطبيب المُغطّي</th><th>الفترة</th><th>العيادة المُغطّاة</th></tr></thead><tbody>${covRows}</tbody></table>`
@@ -526,6 +725,57 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
     ${covTable}
     </body></html>`;
     // Show in-app preview with print button (window.open is blocked in artifact sandbox)
+    setPreviewHtml(html);
+  };
+
+  // Print as BOXES — each day a card with date, names, coverages
+  const printBoxes = () => {
+    const dmy = (ds) => `${ds.split("-")[2]}/${+ds.split("-")[1]}`;
+    const boxes = calDays.filter(({date}) => (nightData[date]?.doctors||[]).length || coverages.some(c=>c.date===date))
+      .map(({ date, di }) => {
+        const nd = nightData[date] || {};
+        const covs = nd.coverages || {};
+        const docs = (nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
+        const ownerName = docs.map(d=>d.name).join("، ");
+        const lines = [];
+        (covs.am||[]).forEach(id=>{ const cd=fd(id); if(cd) lines.push(`☀️ صباحاً: يغطّيها ${cd.name}`); });
+        (covs.pm||[]).forEach(id=>{ const cd=fd(id); if(cd) lines.push(`🌅 ظهراً: يغطّيها ${cd.name}`); });
+        (covs.nextAm||[]).forEach(id=>{ const cd=fd(id); if(cd) lines.push(`🌄 الغد صباحاً: يغطّيها ${cd.name}`); });
+        const indivItems = coverages.filter(c=>c.date===date).map(c=>{ const cd=fd(c.coverDoctorId); return cd?`🔄 ${cd.name} (${c.period==="am"?"صباحاً":"ظهراً"})`:""; }).filter(Boolean);
+        return `<div class="box">
+          <div class="box-head"><span class="box-date">${dmy(date)}</span><span class="box-day">${DAYS[di]}</span></div>
+          <div class="box-docs">${docs.length ? docs.map(d=>`<span class="doc" style="background:${d.color}22;color:${d.color};border-color:${d.color}55">🌙 ${d.name}</span>`).join("") : '<span class="empty">لا دوام مسائي</span>'}</div>
+          ${lines.length ? `<div class="box-cov"><div class="cov-title">العيادة: ${ownerName}</div>${lines.map(l=>`<div class="cov-line">${l}</div>`).join("")}</div>` : ""}
+          ${indivItems.length ? `<div class="box-indiv">${indivItems.map(l=>`<div class="cov-line">${l}</div>`).join("")}</div>` : ""}
+        </div>`;
+      }).join("");
+
+    const html = `<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><title>مربعات ${MONTHS[month.m]} ${month.y}</title>
+    <style>
+      body{font-family:Tahoma,sans-serif;padding:20px;direction:rtl;color:#1e293b;background:#fff}
+      h1{text-align:center;font-size:20px;margin-bottom:2px}
+      .sub{text-align:center;color:#64748b;font-size:13px;margin-bottom:18px}
+      .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+      .box{border:1.5px solid #c7d2fe;border-radius:12px;overflow:hidden;page-break-inside:avoid}
+      .box-head{background:linear-gradient(135deg,#4338ca,#6366f1);color:#fff;padding:8px 12px;display:flex;justify-content:space-between;align-items:center}
+      .box-date{font-size:18px;font-weight:800}
+      .box-day{font-size:13px;font-weight:700}
+      .box-docs{padding:10px 12px;display:flex;flex-wrap:wrap;gap:5px}
+      .doc{border:1px solid;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700}
+      .empty{color:#94a3b8;font-size:12px}
+      .box-cov{padding:0 12px 10px}
+      .cov-title{font-size:11px;font-weight:700;color:#475569;margin-bottom:4px;border-top:1px dashed #e2e8f0;padding-top:6px}
+      .cov-line{font-size:11px;color:#15803d;margin-bottom:2px}
+      .box-indiv{padding:0 12px 10px}
+      .box-indiv .cov-line{color:#ea580c}
+      .btn{position:fixed;top:12px;left:12px;background:#2563eb;color:#fff;border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700}
+      @media print{.btn{display:none}body{padding:8px}}
+    </style></head><body>
+    <button class="btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+    <h1>جدول الدوام المسائي — مربعات</h1>
+    <div class="sub">مركز دمام الطبي — ${MONTHS[month.m]} ${month.y}</div>
+    <div class="grid">${boxes || '<p style="color:#94a3b8">لا توجد بيانات</p>'}</div>
+    </body></html>`;
     setPreviewHtml(html);
   };
 
@@ -581,7 +831,8 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
           <button onClick={()=>setMonth(p=>p.m===11?{y:p.y+1,m:0}:{y:p.y,m:p.m+1})} style={Btn.nav}>←</button>
           <div style={{ flex:1 }} />
           <button onClick={()=>onAutoFill(month.y,month.m)} style={{ ...Btn.primary, background:"linear-gradient(135deg,#7c3aed,#4338ca)" }}>⚡ توزيع تلقائي</button>
-          <button onClick={printPDF} style={{ ...Btn.nav, color:"#15803d", borderColor:"#bbf7d0" }}>🖨️ نشر / PDF</button>
+          <button onClick={printPDF} style={{ ...Btn.nav, color:"#15803d", borderColor:"#bbf7d0" }}>🖨️ جدول</button>
+          <button onClick={printBoxes} style={{ ...Btn.nav, color:"#7c3aed", borderColor:"#ddd6fe" }}>🔲 مربعات</button>
           {confirmClear ? (
             <span style={{ display:"inline-flex", gap:4, alignItems:"center" }}>
               <span style={{ fontSize:11, color:"#dc2626", fontWeight:700 }}>متأكد؟</span>
@@ -660,7 +911,7 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
               ✨ لا توجد أيام بعد — اضغط <strong>⚡ توزيع تلقائي</strong> أو اختر تاريخاً لإضافة دوام مسائي
             </div>
           ) : (
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))", gap:12 }}>
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               {filledDays.map(({ date, di, day }) => (
                 <DayCard key={date} date={date} di={di} day={day}
                   nd={nightData[date]||{}} indiv={coverages.filter(c=>c.date===date)}
@@ -729,36 +980,36 @@ function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverag
   const done = pending===0 && nightDocs.length>0;
 
   return (
-    <div style={{ background:"#fff", borderRadius:16, overflow:"hidden", boxShadow: expanded?"0 8px 28px rgba(79,70,229,.18)":"0 2px 8px rgba(0,0,0,.06)", border: expanded?"2px solid #6366f1":"1px solid #eef2f7", transition:"all .2s", transform: expanded?"translateY(-2px)":"none" }}>
-      {/* Header with gradient */}
-      <div onClick={onToggle} style={{ background:grad, padding:"12px 14px", cursor:"pointer", color:"#fff", position:"relative" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <div style={{ background:"rgba(255,255,255,.25)", borderRadius:10, width:42, height:42, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", backdropFilter:"blur(4px)" }}>
-            <span style={{ fontSize:16, fontWeight:800, lineHeight:1 }}>{day}</span>
-          </div>
-          <div style={{ flex:1 }}>
-            <div style={{ fontWeight:800, fontSize:15 }}>{DAYS[di]}</div>
-            <div style={{ fontSize:11, opacity:.9 }}>{date}</div>
-          </div>
-          {done && <span style={{ background:"rgba(255,255,255,.25)", borderRadius:20, padding:"3px 10px", fontSize:10, fontWeight:700 }}>✅ مكتمل</span>}
-          {pending>0 && <span style={{ background:"rgba(239,68,68,.9)", borderRadius:20, padding:"3px 10px", fontSize:10, fontWeight:700 }}>⚠️ {pending}</span>}
-          <span style={{ fontSize:13, opacity:.85 }}>{expanded?"▲":"▼"}</span>
+    <div style={{ background:"#fff", borderRadius:10, overflow:"hidden", boxShadow: expanded?"0 6px 20px rgba(79,70,229,.15)":"0 1px 3px rgba(0,0,0,.05)", border: expanded?"2px solid #6366f1":"1px solid #eef2f7", transition:"all .15s" }}>
+      {/* Thin compact header row */}
+      <div onClick={onToggle} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", cursor:"pointer", borderRight:`5px solid transparent`, borderImage:`${grad} 1` }}>
+        {/* Day badge */}
+        <div style={{ background:grad, color:"#fff", borderRadius:8, minWidth:38, height:38, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+          <span style={{ fontSize:15, fontWeight:800, lineHeight:1 }}>{day}</span>
+          <span style={{ fontSize:8, opacity:.9 }}>{DAYS[di].slice(0,3)}</span>
         </div>
-        {/* Quick chips preview when collapsed */}
-        {!expanded && (
-          <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginTop:8 }}>
-            {nightDocs.map(id=>fd(id)).filter(Boolean).map(d=>(
-              <span key={d.id} style={{ background:"rgba(255,255,255,.22)", borderRadius:6, padding:"2px 8px", fontSize:10, fontWeight:700 }}>🌙 {sn(d.name)}</span>
-            ))}
-            {nightDocs.length===0 && <span style={{ fontSize:10, opacity:.8 }}>لا مناوب</span>}
-            {indiv.map(c=>{const cd=fd(c.coverDoctorId);return cd&&<span key={c.id} style={{ background:"rgba(255,255,255,.22)", borderRadius:6, padding:"2px 8px", fontSize:10 }}>🔄 {sn(cd.name)}</span>;})}
-          </div>
-        )}
+        {/* Day name + date */}
+        <div style={{ flexShrink:0, minWidth:70 }}>
+          <div style={{ fontWeight:700, fontSize:13, color:"#1e293b" }}>{DAYS[di]}</div>
+          <div style={{ fontSize:10, color:"#94a3b8" }}>{date}</div>
+        </div>
+        {/* Inline chips (collapsed preview) */}
+        <div style={{ flex:1, display:"flex", flexWrap:"wrap", gap:4, alignItems:"center", minWidth:0 }}>
+          {nightDocs.map(id=>fd(id)).filter(Boolean).map(d=>(
+            <span key={d.id} style={{ background:d.color+"18", color:d.color, border:`1px solid ${d.color}44`, borderRadius:5, padding:"2px 8px", fontSize:10, fontWeight:700 }}>🌙 {sn(d.name)}</span>
+          ))}
+          {nightDocs.length===0 && <span style={{ fontSize:10, color:"#cbd5e1" }}>— لا دوام</span>}
+          {indiv.map(c=>{const cd=fd(c.coverDoctorId);return cd&&<span key={c.id} style={{ background:"#fff7ed", color:"#ea580c", border:"1px solid #fed7aa", borderRadius:5, padding:"2px 8px", fontSize:10 }}>🔄 {sn(cd.name)}</span>;})}
+        </div>
+        {/* Status + chevron */}
+        {done && <span style={{ background:"#f0fdf4", color:"#15803d", borderRadius:14, padding:"2px 9px", fontSize:10, fontWeight:700, flexShrink:0 }}>✅</span>}
+        {pending>0 && <span style={{ background:"#fef2f2", color:"#dc2626", borderRadius:14, padding:"2px 9px", fontSize:10, fontWeight:700, flexShrink:0 }}>⚠️ {pending}</span>}
+        <span style={{ fontSize:12, color:"#94a3b8", flexShrink:0 }}>{expanded?"▲":"▼"}</span>
       </div>
 
       {/* Expanded body - inline editing */}
       {expanded && (
-        <div style={{ padding:"12px 14px" }}>
+        <div style={{ padding:"12px 14px", borderTop:"1px solid #f1f5f9" }}>
           {/* Night doctors with their coverage needs */}
           {nightDocs.map(id=>fd(id)).filter(Boolean).map(d => {
             const needs = docNeeds(d);
@@ -771,7 +1022,7 @@ function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverag
                 </div>
                 <div style={{ padding:"8px 10px" }}>
                   {needs.length===0 ? (
-                    <div style={{ fontSize:10, color:"#15803d", background:"#f0fdf4", borderRadius:6, padding:"4px 8px" }}>✅ لا يحتاج تغطية (لا عيادة)</div>
+                    <div style={{ fontSize:10, color:"#15803d", background:"#f0fdf4", borderRadius:6, padding:"4px 8px" }}>✅ لا يحتاج تغطية — لا توجد عيادة في جدوله هذا اليوم</div>
                   ) : needs.map(({key,label,covDate,covDi}) => {
                     const assigned = (covs[key]||[]).map(id=>fd(id)).filter(Boolean);
                     const avail = getAvailable(doctors, nightDocs, covDi, covDate, key==="pm"?"pm":"am", leaves, nightData, { [key]: covs[key]||[] }, coverages);
@@ -1112,9 +1363,24 @@ function CoveragePage({ doctors, leaves, coverages, nightData, fd, onAdd, onRemo
     return getAvailable(doctors, form.absentId?[+form.absentId]:[], di, form.date, form.period, leaves, nightData, {}, coverages);
   }, [form.date, form.period, form.absentId, doctors, leaves, nightData]);
 
+  // Check if the absent doctor actually has a clinic in the selected period
+  const absentHasClinic = useMemo(() => {
+    if (!form.absentId || !form.date) return null; // null = not applicable yet
+    const di = dayIdx(form.date);
+    if (di < 0) return null;
+    const ad = doctors.find(d=>d.id===+form.absentId);
+    if (!ad) return null;
+    return isClinic(getSlot(ad, di, form.period));
+  }, [form.absentId, form.date, form.period, doctors]);
+
   const submit = () => {
     if (!form.date || !form.coverDoctorId) { showToast("أكمل البيانات", "warn"); return; }
     if (dayIdx(form.date) < 0) { showToast("اختر يوم عمل (أحد-خميس)", "warn"); return; }
+    // Block coverage if the absent doctor has NO clinic in that period
+    if (form.absentId && absentHasClinic === false) {
+      showToast("الطبيب الغائب ليس لديه عيادة في هذه الفترة — لا تحتاج تغطية", "warn");
+      return;
+    }
     onAdd({
       date: form.date,
       period: form.period,
@@ -1186,8 +1452,20 @@ function CoveragePage({ doctors, leaves, coverages, nightData, fd, onAdd, onRemo
             </select>
           </div>
 
+          {/* Warning: absent doctor has no clinic in this period */}
+          {form.absentId && absentHasClinic === false && (
+            <div style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, padding:"8px 12px", marginBottom:12, fontSize:12, color:"#dc2626", fontWeight:600 }}>
+              🚫 {fd(+form.absentId)?.name} ليس لديه عيادة في {PERIODS[form.period]} هذا اليوم — لا تحتاج تغطية
+            </div>
+          )}
+          {form.absentId && absentHasClinic === true && (
+            <div style={{ background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:8, padding:"8px 12px", marginBottom:12, fontSize:12, color:"#15803d", fontWeight:600 }}>
+              ✓ {fd(+form.absentId)?.name} لديه عيادة في {PERIODS[form.period]} — التغطية مطلوبة
+            </div>
+          )}
+
           <div style={{ display:"flex", gap:8 }}>
-            <button style={Btn.primary} onClick={submit}>حفظ</button>
+            <button style={{ ...Btn.primary, opacity:(form.absentId && absentHasClinic===false)?0.5:1 }} onClick={submit} disabled={form.absentId && absentHasClinic===false}>حفظ</button>
             <button style={Btn.secondary} onClick={()=>setShow(false)}>إلغاء</button>
           </div>
         </div>
@@ -1222,112 +1500,214 @@ function CoveragePage({ doctors, leaves, coverages, nightData, fd, onAdd, onRemo
 // STATS PAGE  (tasks count + avg comparison + color class)
 // ══════════════════════════════════════════════════════
 function StatsPage({ doctors, nightData, coverages, leaves }) {
-  const data = doctors.map(doc => {
+  const [selId, setSelId] = useState("");
+  const [period, setPeriod] = useState("month"); // week | month | year
+
+  // Compute per-doctor stats within a date filter
+  const inRange = (dateStr, range) => {
+    const d = new Date(dateStr);
+    const now = new Date();
+    if (range === "week") {
+      const weekAgo = new Date(now); weekAgo.setDate(now.getDate()-7);
+      return d >= weekAgo && d <= now;
+    }
+    if (range === "month") return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth();
+    if (range === "year") return d.getFullYear()===now.getFullYear();
+    return true;
+  };
+
+  const calcStats = (doc, range) => {
     const fixedDays = doc.nightDays || [];
-    // Night shifts: separate FIXED (official, weekday in nightDays) from EXTRA (not official)
     let fixedNights = 0, extraNights = 0;
     Object.entries(nightData).forEach(([date, nd]) => {
       if (!(nd.doctors||[]).includes(doc.id)) return;
+      if (range !== "all" && !inRange(date, range)) return;
       const di = dayIdx(date);
-      if (fixedDays.includes(di)) fixedNights++;
-      else extraNights++;
+      if (fixedDays.includes(di)) fixedNights++; else extraNights++;
     });
-    // Coverages within night data (per-doctor coverage) - always extra
-    const nightCovs = Object.values(nightData).reduce((a,nd)=>{
+    let nightCovs = 0;
+    Object.entries(nightData).forEach(([date,nd])=>{
+      if (range !== "all" && !inRange(date, range)) return;
       const c = nd.coverages||{};
-      return a + ((c.am||[]).includes(doc.id)?1:0) + ((c.pm||[]).includes(doc.id)?1:0) + ((c.nextAm||[]).includes(doc.id)?1:0);
-    }, 0);
-    // Individual coverages (absence/excuse) - always extra
-    const indivCovs = (coverages||[]).filter(c=>c.coverDoctorId===doc.id).length;
+      nightCovs += ((c.am||[]).includes(doc.id)?1:0)+((c.pm||[]).includes(doc.id)?1:0)+((c.nextAm||[]).includes(doc.id)?1:0);
+    });
+    const indivCovs = (coverages||[]).filter(c=>c.coverDoctorId===doc.id && (range==="all"||inRange(c.date,range))).length;
     const totalCovs = nightCovs + indivCovs;
-    const leaveDays = leaves.filter(l=>l.doctorId===doc.id).reduce((a,l)=>a+Math.round((new Date(l.end)-new Date(l.start))/86400000)+1, 0);
-    // Absence days = sick + emergency leaves only
-    const absenceDays = leaves.filter(l=>l.doctorId===doc.id && (l.type==="sick"||l.type==="emergency")).reduce((a,l)=>a+Math.round((new Date(l.end)-new Date(l.start))/86400000)+1, 0);
-    // EXTRA LOAD = extra nights (beyond fixed) + all coverages - absence days
+    const myLeaves = leaves.filter(l=>l.doctorId===doc.id && (range==="all"||inRange(l.start,range)));
+    const leaveDays = myLeaves.reduce((a,l)=>a+Math.round((new Date(l.end)-new Date(l.start))/86400000)+1, 0);
+    const absenceDays = myLeaves.filter(l=>l.type==="sick"||l.type==="emergency").reduce((a,l)=>a+Math.round((new Date(l.end)-new Date(l.start))/86400000)+1, 0);
     const tasks = Math.max(0, extraNights + totalCovs - absenceDays);
-    return { doc, nights:fixedNights+extraNights, fixedNights, extraNights, covs:totalCovs, leaveDays, absenceDays, tasks };
-  });
-
-  const totNights = data.reduce((a,x)=>a+x.nights,0);
-  const totCovs   = data.reduce((a,x)=>a+x.covs,0);
-  const totLeave  = data.reduce((a,x)=>a+x.leaveDays,0);
-  const totTasks  = data.reduce((a,x)=>a+x.tasks,0);
-  const avgTasks  = doctors.length ? totTasks/doctors.length : 0;
-
-  // Color classification: 0-1 light, 2-3 medium, 3+ high
-  const classify = (tasks) => {
-    if (tasks <= 1) return { label:"خفيف", color:"#15803d", bg:"#f0fdf4", border:"#bbf7d0" };
-    if (tasks <= 3) return { label:"متوسط", color:"#d97706", bg:"#fffbeb", border:"#fde68a" };
-    return { label:"مرتفع", color:"#dc2626", bg:"#fef2f2", border:"#fecaca" };
+    return { fixedNights, extraNights, nightCovs, indivCovs, totalCovs, leaveDays, absenceDays, tasks, myLeaves };
   };
 
-  // Sort by tasks descending
-  const sorted = [...data].sort((a,b)=>b.tasks-a.tasks);
+  const classify = (t) => t<=1 ? { label:"خفيف", color:"#15803d", bg:"#f0fdf4", border:"#bbf7d0" }
+    : t<=3 ? { label:"متوسط", color:"#d97706", bg:"#fffbeb", border:"#fde68a" }
+    : { label:"مرتفع", color:"#dc2626", bg:"#fef2f2", border:"#fecaca" };
+
+  // Overview totals (current month)
+  const overview = doctors.map(doc => ({ doc, s: calcStats(doc, "month") })).sort((a,b)=>b.s.tasks-a.s.tasks);
+  const totTasks = overview.reduce((a,x)=>a+x.s.tasks,0);
+  const avgTasks = doctors.length ? totTasks/doctors.length : 0;
+
+  const selDoc = doctors.find(d=>d.id===+selId);
+  const PERIODS = { week:"أسبوعي", month:"شهري", year:"سنوي" };
+  const SLOT_LABEL = { clinic:"عيادة", clinic_am:"عيادة", clinic_pm:"عيادة", admin:"إداري", training:"تدريب", audit:"تدقيق", virtual:"افتراضية", "":"—" };
+  const LEAVE_TYPES = { annual:"سنوية", sick:"مرضية", emergency:"طارئة", other:"أخرى" };
 
   return (
     <div>
-      {/* Summary */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:16 }}>
-        {[{icon:"🌙",label:"إجمالي الدوام المسائي",val:totNights,c:"#1d4ed8",b:"#bfdbfe"},
-          {icon:"🔄",label:"إجمالي التغطيات",val:totCovs,  c:"#15803d",b:"#bbf7d0"},
-          {icon:"🏖",label:"أيام الإجازات",  val:totLeave, c:"#d97706",b:"#fde68a"},
-          {icon:"📊",label:"متوسط المهام/طبيب",val:avgTasks.toFixed(1),c:"#7c3aed",b:"#ddd6fe"},
-        ].map(({icon,label,val,c,b})=>(
-          <div key={label} style={{ background:"#fff", border:`1px solid ${b}`, borderTop:`3px solid ${c}`, borderRadius:12, padding:14, textAlign:"center" }}>
-            <div style={{ fontSize:24 }}>{icon}</div>
-            <div style={{ fontSize:28, fontWeight:800, color:c }}>{val}</div>
-            <div style={{ fontSize:10, color:"#64748b" }}>{label}</div>
-          </div>
-        ))}
+      {/* Doctor selector */}
+      <div style={{ background:"linear-gradient(135deg,#1e1b4b,#4338ca)", borderRadius:14, padding:"16px 18px", marginBottom:16 }}>
+        <div style={{ color:"#c7d2fe", fontSize:12, fontWeight:700, marginBottom:8 }}>👨‍⚕️ اختر طبيباً لعرض تفاصيله الكاملة</div>
+        <select value={selId} onChange={e=>setSelId(e.target.value)} style={{ width:"100%", padding:"11px 12px", borderRadius:9, border:"none", fontSize:14, fontWeight:700, color:"#1e293b", cursor:"pointer", outline:"none" }}>
+          <option value="">— عرض النظرة العامة لكل الأطباء —</option>
+          {doctors.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
       </div>
 
-      {/* Legend for classification */}
-      <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap", fontSize:11 }}>
-        <span style={{ background:"#f0fdf4", color:"#15803d", border:"1px solid #bbf7d0", borderRadius:5, padding:"3px 10px" }}>🟢 خفيف (0-1 مهمة)</span>
-        <span style={{ background:"#fffbeb", color:"#d97706", border:"1px solid #fde68a", borderRadius:5, padding:"3px 10px" }}>🟡 متوسط (2-3 مهام)</span>
-        <span style={{ background:"#fef2f2", color:"#dc2626", border:"1px solid #fecaca", borderRadius:5, padding:"3px 10px" }}>🔴 مرتفع (أكثر من 3)</span>
-      </div>
-
-      {/* Per doctor */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(185px,1fr))", gap:8 }}>
-        {sorted.map(({doc,nights,fixedNights,extraNights,covs,leaveDays,absenceDays,tasks}) => {
-          const cls = classify(tasks);
-          const vsAvg = tasks - avgTasks;
-          return (
-            <div key={doc.id} style={{ background:"#fff", border:`1px solid ${cls.border}`, borderRadius:10, padding:12, borderRight:`4px solid ${doc.color}` }}>
-              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
-                <div style={{ ...AV, background:doc.color, width:28, height:28, fontSize:10 }}>{sn(doc.name).slice(0,2)}</div>
-                <div style={{ fontWeight:700, fontSize:12, lineHeight:1.3, flex:1 }}>{doc.name}</div>
-              </div>
-
-              {/* Tasks badge */}
-              <div style={{ background:cls.bg, border:`1px solid ${cls.border}`, borderRadius:7, padding:"6px 8px", marginBottom:8, textAlign:"center" }}>
-                <div style={{ fontSize:22, fontWeight:800, color:cls.color }}>{tasks}</div>
-                <div style={{ fontSize:9, color:cls.color, fontWeight:700 }}>عبء إضافي — {cls.label}</div>
-              </div>
-
-              {/* Breakdown */}
-              {[{i:"🌙",v:fixedNights,c:"#64748b",bg:"#f8fafc",l:"مسائي ثابت (رسمي)"},
-                {i:"➕",v:extraNights,c:"#1d4ed8",bg:"#eff6ff",l:"مسائي إضافي"},
-                {i:"🔄",v:covs,  c:"#15803d",bg:"#f0fdf4",l:"تغطيات"},
-                {i:"🏥",v:absenceDays,c:"#dc2626",bg:"#fef2f2",l:"غياب (يُخصم)",neg:true},
-                {i:"🏖",v:leaveDays,c:"#d97706",bg:"#fffbeb",l:"إجازة"},
-              ].map(({i,v,c,bg,l,neg})=>(
-                <div key={l} style={{ display:"flex", justifyContent:"space-between", background:bg, borderRadius:4, padding:"3px 6px", marginBottom:3 }}>
-                  <span style={{ fontSize:10, color:c }}>{i} {l}</span>
-                  <strong style={{ color:c, fontSize:11 }}>{neg&&v>0?"−":""}{v}</strong>
+      {/* DETAIL VIEW for selected doctor */}
+      {selDoc ? (() => {
+        const s = calcStats(selDoc, period);
+        const cls = classify(s.tasks);
+        return (
+          <div>
+            {/* Profile header */}
+            <div style={{ background:"#fff", borderRadius:14, padding:16, marginBottom:14, borderRight:`6px solid ${selDoc.color}`, display:"flex", alignItems:"center", gap:14 }}>
+              <div style={{ ...AV, background:selDoc.color, width:54, height:54, fontSize:20, borderRadius:14 }}>{sn(selDoc.name).slice(0,2)}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontWeight:800, fontSize:18 }}>{selDoc.name}</div>
+                <div style={{ fontSize:12, color:"#64748b", display:"flex", gap:8, flexWrap:"wrap", marginTop:4 }}>
+                  <span>{wSlots(selDoc)} فترة/أسبوع</span>
+                  {(selDoc.nightDays||[]).length>0 && <span style={{ background:"#1e1b4b", color:"#a5b4fc", borderRadius:5, padding:"1px 8px" }}>🌙 مسائي ثابت: {(selDoc.nightDays||[]).map(d=>DAYS[d]).join("، ")}</span>}
                 </div>
-              ))}
-
-              {/* Comparison to average */}
-              <div style={{ marginTop:6, textAlign:"center", fontSize:10, fontWeight:700,
-                color: Math.abs(vsAvg)<0.5 ? "#64748b" : vsAvg>0 ? "#dc2626" : "#15803d" }}>
-                {Math.abs(vsAvg)<0.5 ? "≈ المتوسط" : vsAvg>0 ? `▲ أعلى من المتوسط بـ ${vsAvg.toFixed(1)}` : `▼ أقل من المتوسط بـ ${Math.abs(vsAvg).toFixed(1)}`}
               </div>
             </div>
-          );
-        })}
-      </div>
+
+            {/* Period toggle */}
+            <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+              {Object.entries(PERIODS).map(([k,l])=>(
+                <button key={k} onClick={()=>setPeriod(k)} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, fontWeight:700, cursor:"pointer", border: period===k?"2px solid #4338ca":"1px solid #e2e8f0", background: period===k?"#eef2ff":"#fff", color: period===k?"#4338ca":"#64748b" }}>{l}</button>
+              ))}
+            </div>
+
+            {/* Stat cards */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))", gap:8, marginBottom:14 }}>
+              {[{i:"🌙",l:"مسائي ثابت",v:s.fixedNights,c:"#64748b"},
+                {i:"➕",l:"مسائي إضافي",v:s.extraNights,c:"#1d4ed8"},
+                {i:"🔄",l:"تغطيات",v:s.totalCovs,c:"#15803d"},
+                {i:"🏥",l:"غياب",v:s.absenceDays,c:"#dc2626"},
+                {i:"🏖",l:"إجازات",v:s.leaveDays,c:"#d97706"},
+              ].map(({i,l,v,c})=>(
+                <div key={l} style={{ background:"#fff", border:"1px solid #e2e8f0", borderTop:`3px solid ${c}`, borderRadius:10, padding:"10px 6px", textAlign:"center" }}>
+                  <div style={{ fontSize:18 }}>{i}</div>
+                  <div style={{ fontSize:22, fontWeight:800, color:c }}>{v}</div>
+                  <div style={{ fontSize:9, color:"#64748b" }}>{l}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Extra load badge */}
+            <div style={{ background:cls.bg, border:`1px solid ${cls.border}`, borderRadius:12, padding:"12px 16px", marginBottom:14, display:"flex", alignItems:"center", gap:12 }}>
+              <div style={{ fontSize:34, fontWeight:800, color:cls.color }}>{s.tasks}</div>
+              <div>
+                <div style={{ fontWeight:700, color:cls.color }}>العبء الإضافي ({PERIODS[period]}) — {cls.label}</div>
+                <div style={{ fontSize:11, color:"#64748b" }}>= (مسائي إضافي + تغطيات) − غياب</div>
+              </div>
+            </div>
+
+            {/* Weekly schedule */}
+            <div style={{ background:"#fff", borderRadius:12, padding:14, marginBottom:14, border:"1px solid #e2e8f0" }}>
+              <div style={{ fontWeight:700, fontSize:13, marginBottom:10 }}>📅 الجدول الأسبوعي</div>
+              <div style={{ overflowX:"auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", minWidth:340 }}>
+                  <thead><tr style={{ background:"#5b8def" }}>
+                    <th style={{ padding:"6px", fontSize:11, color:"#fff" }}>اليوم</th>
+                    <th style={{ padding:"6px", fontSize:11, color:"#fff" }}>ص</th>
+                    <th style={{ padding:"6px", fontSize:11, color:"#fff" }}>م</th>
+                    <th style={{ padding:"6px", fontSize:11, color:"#fff" }}>مسائي</th>
+                  </tr></thead>
+                  <tbody>
+                    {[0,1,2,3,4].map(di=>{
+                      const isEve = (selDoc.nightDays||[]).includes(di);
+                      const am = getSlot(selDoc,di,"am"), pm = getSlot(selDoc,di,"pm");
+                      const cellStyle = (v) => ({ padding:"6px", fontSize:11, textAlign:"center", border:"1px solid #f1f5f9", background:(SLOT_COLORS[v]||SLOT_COLORS[""]).bg, color:(SLOT_COLORS[v]||SLOT_COLORS[""]).text, fontWeight:600 });
+                      return (
+                        <tr key={di}>
+                          <td style={{ padding:"6px", fontSize:11, fontWeight:700, color:"#fff", background:"#7ea4e6", textAlign:"center" }}>{DAYS[di]}</td>
+                          <td style={cellStyle(am)}>{am?SLOT_LABEL[am]:"—"}</td>
+                          <td style={cellStyle(pm)}>{pm?SLOT_LABEL[pm]:"—"}</td>
+                          <td style={{ padding:"6px", fontSize:11, textAlign:"center", border:"1px solid #f1f5f9", background:isEve?"#1e1b4b":"#fff", color:isEve?"#a5b4fc":"#cbd5e1", fontWeight:700 }}>{isEve?"🌙 عيادة":"—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Leaves */}
+            <div style={{ background:"#fff", borderRadius:12, padding:14, border:"1px solid #e2e8f0" }}>
+              <div style={{ fontWeight:700, fontSize:13, marginBottom:10 }}>🏖 الإجازات ({PERIODS[period]})</div>
+              {s.myLeaves.length===0 ? (
+                <div style={{ fontSize:12, color:"#94a3b8", textAlign:"center", padding:"10px 0" }}>لا توجد إجازات في هذه الفترة</div>
+              ) : s.myLeaves.map(l=>{
+                const days = Math.round((new Date(l.end)-new Date(l.start))/86400000)+1;
+                return (
+                  <div key={l.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", background:"#f8fafc", borderRadius:8, marginBottom:5, fontSize:12 }}>
+                    <span style={{ background: l.type==="sick"||l.type==="emergency"?"#fef2f2":"#fffbeb", color: l.type==="sick"||l.type==="emergency"?"#dc2626":"#d97706", borderRadius:5, padding:"2px 8px", fontSize:10, fontWeight:700 }}>{LEAVE_TYPES[l.type]}</span>
+                    <span style={{ flex:1 }}>{l.start} ← {l.end}</span>
+                    <strong>{days} أيام</strong>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })() : (
+        /* OVERVIEW — compact list of all doctors (current month) */
+        <div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginBottom:14 }}>
+            <div style={{ background:"#fff", border:"1px solid #ddd6fe", borderTop:"3px solid #7c3aed", borderRadius:12, padding:14, textAlign:"center" }}>
+              <div style={{ fontSize:24 }}>📊</div>
+              <div style={{ fontSize:26, fontWeight:800, color:"#7c3aed" }}>{avgTasks.toFixed(1)}</div>
+              <div style={{ fontSize:10, color:"#64748b" }}>متوسط العبء/طبيب</div>
+            </div>
+            <div style={{ background:"#fff", border:"1px solid #bfdbfe", borderTop:"3px solid #1d4ed8", borderRadius:12, padding:14, textAlign:"center" }}>
+              <div style={{ fontSize:24 }}>🌙</div>
+              <div style={{ fontSize:26, fontWeight:800, color:"#1d4ed8" }}>{overview.reduce((a,x)=>a+x.s.fixedNights+x.s.extraNights,0)}</div>
+              <div style={{ fontSize:10, color:"#64748b" }}>إجمالي الدوام المسائي</div>
+            </div>
+            <div style={{ background:"#fff", border:"1px solid #bbf7d0", borderTop:"3px solid #15803d", borderRadius:12, padding:14, textAlign:"center" }}>
+              <div style={{ fontSize:24 }}>🔄</div>
+              <div style={{ fontSize:26, fontWeight:800, color:"#15803d" }}>{overview.reduce((a,x)=>a+x.s.totalCovs,0)}</div>
+              <div style={{ fontSize:10, color:"#64748b" }}>إجمالي التغطيات</div>
+            </div>
+          </div>
+
+          <div style={{ fontSize:11, color:"#94a3b8", marginBottom:8 }}>النظرة العامة للشهر الحالي — مرتّبة حسب العبء. اضغط أي طبيب لتفاصيله.</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+            {overview.map(({doc,s})=>{
+              const cls = classify(s.tasks);
+              const vsAvg = s.tasks - avgTasks;
+              return (
+                <div key={doc.id} onClick={()=>setSelId(String(doc.id))} style={{ display:"flex", alignItems:"center", gap:10, background:"#fff", border:`1px solid ${cls.border}`, borderRadius:9, padding:"8px 12px", cursor:"pointer", borderRight:`4px solid ${doc.color}` }}>
+                  <div style={{ ...AV, background:doc.color, width:30, height:30, fontSize:10 }}>{sn(doc.name).slice(0,2)}</div>
+                  <div style={{ flex:1, fontWeight:700, fontSize:13 }}>{doc.name}</div>
+                  <div style={{ display:"flex", gap:4, fontSize:10 }}>
+                    <span style={{ color:"#1d4ed8" }}>🌙{s.fixedNights+s.extraNights}</span>
+                    <span style={{ color:"#15803d" }}>🔄{s.totalCovs}</span>
+                    {s.absenceDays>0 && <span style={{ color:"#dc2626" }}>🏥{s.absenceDays}</span>}
+                  </div>
+                  <div style={{ background:cls.bg, color:cls.color, border:`1px solid ${cls.border}`, borderRadius:14, padding:"3px 10px", fontSize:12, fontWeight:800, minWidth:28, textAlign:"center" }}>{s.tasks}</div>
+                  <span style={{ fontSize:9, fontWeight:700, minWidth:60, textAlign:"left", color: Math.abs(vsAvg)<0.5?"#94a3b8":vsAvg>0?"#dc2626":"#15803d" }}>
+                    {Math.abs(vsAvg)<0.5?"≈ المتوسط":vsAvg>0?`▲ +${vsAvg.toFixed(1)}`:`▼ ${vsAvg.toFixed(1)}`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
