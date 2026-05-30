@@ -4,16 +4,24 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>نظام الدوام المسائي — مركز دمام الطبي</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: 'Segoe UI', Tahoma, sans-serif; background:#f0f4f8; }
+  body { margin: 0; font-family: 'Tajawal', 'Segoe UI', Tahoma, sans-serif; background:#f0f4f8; -webkit-font-smoothing:antialiased; }
   #root { min-height: 100vh; }
-  .loading { display:flex; align-items:center; justify-content:center; height:100vh; font-family:Tahoma; color:#64748b; direction:rtl; }
-  ::-webkit-scrollbar { width:8px; height:8px; }
-  ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:4px; }
+  .loading { display:flex; align-items:center; justify-content:center; height:100vh; font-family:'Tajawal',Tahoma; color:#64748b; direction:rtl; font-size:16px; }
+  ::-webkit-scrollbar { width:9px; height:9px; }
+  ::-webkit-scrollbar-track { background:#eef1f6; }
+  ::-webkit-scrollbar-thumb { background:#c3d0e0; border-radius:5px; }
+  ::-webkit-scrollbar-thumb:hover { background:#9fb3cc; }
+  button, input, select { font-family:inherit; }
+  button { transition: all .15s ease; }
+  button:active { transform: scale(.97); }
 </style>
 </head>
 <body>
@@ -118,12 +126,6 @@ const nextWork = dateStr => {
   return d.toISOString().split("T")[0];
 };
 
-const mailtoAlert = (doc, subject, body) => {
-  const to = doc.email || "";
-  const url = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  window.location.href = url;
-};
-
 const fmtDate = dateStr => {
   const d = new Date(dateStr);
   return `${d.getDate()}/${d.getMonth()+1}`;
@@ -199,7 +201,7 @@ function autoFill(year, month, doctors, leaves, nightData) {
     if (result[date]?.doctors?.length) continue; // skip days already filled
 
     // All doctors with THIS weekday as a fixed evening
-    const fixedDocs = fixed.filter(d => d.nightDays.includes(di) && !onLeave(d, date, leaves));
+    const fixedDocs = fixed.filter(d => d.nightDays.includes(di) && !onLeave(d, date, leaves) && !(d.blockedDays||[]).includes(di));
     if (fixedDocs.length) {
       result[date] = { doctors: fixedDocs.slice(0,3).map(d=>d.id), coverages: { am: [], pm: [], nextAm: [] } };
       fixedDocs.forEach(d => usage[d.id] = (usage[d.id]||0) + 1);
@@ -207,12 +209,18 @@ function autoFill(year, month, doctors, leaves, nightData) {
       const nextDi = dayIdx(nextWork(date));
       // needsCoverage = has clinic am/pm today OR clinic am next work day
       const coverageNeed = d => (isClinic(getSlot(d,di,"am"))?1:0) + (isClinic(getSlot(d,di,"pm"))?1:0) + (isClinic(getSlot(d,nextDi,"am"))?1:0);
-      const avail = rotate.filter(d => !onLeave(d, date, leaves))
+      // prevWorkDate = the previous work day before this date
+      const prevWork = (() => { const dt=new Date(date); do { dt.setDate(dt.getDate()-1); } while(dt.getDay()>=5); return dt.toISOString().split("T")[0]; })();
+      const workedYesterday = d => (result[prevWork]?.doctors||[]).includes(d.id);
+      const avail = rotate.filter(d => !onLeave(d, date, leaves) && !(d.blockedDays||[]).includes(di))
         .sort((a,b) => {
-          // PRIORITY 1: doctors who need NO coverage come first
+          // PRIORITY 1: avoid consecutive shifts (worked previous work day)
+          const wa = workedYesterday(a)?1:0, wb = workedYesterday(b)?1:0;
+          if (wa !== wb) return wa - wb;
+          // PRIORITY 2: doctors who need NO coverage come first
           const ca = coverageNeed(a), cb = coverageNeed(b);
           if (ca !== cb) return ca - cb;
-          // PRIORITY 2: least loaded (fair distribution)
+          // PRIORITY 3: least loaded (fair distribution)
           return (usage[a.id]||0) - (usage[b.id]||0);
         });
       if (avail.length) {
@@ -222,6 +230,53 @@ function autoFill(year, month, doctors, leaves, nightData) {
     }
   }
   return result;
+}
+
+// Detect conflicts: doctor on leave but assigned night/coverage, or double-booked same time
+function detectConflicts(doctors, leaves, nightData, coverages) {
+  const fd = id => doctors.find(d=>d.id===id);
+  const conflicts = [];
+  // 1. Night doctor on leave
+  Object.entries(nightData).forEach(([date,nd])=>{
+    (nd.doctors||[]).forEach(id=>{
+      const d = fd(id); if(!d) return;
+      if (onLeave(d, date, leaves)) conflicts.push({ type:"leave", date, text:`${d.name} له دوام مسائي يوم ${date} لكنه في إجازة` });
+    });
+    // coverage doctor on leave
+    const covs = nd.coverages||{};
+    ["am","pm","nextAm"].forEach(slot=>{
+      (covs[slot]||[]).forEach(id=>{
+        const d = fd(id); if(!d) return;
+        const covDate = slot==="nextAm" ? nextWork(date) : date;
+        if (onLeave(d, covDate, leaves)) conflicts.push({ type:"leave", date:covDate, text:`${d.name} يغطّي يوم ${covDate} لكنه في إجازة` });
+      });
+    });
+  });
+  // 2. Individual coverage doctor on leave
+  (coverages||[]).forEach(c=>{
+    const d = fd(c.coverDoctorId); if(!d) return;
+    if (onLeave(d, c.date, leaves)) conflicts.push({ type:"leave", date:c.date, text:`${d.name} يغطّي (فردي) يوم ${c.date} لكنه في إجازة` });
+  });
+  // 3. Double-booked: same doctor covering 2 things same real period
+  const slotKey = (date, period) => `${date}__${period}`;
+  const booking = {}; // key -> [names]
+  const addBooking = (date, period, id, label) => {
+    const d = fd(id); if(!d) return;
+    const k = slotKey(date, period);
+    if(!booking[k]) booking[k] = [];
+    if (booking[k].find(x=>x.id===id)) {
+      conflicts.push({ type:"double", date, text:`${d.name} مسجّل مرتين في ${period==="am"?"صباح":"ظهر"} ${date}` });
+    }
+    booking[k].push({ id, label });
+  };
+  Object.entries(nightData).forEach(([date,nd])=>{
+    const covs = nd.coverages||{};
+    (covs.am||[]).forEach(id=>addBooking(date,"am",id));
+    (covs.pm||[]).forEach(id=>addBooking(date,"pm",id));
+    (covs.nextAm||[]).forEach(id=>addBooking(nextWork(date),"am",id));
+  });
+  (coverages||[]).forEach(c=>addBooking(c.date, c.period, c.coverDoctorId));
+  return conflicts;
 }
 
 // Storage
@@ -253,11 +308,13 @@ function LoginGate({ onSuccess }) {
   };
 
   return (
-    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"linear-gradient(135deg,#0f1e36,#1e3a5f,#2c5282)", direction:"rtl", fontFamily:"'Segoe UI',Tahoma,sans-serif" }}>
-      <div style={{ background:"#fff", borderRadius:20, padding:"32px 28px", width:320, boxShadow:"0 20px 60px rgba(0,0,0,.3)", textAlign:"center" }}>
-        <div style={{ fontSize:44, marginBottom:8 }}>⚕</div>
-        <div style={{ fontWeight:800, fontSize:18, color:"#1e293b" }}>نظام الدوام المسائي</div>
-        <div style={{ fontSize:12, color:"#94a3b8", marginBottom:20 }}>مركز دمام الطبي</div>
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"radial-gradient(circle at 30% 20%, #2c5282 0%, #1e3a5f 40%, #0f1e36 100%)", direction:"rtl", fontFamily:"'Segoe UI',Tahoma,sans-serif" }}>
+      <div style={{ background:"#fff", borderRadius:20, padding:"32px 28px", width:330, boxShadow:"0 20px 60px rgba(0,0,0,.3)", textAlign:"center" }}>
+        <div style={{ width:72, height:72, borderRadius:20, background:"linear-gradient(135deg,#1e3a5f,#2c5282)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:38, margin:"0 auto 14px", boxShadow:"0 8px 20px rgba(30,58,95,.3)" }}>🦷</div>
+        <div style={{ fontWeight:800, fontSize:20, color:"#1e293b" }}>قسم إصلاح الأسنان</div>
+        <div style={{ fontSize:13, color:"#64748b", marginTop:4 }}>مركز طب الأسنان التخصصي</div>
+        <div style={{ fontSize:13, color:"#2c5282", fontWeight:700, marginTop:14, marginBottom:4 }}>أهلاً بك 👋</div>
+        <div style={{ fontSize:12, color:"#94a3b8", marginBottom:18 }}>كل شي عندنا أسرار 😅</div>
 
         {/* PIN dots */}
         <div style={{ display:"flex", justifyContent:"center", gap:12, marginBottom:8 }}>
@@ -280,7 +337,7 @@ function LoginGate({ onSuccess }) {
     </div>
   );
 }
-const keyBtn = { padding:"16px 0", fontSize:22, fontWeight:700, color:"#1e293b", background:"#f1f5f9", border:"none", borderRadius:12, cursor:"pointer", transition:"all .1s" };
+const keyBtn = { padding:"18px 0", fontSize:22, fontWeight:700, color:"#1e3a5f", background:"#f1f5f9", border:"none", borderRadius:14, cursor:"pointer", transition:"all .12s" };
 
 // ══════════════════════════════════════════════════════
 // APP
@@ -292,6 +349,7 @@ function App() {
   const [nightData, setNightData] = useState(() => S.get("fin_night")   || {});
   const [absences,  setAbsences]  = useState(() => S.get("fin_abs")     || []);
   const [coverages, setCoverages] = useState(() => S.get("fin_cov")     || []);
+  const [approvals, setApprovals] = useState(() => S.get("fin_approvals") || {});
   const [page,      setPage]      = useState("dashboard");
   const [toast,     setToast]     = useState(null);
   const today = new Date().toISOString().split("T")[0];
@@ -309,11 +367,38 @@ function App() {
     S.set("fin_night",  nightData);
     S.set("fin_abs",    absences);
     S.set("fin_cov",    coverages);
+    // Auto-snapshot: keep last 3 internal backups
+    try {
+      const snaps = S.get("fin_snapshots") || [];
+      snaps.unshift({ t:new Date().toISOString(), docs:doctors, leaves, night:nightData, cov:coverages });
+      S.set("fin_snapshots", snaps.slice(0,3));
+      S.set("fin_lastbackup", new Date().toISOString());
+    } catch(e) {}
+  };
+
+  const restoreBackup = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const d = JSON.parse(e.target.result);
+        if (d.docs)  { setDoctors(d.docs);   S.set("fin_docs", d.docs); }
+        if (d.leaves){ setLeaves(d.leaves);  S.set("fin_leaves", d.leaves); }
+        if (d.night) { setNightData(d.night);S.set("fin_night", d.night); }
+        if (d.cov)   { setCoverages(d.cov);  S.set("fin_cov", d.cov); }
+        showToast("✅ تم استعادة النسخة الاحتياطية");
+      } catch(err) { showToast("ملف غير صالح", "warn"); }
+    };
+    reader.readAsText(file);
   };
 
   const updateDocs = next => { setDoctors(next); S.set("fin_docs", next); };
   const updateNight = next => { setNightData(next); S.set("fin_night", next); };
   const updateCoverages = next => { setCoverages(next); S.set("fin_cov", next); };
+
+  const setMonthApproval = (key, val) => {
+    const next = { ...approvals, [key]: val };
+    setApprovals(next); S.set("fin_approvals", next);
+  };
 
   const addIndivCoverage = (cov) => {
     const next = [...coverages, { id:Date.now(), ...cov }];
@@ -394,6 +479,47 @@ function App() {
     updateNight(next);
   };
 
+  // Copy a whole month's night assignments to another month, matching by weekday & week index
+  const copyMonth = (fromY, fromM, toY, toM) => {
+    const next = { ...nightData };
+    // Build source list ordered
+    const srcDim = new Date(fromY, fromM+1, 0).getDate();
+    const srcDays = [];
+    for (let d=1; d<=srcDim; d++){ const date=`${fromY}-${String(fromM+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; if(dayIdx(date)>=0) srcDays.push(date); }
+    const tgtDim = new Date(toY, toM+1, 0).getDate();
+    const tgtDays = [];
+    for (let d=1; d<=tgtDim; d++){ const date=`${toY}-${String(toM+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; if(dayIdx(date)>=0) tgtDays.push(date); }
+    let copied = 0;
+    tgtDays.forEach((tDate, i) => {
+      const sDate = srcDays[i];
+      if (sDate && nightData[sDate]?.doctors?.length) {
+        next[tDate] = JSON.parse(JSON.stringify(nightData[sDate]));
+        copied++;
+      }
+    });
+    updateNight(next);
+    showToast(`✅ تم نسخ ${copied} يوم`);
+  };
+
+  // Swap two doctors across the whole month: every night/coverage assignment of A becomes B and vice versa
+  const swapDoctors = (idA, idB) => {
+    if (!idA || !idB || idA===idB) { showToast("اختر طبيبين مختلفين", "warn"); return; }
+    const swapId = id => id===idA ? idB : id===idB ? idA : id;
+    const next = {};
+    Object.entries(nightData).forEach(([date,nd])=>{
+      const c = nd.coverages||{};
+      next[date] = {
+        ...nd,
+        doctors: (nd.doctors||[]).map(swapId),
+        coverages: { am:(c.am||[]).map(swapId), pm:(c.pm||[]).map(swapId), nextAm:(c.nextAm||[]).map(swapId) }
+      };
+    });
+    updateNight(next);
+    const newCov = coverages.map(cv=>({ ...cv, coverDoctorId:swapId(cv.coverDoctorId), absentId:cv.absentId?swapId(cv.absentId):cv.absentId }));
+    updateCoverages(newCov);
+    showToast(`✅ تم التبديل بين ${fd(idA)?.name} و ${fd(idB)?.name}`);
+  };
+
   const pendingCount = useMemo(() => {
     let count = 0;
     Object.entries(nightData).forEach(([date, nd]) => {
@@ -430,7 +556,7 @@ function App() {
             <div style={{ width:38, height:38, borderRadius:11, background:"linear-gradient(135deg,#1e3a5f,#2c5282)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, color:"#fff", boxShadow:"0 4px 12px rgba(30,58,95,.35)" }}>⚕</div>
             <div>
               <div style={{ color:"#1e293b", fontWeight:800, fontSize:14 }}>الجداول الطبية</div>
-              <div style={{ color:"#94a3b8", fontSize:10 }}>مركز دمام الطبي</div>
+              <div style={{ color:"#94a3b8", fontSize:10 }}>مركز طب الأسنان التخصصي</div>
             </div>
           </div>
         </div>
@@ -460,6 +586,14 @@ function App() {
             style={{ width:"100%", padding:"8px", background:"linear-gradient(135deg,#1e3a5f,#2c5282)", border:"none", borderRadius:8, color:"#fff", cursor:"pointer", fontSize:11, fontWeight:700, boxShadow:"0 3px 10px rgba(30,58,95,.25)" }}>
             💾 حفظ الكل
           </button>
+          <div style={{ display:"flex", gap:5, marginTop:6 }}>
+            <button onClick={() => { const data={docs:S.get("fin_docs"),leaves:S.get("fin_leaves"),night:S.get("fin_night"),cov:S.get("fin_cov"),exported:new Date().toISOString()}; const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`نسخة_احتياطية_${new Date().toISOString().split("T")[0]}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(url),1500); showToast("✅ تم تصدير النسخة"); }}
+              style={{ flex:1, padding:"6px", background:"#fff", border:"1px solid #cdddec", borderRadius:7, color:"#2c5282", cursor:"pointer", fontSize:9, fontWeight:700 }}>⬇️ نسخة</button>
+            <label style={{ flex:1, padding:"6px", background:"#fff", border:"1px solid #cdddec", borderRadius:7, color:"#2c5282", cursor:"pointer", fontSize:9, fontWeight:700, textAlign:"center" }}>
+              ⬆️ استعادة
+              <input type="file" accept=".json" style={{ display:"none" }} onChange={e=>{ if(e.target.files[0]) restoreBackup(e.target.files[0]); }} />
+            </label>
+          </div>
           <button onClick={() => { S.set("fin_auth", false); setAuthed(false); }}
             style={{ width:"100%", padding:"6px", marginTop:6, background:"transparent", border:"1px solid #cdddec", borderRadius:8, color:"#2c5282", cursor:"pointer", fontSize:10, fontWeight:600 }}>
             🔒 قفل
@@ -469,9 +603,9 @@ function App() {
 
       {/* MAIN */}
       <main style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
-        <div style={{ background:"#fff", padding:"16px 24px", display:"flex", justifyContent:"space-between", alignItems:"center", boxShadow:"0 1px 8px rgba(0,0,0,.03)" }}>
+        <div style={{ background:"#fff", padding:"16px 24px", display:"flex", justifyContent:"space-between", alignItems:"center", boxShadow:"0 2px 12px rgba(30,58,95,.05)" }}>
           <div>
-            <div style={{ fontWeight:800, fontSize:18, color:"#1e293b" }}>{TABS.find(t=>t.id===page)?.label}</div>
+            <div style={{ fontWeight:800, fontSize:19, color:"#0f1e36", letterSpacing:"-0.3px" }}>{TABS.find(t=>t.id===page)?.label}</div>
             <div style={{ fontSize:11, color:"#94a3b8" }}>الرئيسية / {TABS.find(t=>t.id===page)?.label}</div>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -480,8 +614,24 @@ function App() {
           </div>
         </div>
         <div style={{ flex:1, overflowY:"auto", padding:22 }}>
+          {(() => {
+            const last = S.get("fin_lastbackup");
+            const daysSince = last ? Math.floor((Date.now()-new Date(last))/86400000) : 999;
+            if (daysSince < 3) return null;
+            return (
+              <div style={{ background:"#fffbeb", border:"1px solid #fde68a", borderRadius:12, padding:"10px 16px", marginBottom:16, display:"flex", alignItems:"center", gap:10, fontSize:13 }}>
+                <span style={{ fontSize:18 }}>⚠️</span>
+                <span style={{ flex:1, color:"#92400e" }}>
+                  {last ? `آخر نسخة احتياطية قبل ${daysSince} يوم. ` : "لم تأخذ نسخة احتياطية بعد. "}
+                  ننصح بحفظ نسخة احتياطية لحماية بياناتك.
+                </span>
+                <button onClick={()=>{ const data={docs:S.get("fin_docs"),leaves:S.get("fin_leaves"),night:S.get("fin_night"),cov:S.get("fin_cov"),exported:new Date().toISOString()}; const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`نسخة_احتياطية_${new Date().toISOString().split("T")[0]}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(url),1500); S.set("fin_lastbackup", new Date().toISOString()); showToast("✅ تم حفظ النسخة"); }}
+                  style={{ background:"#d97706", color:"#fff", border:"none", borderRadius:8, padding:"7px 14px", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>⬇️ احفظ الآن</button>
+              </div>
+            );
+          })()}
           {page==="dashboard" && <DashboardPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onGoto={setPage} />}
-          {page==="monthly" && <MonthlyPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onAutoFill={(y,m) => { const next=autoFill(y,m,doctors,leaves,nightData); updateNight(next); showToast("✅ تم التوزيع التلقائي"); }} onAddDoc={addNightDoc} onRemoveDoc={removeNightDoc} onAddCov={addCoverage} onRemoveCov={removeCoverage} onClearMonth={clearMonth} onResetDay={resetDay} onCopyDay={copyDay} onSetNote={setDayNote} onEnsureDay={ensureDay} />}
+          {page==="monthly" && <MonthlyPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onAutoFill={(y,m,mode) => { let base = nightData; if(mode==="all"){ base={}; Object.keys(nightData).forEach(d=>{const [yy,mm]=d.split("-"); if(+yy!==y||+mm!==m+1) base[d]=nightData[d];}); } const next=autoFill(y,m,doctors,leaves,base); updateNight(next); showToast(mode==="all"?"✅ تم التوزيع الكامل":"✅ تم إكمال الأيام الناقصة"); }} onAddDoc={addNightDoc} onRemoveDoc={removeNightDoc} onAddCov={addCoverage} onRemoveCov={removeCoverage} onClearMonth={clearMonth} onResetDay={resetDay} onCopyDay={copyDay} onSetNote={setDayNote} onEnsureDay={ensureDay} onCopyMonth={copyMonth} onSwap={swapDoctors} approvals={approvals} onApprove={setMonthApproval} />}
           {page==="coverage" && <CoveragePage doctors={doctors} leaves={leaves} coverages={coverages} nightData={nightData} fd={fd} onAdd={addIndivCoverage} onRemove={removeIndivCoverage} showToast={showToast} />}
           {page==="doctors"  && <DoctorsPage doctors={doctors} leaves={leaves} today={today} fd={fd} onUpdateDocs={updateDocs} showToast={showToast} />}
           {page==="leaves"   && <LeavesPage doctors={doctors} leaves={leaves} fd={fd} onUpdate={(next) => { setLeaves(next); S.set("fin_leaves",next); }} showToast={showToast} />}
@@ -522,10 +672,10 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
   });
 
   const cards = [
-    { icon:"🌙", label:"الدوام المسائي (الشهر)", val:totalNightAssigns, grad:"linear-gradient(135deg,#1e3a5f,#2c5282)", page:"monthly" },
-    { icon:"🔄", label:"التغطيات (الشهر)", val:totalCovs, grad:"linear-gradient(135deg,#2c5282,#3b6ca8)", page:"coverage" },
-    { icon:"⚠️", label:"تغطيات معلّقة", val:pending, grad:"linear-gradient(135deg,#b91c1c,#dc2626)", page:"monthly" },
-    { icon:"🏖", label:"إجازات حالية", val:activeLeaves, grad:"linear-gradient(135deg,#1e3a5f,#2c5282)", page:"leaves" },
+    { icon:"🌙", label:"الدوام المسائي (الشهر)", val:totalNightAssigns, bg:"#eef4fb", ic:"#1e3a5f", page:"monthly" },
+    { icon:"🔄", label:"التغطيات (الشهر)", val:totalCovs, bg:"#eefaf3", ic:"#15803d", page:"coverage" },
+    { icon:"⚠️", label:"تغطيات معلّقة", val:pending, bg:"#fdeef0", ic:"#dc2626", page:"monthly" },
+    { icon:"🏖", label:"إجازات حالية", val:activeLeaves, bg:"#fdf6ec", ic:"#d97706", page:"leaves" },
   ];
 
   // Per-day distribution chart (this month) — nights count per day-of-week
@@ -547,21 +697,34 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
       covCount += ((c.am||[]).includes(doc.id)?1:0)+((c.pm||[]).includes(doc.id)?1:0)+((c.nextAm||[]).includes(doc.id)?1:0);
     });
     covCount += coverages.filter(c=>c.coverDoctorId===doc.id && thisMonth(c.date)).length;
-    return { doc, load: extra+covCount };
+    return { doc, load: (extra*2)+covCount };
   }).filter(x=>x.load>0).sort((a,b)=>b.load-a.load).slice(0,6);
   const maxLoad = Math.max(...loads.map(l=>l.load), 1);
 
+  const conflicts = detectConflicts(doctors, leaves, nightData, coverages);
+
   return (
     <div>
+      {/* Conflicts alert */}
+      {conflicts.length>0 && (
+        <div style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:14, padding:"14px 18px", marginBottom:16 }}>
+          <div style={{ fontWeight:800, fontSize:14, color:"#dc2626", marginBottom:8 }}>⚠️ تعارضات تحتاج انتباه ({conflicts.length})</div>
+          {conflicts.slice(0,6).map((c,i)=>(
+            <div key={i} style={{ fontSize:12, color:"#991b1b", padding:"4px 0", borderTop:i>0?"1px solid #fecaca":"none" }}>🔴 {c.text}</div>
+          ))}
+          {conflicts.length>6 && <div style={{ fontSize:11, color:"#dc2626", marginTop:4 }}>+ {conflicts.length-6} تعارضات أخرى</div>}
+        </div>
+      )}
+
       {/* Stat cards */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:16, marginBottom:20 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))", gap:16, marginBottom:20 }}>
         {cards.map(c => (
-          <div key={c.label} onClick={()=>onGoto(c.page)} style={{ background:"#fff", borderRadius:16, padding:"18px", cursor:"pointer", boxShadow:"0 2px 12px rgba(0,0,0,.05)", position:"relative", overflow:"hidden", transition:"transform .15s" }}>
-            <div style={{ position:"absolute", top:-12, left:16, width:52, height:52, borderRadius:14, background:c.grad, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, boxShadow:"0 6px 16px rgba(0,0,0,.18)" }}>{c.icon}</div>
-            <div style={{ textAlign:"left", paddingTop:6 }}>
-              <div style={{ fontSize:11, color:"#94a3b8", fontWeight:600, marginBottom:2 }}>{c.label}</div>
-              <div style={{ fontSize:30, fontWeight:800, color:"#1e293b" }}>{c.val}</div>
+          <div key={c.label} onClick={()=>onGoto(c.page)} style={{ background:c.bg, borderRadius:16, padding:"18px", cursor:"pointer", border:"1px solid rgba(0,0,0,.04)" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+              <div style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{c.label}</div>
+              <div style={{ width:38, height:38, borderRadius:11, background:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:19 }}>{c.icon}</div>
             </div>
+            <div style={{ fontSize:36, fontWeight:800, color:c.ic, letterSpacing:"-0.5px", lineHeight:1 }}>{c.val}</div>
           </div>
         ))}
       </div>
@@ -569,7 +732,7 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
       {/* Charts row */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 }}>
         {/* Bar chart: nights per weekday */}
-        <div style={{ background:"#fff", borderRadius:16, padding:18, boxShadow:"0 2px 12px rgba(0,0,0,.05)" }}>
+        <div style={{ background:"#fff", borderRadius:16, padding:18, boxShadow:"0 4px 16px rgba(30,58,95,.06)" }}>
           <div style={{ fontWeight:700, fontSize:14, marginBottom:4 }}>🌙 توزيع الدوام المسائي</div>
           <div style={{ fontSize:11, color:"#94a3b8", marginBottom:16 }}>عدد المناوبات حسب اليوم (هذا الشهر)</div>
           <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-around", height:140, gap:8 }}>
@@ -584,7 +747,7 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
         </div>
 
         {/* Top loaded doctors */}
-        <div style={{ background:"#fff", borderRadius:16, padding:18, boxShadow:"0 2px 12px rgba(0,0,0,.05)" }}>
+        <div style={{ background:"#fff", borderRadius:16, padding:18, boxShadow:"0 4px 16px rgba(30,58,95,.06)" }}>
           <div style={{ fontWeight:700, fontSize:14, marginBottom:4 }}>📈 أكثر الأطباء عبئاً</div>
           <div style={{ fontSize:11, color:"#94a3b8", marginBottom:16 }}>العبء الإضافي (هذا الشهر)</div>
           {loads.length===0 ? <div style={{ fontSize:12, color:"#cbd5e1", textAlign:"center", padding:"30px 0" }}>لا يوجد عبء إضافي بعد</div> :
@@ -601,16 +764,42 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
         </div>
       </div>
 
+      {/* Needs attention: days without a doctor */}
+      {(() => {
+        const emptyDays = [];
+        const dim = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+        for (let d=1; d<=dim; d++) {
+          const date = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+          const di = dayIdx(date);
+          if (di < 0) continue;
+          if (!(nightData[date]?.doctors||[]).length) emptyDays.push({ date, di, d });
+        }
+        if (!emptyDays.length) return null;
+        return (
+          <div style={{ background:"#fffbeb", border:"1px solid #fde68a", borderRadius:16, padding:18, marginBottom:20 }}>
+            <div style={{ fontWeight:700, fontSize:14, color:"#a16207", marginBottom:4 }}>🔔 أيام بلا دوام مسائي ({emptyDays.length})</div>
+            <div style={{ fontSize:11, color:"#94a3b8", marginBottom:12 }}>هذا الشهر — تحتاج تعيين مناوب</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+              {emptyDays.map(({date,di,d})=>(
+                <button key={date} onClick={()=>onGoto("monthly")} style={{ background:"#fff", border:"1px solid #fde68a", borderRadius:8, padding:"5px 10px", fontSize:11, color:"#a16207", cursor:"pointer", fontWeight:600 }}>
+                  {d}/{now.getMonth()+1} {DAYS[di]}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Quick actions */}
-      <div style={{ background:"#fff", borderRadius:16, padding:18, boxShadow:"0 2px 12px rgba(0,0,0,.05)" }}>
-        <div style={{ fontWeight:700, fontSize:14, marginBottom:12 }}>⚡ إجراءات سريعة</div>
+      <div style={{ background:"#fff", borderRadius:16, padding:18, border:"1px solid #eef2f7" }}>
+        <div style={{ fontWeight:700, fontSize:14, marginBottom:12, color:"#1e293b" }}>⚡ إجراءات سريعة</div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:10 }}>
-          {[{l:"🌙 الدوام المسائي",p:"monthly",g:"linear-gradient(135deg,#1e3a5f,#2c5282)"},
-            {l:"🔄 تغطية فردية",p:"coverage",g:"linear-gradient(135deg,#2c5282,#3b6ca8)"},
-            {l:"👨‍⚕️ الأطباء",p:"doctors",g:"linear-gradient(135deg,#0f1e36,#1e3a5f)"},
-            {l:"📈 الإحصائيات",p:"stats",g:"linear-gradient(135deg,#3b6ca8,#5a8bc4)"},
+          {[{l:"🌙 الدوام المسائي",p:"monthly",bg:"#eef4fb",c:"#1e3a5f"},
+            {l:"🔄 تغطية فردية",p:"coverage",bg:"#eefaf3",c:"#15803d"},
+            {l:"👨‍⚕️ الأطباء",p:"doctors",bg:"#f3f0fb",c:"#6d28d9"},
+            {l:"📈 الإحصائيات",p:"stats",bg:"#fdf6ec",c:"#d97706"},
           ].map(b=>(
-            <button key={b.p} onClick={()=>onGoto(b.p)} style={{ padding:"14px", borderRadius:12, border:"none", cursor:"pointer", color:"#fff", fontWeight:700, fontSize:13, background:b.g, boxShadow:"0 4px 12px rgba(0,0,0,.12)" }}>{b.l}</button>
+            <button key={b.p} onClick={()=>onGoto(b.p)} style={{ padding:"15px", borderRadius:12, border:"1px solid rgba(0,0,0,.04)", cursor:"pointer", color:b.c, fontWeight:700, fontSize:13, background:b.bg }}>{b.l}</button>
           ))}
         </div>
       </div>
@@ -621,14 +810,20 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
 // ══════════════════════════════════════════════════════
 // MONTHLY PAGE
 // ══════════════════════════════════════════════════════
-function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoFill, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onClearMonth, onResetDay, onCopyDay, onSetNote, onEnsureDay }) {
+function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoFill, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onClearMonth, onResetDay, onCopyDay, onSetNote, onEnsureDay, onCopyMonth, onSwap, approvals, onApprove }) {
   const now = new Date();
   const [month, setMonth] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [selDate, setSelDate] = useState(null);
   const [filter, setFilter] = useState("all"); // all | pending | done
   const [showCal, setShowCal] = useState(false); // calendar is secondary
+  const [search, setSearch] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
   const [previewHtml, setPreviewHtml] = useState(null);
+  const [showSwap, setShowSwap] = useState(false);
+  const [swapA, setSwapA] = useState("");
+  const [swapB, setSwapB] = useState("");
+  const monthKey = `${month.y}-${month.m}`;
+  const isApproved = approvals && approvals[monthKey];
 
   const calDays = useMemo(() => {
     const dim = new Date(month.y, month.m+1, 0).getDate();
@@ -690,9 +885,9 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
       const covs = nd.coverages || {};
       const nightNames = (nd.doctors||[]).map(id=>fd(id)?.name).filter(Boolean).join("، ");
       const nextDate = nextWork(date);
-      (covs.am||[]).forEach(id=>pushCov(date,   id, "صباحاً", `عيادة ${nightNames} (مناوب ${DAYS[di]} ${dmy(date)})`));
-      (covs.pm||[]).forEach(id=>pushCov(date,   id, "ظهراً",  `عيادة ${nightNames} (مناوب ${DAYS[di]} ${dmy(date)})`));
-      (covs.nextAm||[]).forEach(id=>pushCov(nextDate, id, "صباحاً", `عيادة ${nightNames} (مناوب ${DAYS[di]} ${dmy(date)} — اليوم التالي)`));
+      (covs.am||[]).forEach(id=>pushCov(date,   id, "صباحاً", `عيادة ${nightNames} (صاحب الدوام المسائي ${DAYS[di]} ${dmy(date)})`));
+      (covs.pm||[]).forEach(id=>pushCov(date,   id, "ظهراً",  `عيادة ${nightNames} (صاحب الدوام المسائي ${DAYS[di]} ${dmy(date)})`));
+      (covs.nextAm||[]).forEach(id=>pushCov(nextDate, id, "صباحاً", `عيادة ${nightNames} (صاحب الدوام المسائي ${DAYS[di]} ${dmy(date)} — اليوم التالي)`));
     });
     // From individual coverages
     (coverages||[]).forEach(c => {
@@ -734,12 +929,14 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
     </style></head><body>
     <button class="btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
     <h1>جدول الدوام المسائي والتغطيات</h1>
-    <div class="sub">مركز دمام الطبي — ${MONTHS[month.m]} ${month.y}</div>
+    <div class="sub">مركز طب الأسنان التخصصي — قسم إصلاح الأسنان — ${MONTHS[month.m]} ${month.y}</div>
+    ${isApproved ? `<div style="text-align:center;margin-bottom:14px"><span style="display:inline-block;border:2px solid #15803d;color:#15803d;border-radius:8px;padding:4px 16px;font-weight:bold;font-size:13px">✅ نسخة معتمدة</span></div>` : `<div style="text-align:center;margin-bottom:14px"><span style="display:inline-block;border:2px solid #d97706;color:#d97706;border-radius:8px;padding:4px 16px;font-weight:bold;font-size:13px">📝 مسوّدة — غير معتمدة</span></div>`}
     <h2>🌙 أولاً: جدول الدوام المسائي والتغطيات المرتبطة به</h2>
     ${eveTable}
     <h2>🔄 ثانياً: جدول التغطيات حسب اليوم الفعلي</h2>
     <div style="color:#64748b;font-size:12px;margin-bottom:8px">مرتّبة بتاريخ وقوع التغطية فعلياً (تغطية "اليوم التالي" تظهر في يومها الحقيقي)</div>
     ${covTable}
+    <div style="margin-top:30px;text-align:left;font-size:13px;color:#1e293b;border-top:2px solid #e2e8f0;padding-top:14px;width:240px"><div style="font-weight:bold">رئيس قسم إصلاح الأسنان</div><div style="margin-top:6px">د. أمل العسكر</div><div style="margin-top:18px;color:#94a3b8">التوقيع: ............................</div></div>
     </body></html>`;
     // Show in-app preview with print button (window.open is blocked in artifact sandbox)
     setPreviewHtml(html);
@@ -807,10 +1004,191 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
     </style></head><body>
     <button class="btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
     <h1>جدول الدوام المسائي — مربعات</h1>
-    <div class="sub">مركز دمام الطبي — ${MONTHS[month.m]} ${month.y}</div>
+    <div class="sub">مركز طب الأسنان التخصصي — قسم إصلاح الأسنان — ${MONTHS[month.m]} ${month.y}</div>
+    ${isApproved ? `<div style="text-align:center;margin-bottom:14px"><span style="display:inline-block;border:2px solid #15803d;color:#15803d;border-radius:8px;padding:4px 16px;font-weight:bold;font-size:13px">✅ نسخة معتمدة</span></div>` : `<div style="text-align:center;margin-bottom:14px"><span style="display:inline-block;border:2px solid #d97706;color:#d97706;border-radius:8px;padding:4px 16px;font-weight:bold;font-size:13px">📝 مسوّدة — غير معتمدة</span></div>`}
     <div class="grid">${boxes || '<p style="color:#94a3b8">لا توجد بيانات</p>'}</div>
     </body></html>`;
     setPreviewHtml(html);
+  };
+
+  // Download a file via blob (works on live site)
+  const downloadFile = (content, filename, mime) => {
+    try {
+      const blob = new Blob([content], { type:mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url), 1500);
+    } catch(e) { setPreviewHtml(`<pre dir="ltr" style="padding:20px;font-family:monospace">${content.replace(/</g,"&lt;")}</pre>`); }
+  };
+
+  // Export as Excel (.xls via HTML table — opens in Excel/Numbers)
+  const exportExcel = () => {
+    const dmy = (ds) => `${ds.split("-")[2]}/${+ds.split("-")[1]}`;
+    let rows = "";
+    calDays.filter(({date})=>(nightData[date]?.doctors||[]).length || coverages.some(c=>c.date===date)).forEach(({date,di})=>{
+      const nd = nightData[date]||{}; const covs = nd.coverages||{};
+      const docs = (nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
+      const nextDi = dayIdx(nextWork(date));
+      const covCell = [];
+      docs.forEach(d=>{
+        if(isClinic(getSlot(d,di,"am"))) covCell.push(`${d.name} صباحاً: ${(covs.am||[]).map(id=>fd(id)?.name).filter(Boolean).join("،")||"غير معيّنة"}`);
+        if(isClinic(getSlot(d,di,"pm"))) covCell.push(`${d.name} ظهراً: ${(covs.pm||[]).map(id=>fd(id)?.name).filter(Boolean).join("،")||"غير معيّنة"}`);
+        if(isClinic(getSlot(d,nextDi,"am"))) covCell.push(`${d.name} غداً صباحاً: ${(covs.nextAm||[]).map(id=>fd(id)?.name).filter(Boolean).join("،")||"غير معيّنة"}`);
+      });
+      coverages.filter(c=>c.date===date).forEach(c=>{const cd=fd(c.coverDoctorId);if(cd)covCell.push(`تغطية فردية: ${cd.name} (${c.period==="am"?"صباحاً":"ظهراً"})`);});
+      rows += `<tr><td>${dmy(date)}</td><td>${DAYS[di]}</td><td>${docs.map(d=>d.name).join("، ")||"—"}</td><td>${covCell.join(" | ")||"لا تغطيات"}</td></tr>`;
+    });
+    const xls = `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"></head><body>
+    <table border="1"><thead><tr style="background:#1e3a5f;color:#fff;font-weight:bold">
+    <th>التاريخ</th><th>اليوم</th><th>الدوام المسائي</th><th>التغطيات</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+    downloadFile("\ufeff"+xls, `الدوام_المسائي_${MONTHS[month.m]}_${month.y}.xls`, "application/vnd.ms-excel;charset=utf-8");
+
+  };
+
+  // Share via WhatsApp (text)
+  const shareWhatsApp = () => {
+    const dmy = (ds) => `${ds.split("-")[2]}/${+ds.split("-")[1]}`;
+    const approved = approvals && approvals[`${month.y}-${month.m}`];
+    let txt = `🌙 *جدول الدوام المسائي*\n📍 مركز طب الأسنان التخصصي — قسم إصلاح الأسنان\n📅 ${MONTHS[month.m]} ${month.y}\n${approved?"✅ *الجدول معتمد*":"📝 مسوّدة (غير معتمد)"}\n\n`;
+    calDays.filter(({date})=>(nightData[date]?.doctors||[]).length).forEach(({date,di})=>{
+      const nd=nightData[date]||{}; const covs=nd.coverages||{};
+      const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
+      txt += `*${dmy(date)} ${DAYS[di]}*\n`;
+      docs.forEach(d=>{
+        txt += `  🌙 ${d.name}\n`;
+        const nextDi = dayIdx(nextWork(date));
+        if(isClinic(getSlot(d,di,"am"))) txt += `     • صباحاً: ${(covs.am||[]).map(id=>fd(id)?.name).filter(Boolean).join("،")||"⚠️ تحتاج تغطية"}\n`;
+        if(isClinic(getSlot(d,di,"pm"))) txt += `     • ظهراً: ${(covs.pm||[]).map(id=>fd(id)?.name).filter(Boolean).join("،")||"⚠️ تحتاج تغطية"}\n`;
+        if(isClinic(getSlot(d,nextDi,"am"))) txt += `     • غداً صباحاً: ${(covs.nextAm||[]).map(id=>fd(id)?.name).filter(Boolean).join("،")||"⚠️ تحتاج تغطية"}\n`;
+      });
+      txt += `\n`;
+    });
+    txt += `━━━━━━━━━━━━━━\nمركز طب الأسنان التخصصي\n*رئيس قسم إصلاح الأسنان*\nد. أمل العسكر`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`, "_blank");
+  };
+
+  // Backup all data as JSON
+  // Monthly report — full summary for management
+  // Print calendar grid with full names (like the on-screen calendar)
+  // Print individual sheet per doctor (their night shifts + coverages this month)
+  const printDoctorSheets = () => {
+    const dmy = (ds) => `${ds.split("-")[2]}/${+ds.split("-")[1]}`;
+    const sheets = doctors.map(doc=>{
+      const items = [];
+      calDays.forEach(({date,di})=>{
+        const nd = nightData[date]||{}; const covs = nd.coverages||{};
+        if ((nd.doctors||[]).includes(doc.id)) items.push(`<tr><td>${dmy(date)} ${DAYS[di]}</td><td>🌙 دوام مسائي</td></tr>`);
+        if ((covs.am||[]).includes(doc.id)) items.push(`<tr><td>${dmy(date)} ${DAYS[di]}</td><td>☀️ تغطية صباح</td></tr>`);
+        if ((covs.pm||[]).includes(doc.id)) items.push(`<tr><td>${dmy(date)} ${DAYS[di]}</td><td>🌅 تغطية ظهر</td></tr>`);
+        if ((covs.nextAm||[]).includes(doc.id)) items.push(`<tr><td>${dmy(nextWork(date))} ${DAYS[dayIdx(nextWork(date))]}</td><td>🌄 تغطية صباح (يوم تالٍ)</td></tr>`);
+      });
+      coverages.filter(c=>c.coverDoctorId===doc.id).forEach(c=>{ const di=dayIdx(c.date); items.push(`<tr><td>${dmy(c.date)} ${di>=0?DAYS[di]:""}</td><td>🔄 تغطية فردية (${c.period==="am"?"صباح":"ظهر"})</td></tr>`); });
+      if (!items.length) return "";
+      return `<div class="sheet"><h2 style="border-bottom:3px solid ${doc.color}">${doc.name}</h2>
+        <table><thead><tr><th>التاريخ</th><th>المهمة</th></tr></thead><tbody>${items.join("")}</tbody></table>
+        <div class="cnt">إجمالي المهام: ${items.length}</div></div>`;
+    }).filter(Boolean).join("");
+    const html = `<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><title>أوراق الأطباء ${MONTHS[month.m]} ${month.y}</title>
+    <style>body{font-family:Tajawal,Tahoma,sans-serif;padding:20px;direction:rtl;color:#1e293b}
+    .sheet{page-break-after:always;margin-bottom:30px}h2{font-size:18px;padding-bottom:6px;margin-bottom:12px}
+    table{width:100%;border-collapse:collapse}th{background:#1e3a5f;color:#fff;padding:8px;font-size:13px}td{border:1px solid #e2e8f0;padding:7px;font-size:13px}tr:nth-child(even){background:#f8fafc}
+    .cnt{margin-top:8px;font-weight:700;color:#1e3a5f}
+    .btn{position:fixed;top:12px;left:12px;background:#2563eb;color:#fff;border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-weight:700}@media print{.btn{display:none}}</style></head><body>
+    <button class="btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+    <h1 style="text-align:center">أوراق الأطباء الفردية — ${MONTHS[month.m]} ${month.y}</h1>
+    ${sheets||'<p style="text-align:center;color:#94a3b8">لا بيانات</p>'}</body></html>`;
+    setPreviewHtml(html);
+  };
+
+  const printCalendar = () => {
+    const dim = new Date(month.y, month.m+1, 0).getDate();
+    const days = [];
+    for (let d=1; d<=dim; d++){
+      const date = `${month.y}-${String(month.m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+      const di = dayIdx(date);
+      if (di>=0) days.push({ date, di, d });
+    }
+    const firstOffset = days[0]?.di ?? 0;
+    let cells = "";
+    for (let i=0;i<firstOffset;i++) cells += `<td class="empty"></td>`;
+    let col = firstOffset;
+    days.forEach(({date,di,d})=>{
+      const nd = nightData[date]||{}; const covs = nd.coverages||{};
+      const docs = (nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
+      const nextDate = nextWork(date);
+      let inner = "";
+      docs.forEach(doc=>{
+        inner += `<div class="ev" style="background:${doc.color}1e;border:1px solid ${doc.color}55;color:${doc.color}">🌙 ${doc.name}</div>`;
+      });
+      // coverages text
+      const covTxt = [];
+      (covs.am||[]).forEach(id=>{const c=fd(id);if(c)covTxt.push(`(ص) ${c.name}`);});
+      (covs.pm||[]).forEach(id=>{const c=fd(id);if(c)covTxt.push(`(ظ) ${c.name}`);});
+      (covs.nextAm||[]).forEach(id=>{const c=fd(id);if(c)covTxt.push(`(غد ص) ${c.name}`);});
+      coverages.filter(c=>c.date===date).forEach(c=>{const cd=fd(c.coverDoctorId);if(cd)covTxt.push(`🔄 ${cd.name}`);});
+      covTxt.forEach(t=>inner+=`<div class="cov">${t}</div>`);
+      cells += `<td><div class="dnum">${d}</div>${inner}</td>`;
+      col++;
+      if (col%5===0) cells += `</tr><tr>`;
+    });
+    const html = `<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><title>تقويم ${MONTHS[month.m]} ${month.y}</title>
+    <style>body{font-family:Tajawal,Tahoma,sans-serif;padding:20px;direction:rtl;color:#1e293b}
+    h1{text-align:center;font-size:20px;margin-bottom:2px}.sub{text-align:center;color:#64748b;font-size:13px;margin-bottom:18px}
+    table{width:100%;border-collapse:collapse;table-layout:fixed}
+    th{background:#0f1e36;color:#fff;padding:9px 4px;font-size:13px}
+    td{border:1px solid #e2e8f0;vertical-align:top;padding:5px;height:90px;width:20%}
+    td.empty{background:#f8fafc}
+    .dnum{font-size:12px;color:#94a3b8;font-weight:700;margin-bottom:3px}
+    .ev{font-size:11px;font-weight:700;border-radius:5px;padding:2px 6px;margin-bottom:3px}
+    .cov{font-size:10px;color:#15803d;margin-bottom:1px}
+    .btn{position:fixed;top:12px;left:12px;background:#2563eb;color:#fff;border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-weight:700}@media print{.btn{display:none}body{padding:6px}}</style></head><body>
+    <button class="btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+    <h1>جدول الدوام المسائي</h1><div class="sub">مركز طب الأسنان التخصصي — قسم إصلاح الأسنان — ${MONTHS[month.m]} ${month.y}</div>
+    ${isApproved ? `<div style="text-align:center;margin-bottom:14px"><span style="display:inline-block;border:2px solid #15803d;color:#15803d;border-radius:8px;padding:4px 16px;font-weight:bold;font-size:13px">✅ نسخة معتمدة</span></div>` : `<div style="text-align:center;margin-bottom:14px"><span style="display:inline-block;border:2px solid #d97706;color:#d97706;border-radius:8px;padding:4px 16px;font-weight:bold;font-size:13px">📝 مسوّدة — غير معتمدة</span></div>`}
+    <table><thead><tr><th>الأحد</th><th>الاثنين</th><th>الثلاثاء</th><th>الأربعاء</th><th>الخميس</th></tr></thead>
+    <tbody><tr>${cells}</tr></tbody></table><div style="margin-top:30px;text-align:left;font-size:13px;color:#1e293b;border-top:2px solid #e2e8f0;padding-top:14px;width:240px"><div style="font-weight:bold">رئيس قسم إصلاح الأسنان</div><div style="margin-top:6px">د. أمل العسكر</div><div style="margin-top:18px;color:#94a3b8">التوقيع: ............................</div></div></body></html>`;
+    setPreviewHtml(html);
+  };
+
+  const printReport = () => {
+    const dmy = (ds) => `${ds.split("-")[2]}/${+ds.split("-")[1]}`;
+    // Per-doctor totals this month
+    const stats = doctors.map(doc=>{
+      const fixedDays = doc.nightDays||[];
+      let fixedN=0, extraN=0, covs=0;
+      Object.entries(nightData).forEach(([date,nd])=>{
+        const [y,m]=date.split("-"); if(+y!==month.y||+m!==month.m+1) return;
+        if((nd.doctors||[]).includes(doc.id)){ if(fixedDays.includes(dayIdx(date))) fixedN++; else extraN++; }
+        const c=nd.coverages||{};
+        covs += ((c.am||[]).includes(doc.id)?1:0)+((c.pm||[]).includes(doc.id)?1:0)+((c.nextAm||[]).includes(doc.id)?1:0);
+      });
+      covs += coverages.filter(c=>{const [y,m]=c.date.split("-");return c.coverDoctorId===doc.id&&+y===month.y&&+m===month.m+1;}).length;
+      const absD = leaves.filter(l=>l.doctorId===doc.id&&(l.type==="sick"||l.type==="emergency")).reduce((a,l)=>a+Math.round((new Date(l.end)-new Date(l.start))/86400000)+1,0);
+      return { doc, fixedN, extraN, covs, load:Math.max(0,(extraN*2)+covs-absD) };
+    }).filter(s=>s.fixedN||s.extraN||s.covs).sort((a,b)=>b.load-a.load);
+    const rows = stats.map(s=>`<tr><td>${s.doc.name}</td><td style="text-align:center">${s.fixedN}</td><td style="text-align:center">${s.extraN}</td><td style="text-align:center">${s.covs}</td><td style="text-align:center;font-weight:bold">${s.load}</td></tr>`).join("");
+    const totalN = stats.reduce((a,s)=>a+s.fixedN+s.extraN,0);
+    const totalC = stats.reduce((a,s)=>a+s.covs,0);
+    const html = `<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><title>تقرير ${MONTHS[month.m]} ${month.y}</title>
+    <style>body{font-family:Tahoma,sans-serif;padding:24px;direction:rtl;color:#1e293b}h1{text-align:center;font-size:22px;margin-bottom:2px}.sub{text-align:center;color:#64748b;font-size:13px;margin-bottom:24px}
+    .cards{display:flex;gap:14px;justify-content:center;margin-bottom:24px}.card{border:1px solid #e2e8f0;border-radius:12px;padding:16px 24px;text-align:center}.card .n{font-size:28px;font-weight:800;color:#1e3a5f}.card .l{font-size:12px;color:#64748b}
+    table{width:100%;border-collapse:collapse}th{background:#1e3a5f;color:#fff;padding:9px}td{border:1px solid #e2e8f0;padding:8px}tr:nth-child(even){background:#f8fafc}
+    .btn{position:fixed;top:12px;left:12px;background:#2563eb;color:#fff;border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-weight:700}@media print{.btn{display:none}}</style></head><body>
+    <button class="btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+    <h1>التقرير الشهري</h1><div class="sub">مركز طب الأسنان التخصصي — قسم إصلاح الأسنان — ${MONTHS[month.m]} ${month.y}</div>
+    ${isApproved ? `<div style="text-align:center;margin-bottom:14px"><span style="display:inline-block;border:2px solid #15803d;color:#15803d;border-radius:8px;padding:4px 16px;font-weight:bold;font-size:13px">✅ نسخة معتمدة</span></div>` : `<div style="text-align:center;margin-bottom:14px"><span style="display:inline-block;border:2px solid #d97706;color:#d97706;border-radius:8px;padding:4px 16px;font-weight:bold;font-size:13px">📝 مسوّدة — غير معتمدة</span></div>`}
+    <div class="cards"><div class="card"><div class="n">${totalN}</div><div class="l">إجمالي الدوام المسائي</div></div><div class="card"><div class="n">${totalC}</div><div class="l">إجمالي التغطيات</div></div><div class="card"><div class="n">${stats.length}</div><div class="l">أطباء مشاركون</div></div></div>
+    <table><thead><tr><th>الطبيب</th><th>مسائي ثابت</th><th>مسائي إضافي</th><th>تغطيات</th><th>العبء الإضافي</th></tr></thead><tbody>${rows||'<tr><td colspan=5 style="text-align:center">لا بيانات</td></tr>'}</tbody></table>
+    <div style="margin-top:30px;text-align:left;font-size:13px;color:#1e293b;border-top:2px solid #e2e8f0;padding-top:14px;width:240px"><div style="font-weight:bold">رئيس قسم إصلاح الأسنان</div><div style="margin-top:6px">د. أمل العسكر</div><div style="margin-top:18px;color:#94a3b8">التوقيع: ............................</div></div>
+    </body></html>`;
+    setPreviewHtml(html);
+  };
+
+  const exportBackup = () => {
+    const data = { docs:S.get("fin_docs"), leaves:S.get("fin_leaves"), night:S.get("fin_night"), cov:S.get("fin_cov"), exported:new Date().toISOString() };
+    downloadFile(JSON.stringify(data,null,2), `نسخة_احتياطية_${new Date().toISOString().split("T")[0]}.json`, "application/json");
   };
 
   // Summary counts
@@ -853,6 +1231,15 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
         return (isClinic(getSlot(d,di,"am"))&&!(covs.am||[]).length)||(isClinic(getSlot(d,di,"pm"))&&!(covs.pm||[]).length)||(isClinic(getSlot(d,nextDi,"am"))&&!(covs.nextAm||[]).length);});
     }
     return has;
+  }).filter(({date,di,day}) => {
+    if (!search.trim()) return true;
+    const q = search.trim();
+    // match by date number or doctor name
+    if (String(day).includes(q) || date.includes(q) || DAYS[di].includes(q)) return true;
+    const nd = nightData[date]||{};
+    const names = [...(nd.doctors||[]), ...(nd.coverages?.am||[]), ...(nd.coverages?.pm||[]), ...(nd.coverages?.nextAm||[])].map(id=>fd(id)?.name||"").join(" ");
+    const covNames = coverages.filter(c=>c.date===date).map(c=>fd(c.coverDoctorId)?.name||"").join(" ");
+    return (names+" "+covNames).includes(q);
   });
 
   return (
@@ -864,9 +1251,17 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
           <div style={{ fontWeight:800, fontSize:16, minWidth:120, textAlign:"center" }}>{MONTHS[month.m]} {month.y}</div>
           <button onClick={()=>setMonth(p=>p.m===11?{y:p.y+1,m:0}:{y:p.y,m:p.m+1})} style={Btn.nav}>←</button>
           <div style={{ flex:1 }} />
-          <button onClick={()=>onAutoFill(month.y,month.m)} style={{ ...Btn.primary, background:"linear-gradient(135deg,#1e3a5f,#2c5282)" }}>⚡ توزيع تلقائي</button>
+          <button onClick={()=>onAutoFill(month.y,month.m,"gaps")} style={{ ...Btn.primary, background:"linear-gradient(135deg,#1e3a5f,#2c5282)" }}>⚡ إكمال الناقص</button>
+          <button onClick={()=>onAutoFill(month.y,month.m,"all")} style={{ ...Btn.nav, color:"#2c5282", borderColor:"#cdddec" }}>🔄 توزيع كامل</button>
+          <button onClick={()=>{ const pm = month.m===0?{y:month.y-1,m:11}:{y:month.y,m:month.m-1}; onCopyMonth(pm.y,pm.m,month.y,month.m); }} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>📋 نسخ الشهر السابق</button>
+          <button onClick={()=>setShowSwap(s=>!s)} style={{ ...Btn.nav, color:"#7c3aed", borderColor:"#ddd6fe" }}>🔁 تبديل مناوبين</button>
           <button onClick={printPDF} style={{ ...Btn.nav, color:"#15803d", borderColor:"#bbf7d0" }}>🖨️ جدول</button>
+          <button onClick={printCalendar} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>📅 تقويم</button>
           <button onClick={printBoxes} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>🔲 مربعات</button>
+          <button onClick={exportExcel} style={{ ...Btn.nav, color:"#15803d", borderColor:"#bbf7d0" }}>📊 Excel</button>
+          <button onClick={shareWhatsApp} style={{ ...Btn.nav, color:"#16a34a", borderColor:"#bbf7d0" }}>📲 واتساب</button>
+          <button onClick={printReport} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>📄 تقرير شهري</button>
+          <button onClick={printDoctorSheets} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>🗂️ أوراق الأطباء</button>
           {confirmClear ? (
             <span style={{ display:"inline-flex", gap:4, alignItems:"center" }}>
               <span style={{ fontSize:11, color:"#dc2626", fontWeight:700 }}>متأكد؟</span>
@@ -895,7 +1290,8 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
         {/* Add specific evening shift + filter row */}
         <div style={{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap", alignItems:"center" }}>
           <input type="date" style={{ ...SEL, width:"auto", flex:"0 0 auto" }} onChange={e=>{ if(e.target.value){ if(dayIdx(e.target.value)<0){ return; } onEnsureDay(e.target.value); setSelDate(e.target.value); setMonth({ y:+e.target.value.split("-")[0], m:+e.target.value.split("-")[1]-1 }); } }} value="" />
-          <span style={{ fontSize:11, color:"#94a3b8" }}>← اختر تاريخاً لإضافة يوم دوام مسائي</span>
+          <input type="text" placeholder="🔍 بحث باسم طبيب أو تاريخ..." value={search} onChange={e=>setSearch(e.target.value)} style={{ ...SEL, width:"auto", flex:"1 1 180px", minWidth:140 }} />
+          {search && <button onClick={()=>setSearch("")} style={{ ...Btn.nav, color:"#dc2626" }}>✕ مسح</button>}
           <div style={{ flex:1 }} />
           {[["all","الكل"],["pending","⚠️ معلّق"],["done","✅ مكتمل"]].map(([k,l])=>(
             <button key={k} onClick={()=>setFilter(k)} style={{ padding:"5px 12px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", border: filter===k?"2px solid #1e3a5f":"1px solid #e2e8f0", background: filter===k?"#eff4fa":"#fff", color: filter===k?"#1e3a5f":"#64748b" }}>{l}</button>
@@ -934,25 +1330,77 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
           </div>
         )}
 
-        {/* MAIN: Vibrant day cards with inline editing */}
+        {/* Swap panel */}
+        {showSwap && (
+          <div style={{ background:"#faf5ff", border:"1px solid #ddd6fe", borderRadius:12, padding:16, marginBottom:16 }}>
+            <div style={{ fontWeight:700, fontSize:14, color:"#6d28d9", marginBottom:10 }}>🔁 تبديل مناوبين عبر الشهر كامل</div>
+            <div style={{ fontSize:11, color:"#94a3b8", marginBottom:12 }}>كل مناوبات وتغطيات الطبيب الأول تنتقل للثاني والعكس.</div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+              <select value={swapA} onChange={e=>setSwapA(e.target.value)} style={{ ...SEL, width:"auto", flex:"1 1 140px" }}>
+                <option value="">الطبيب الأول...</option>
+                {doctors.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              <span style={{ fontSize:18 }}>⇄</span>
+              <select value={swapB} onChange={e=>setSwapB(e.target.value)} style={{ ...SEL, width:"auto", flex:"1 1 140px" }}>
+                <option value="">الطبيب الثاني...</option>
+                {doctors.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              <button onClick={()=>{ onSwap(+swapA,+swapB); setSwapA(""); setSwapB(""); setShowSwap(false); }}
+                style={{ background:"#7c3aed", color:"#fff", border:"none", borderRadius:8, padding:"9px 18px", fontWeight:700, fontSize:13, cursor:"pointer" }}>تبديل</button>
+            </div>
+          </div>
+        )}
+
+        {/* Approval bar */}
+        <div style={{ background: isApproved?"#f0fdf4":"#fff7ed", border:`1px solid ${isApproved?"#bbf7d0":"#fed7aa"}`, borderRadius:12, padding:"12px 16px", marginBottom:16, display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+          <span style={{ fontSize:22 }}>{isApproved?"✅":"📝"}</span>
+          <div style={{ flex:1, minWidth:140 }}>
+            <div style={{ fontWeight:700, fontSize:14, color: isApproved?"#15803d":"#c2410c" }}>
+              {isApproved ? `الجدول معتمد — ${MONTHS[month.m]} ${month.y}` : `مسوّدة — ${MONTHS[month.m]} ${month.y}`}
+            </div>
+            <div style={{ fontSize:11, color:"#94a3b8" }}>
+              {isApproved ? `اعتُمد بتاريخ ${new Date(isApproved).toLocaleDateString("ar")}` : "اعتمد الجدول قبل إرساله للأطباء"}
+            </div>
+          </div>
+          {isApproved ? (
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              <button onClick={shareWhatsApp} style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:8, padding:"9px 18px", fontWeight:700, fontSize:13, cursor:"pointer" }}>📲 مشاركة الجدول للجميع</button>
+              <button onClick={()=>onApprove(monthKey, null)} style={{ ...Btn.nav, color:"#dc2626", borderColor:"#fecaca" }}>↩️ إلغاء الاعتماد (تعديل)</button>
+            </div>
+          ) : (
+            <button onClick={()=>onApprove(monthKey, new Date().toISOString())} style={{ background:"#15803d", color:"#fff", border:"none", borderRadius:8, padding:"9px 18px", fontWeight:700, fontSize:13, cursor:"pointer" }}>✅ اعتماد نهائي</button>
+          )}
+        </div>
+
+        {/* MAIN: Clear table-style rows with expand-to-edit */}
         <div>
-          <div style={{ fontWeight:800, fontSize:14, marginBottom:10, display:"flex", alignItems:"center", gap:8 }}>
-            📋 أيام الدوام المسائي
-            <span style={{ fontSize:11, fontWeight:400, color:"#94a3b8" }}>({filledDays.length} يوم)</span>
+          <div style={{ fontWeight:800, fontSize:15, marginBottom:12, display:"flex", alignItems:"center", gap:8 }}>
+            📋 جدول الدوام المسائي
+            <span style={{ fontSize:12, fontWeight:400, color:"#94a3b8" }}>({filledDays.length} يوم)</span>
           </div>
           {filledDays.length === 0 ? (
-            <div style={{ textAlign:"center", color:"#94a3b8", padding:"34px 16px", fontSize:13, background:"linear-gradient(135deg,#f8fafc,#eff4fa)", borderRadius:14, border:"2px dashed #cdddec" }}>
+            <div style={{ textAlign:"center", color:"#94a3b8", padding:"34px 16px", fontSize:14, background:"linear-gradient(135deg,#f8fafc,#eff4fa)", borderRadius:14, border:"2px dashed #cdddec" }}>
               ✨ لا توجد أيام بعد — اضغط <strong>⚡ توزيع تلقائي</strong> أو اختر تاريخاً لإضافة دوام مسائي
             </div>
           ) : (
-            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-              {filledDays.map(({ date, di, day }) => (
-                <DayCard key={date} date={date} di={di} day={day}
-                  nd={nightData[date]||{}} indiv={coverages.filter(c=>c.date===date)}
-                  doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd}
-                  expanded={selDate===date} onToggle={()=>setSelDate(selDate===date?null:date)}
-                  onAddDoc={onAddDoc} onRemoveDoc={onRemoveDoc} onAddCov={onAddCov} onRemoveCov={onRemoveCov} onResetDay={onResetDay} />
-              ))}
+            <div style={{ background:"#fff", borderRadius:12, overflow:"hidden", boxShadow:"0 4px 16px rgba(30,58,95,.06)" }}>
+              {/* Column header */}
+              <div style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 16px", background:"#1e3a5f", color:"#fff", fontSize:13, fontWeight:700 }}>
+                <div style={{ minWidth:54, textAlign:"center" }}>التاريخ</div>
+                <div style={{ minWidth:75 }}>اليوم</div>
+                <div style={{ flex:1 }}>الدوام المسائي والتغطيات</div>
+                <div style={{ minWidth:70, textAlign:"center" }}>الحالة</div>
+                <div style={{ width:16 }} />
+              </div>
+              <div style={{ display:"flex", flexDirection:"column" }}>
+                {filledDays.map(({ date, di, day }) => (
+                  <DayCard key={date} date={date} di={di} day={day}
+                    nd={nightData[date]||{}} indiv={coverages.filter(c=>c.date===date)}
+                    doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd}
+                    expanded={selDate===date} onToggle={()=>setSelDate(selDate===date?null:date)}
+                    onAddDoc={onAddDoc} onRemoveDoc={onRemoveDoc} onAddCov={onAddCov} onRemoveCov={onRemoveCov} onResetDay={onResetDay} onSetNote={onSetNote} />
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -981,14 +1429,10 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
 // DAY CARD — vibrant, inline-editable day card
 // ══════════════════════════════════════════════════════
 const DAY_GRADIENTS = [
-  "linear-gradient(135deg,#0f1e36,#1e3a5f)", // Sun
-  "linear-gradient(135deg,#1e3a5f,#2c5282)", // Mon
-  "linear-gradient(135deg,#2c5282,#3b6ca8)", // Tue
-  "linear-gradient(135deg,#1e3a5f,#3b6ca8)", // Wed
-  "linear-gradient(135deg,#0f1e36,#2c5282)", // Thu
+  "#1e3a5f", "#2c5282", "#3b6ca8", "#2c5282", "#1e3a5f",
 ];
 
-function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverages, fd, expanded, onToggle, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onResetDay }) {
+function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverages, fd, expanded, onToggle, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onResetDay, onSetNote }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const nightDocs = nd.doctors || [];
   const covs = nd.coverages || { am:[], pm:[], nextAm:[] };
@@ -1014,36 +1458,48 @@ function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverag
   const done = pending===0 && nightDocs.length>0;
 
   return (
-    <div style={{ background:"#fff", borderRadius:10, overflow:"hidden", boxShadow: expanded?"0 6px 20px rgba(79,70,229,.15)":"0 1px 3px rgba(0,0,0,.05)", border: expanded?"2px solid #2c5282":"1px solid #eef2f7", transition:"all .15s" }}>
-      {/* Thin compact header row */}
-      <div onClick={onToggle} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", cursor:"pointer", borderRight:`5px solid transparent`, borderImage:`${grad} 1` }}>
-        {/* Day badge */}
-        <div style={{ background:grad, color:"#fff", borderRadius:8, minWidth:38, height:38, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-          <span style={{ fontSize:15, fontWeight:800, lineHeight:1 }}>{day}</span>
-          <span style={{ fontSize:8, opacity:.9 }}>{DAYS[di].slice(0,3)}</span>
+    <div style={{ background: expanded?"#f8fbff":"#fff", borderBottom:"1px solid #eef2f7", borderRight: expanded?"4px solid #2c5282":"4px solid transparent", transition:"all .15s" }}>
+      {/* Table-style row */}
+      <div onClick={onToggle} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 16px", cursor:"pointer" }}>
+        {/* Date badge */}
+        <div style={{ background:grad, color:"#fff", borderRadius:9, minWidth:54, height:46, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+          <span style={{ fontSize:17, fontWeight:800, lineHeight:1 }}>{day}</span>
+          <span style={{ fontSize:9, opacity:.9, marginTop:1 }}>/{date.split("-")[1]}</span>
         </div>
-        {/* Day name + date */}
-        <div style={{ flexShrink:0, minWidth:70 }}>
-          <div style={{ fontWeight:700, fontSize:13, color:"#1e293b" }}>{DAYS[di]}</div>
-          <div style={{ fontSize:10, color:"#94a3b8" }}>{date}</div>
+        {/* Day name */}
+        <div style={{ minWidth:75, flexShrink:0 }}>
+          <div style={{ fontWeight:700, fontSize:15, color:"#1e293b" }}>{DAYS[di]}</div>
+          <div style={{ fontSize:11, color:"#94a3b8" }}>{date}</div>
         </div>
-        {/* Inline chips (collapsed preview) */}
-        <div style={{ flex:1, display:"flex", flexWrap:"wrap", gap:4, alignItems:"center", minWidth:0 }}>
-          {nightDocs.map(id=>fd(id)).filter(Boolean).map(d=>(
-            <span key={d.id} style={{ background:d.color+"18", color:d.color, border:`1px solid ${d.color}44`, borderRadius:5, padding:"2px 8px", fontSize:10, fontWeight:700 }}>🌙 {d.name}</span>
-          ))}
-          {nightDocs.length===0 && <span style={{ fontSize:10, color:"#cbd5e1" }}>— لا دوام</span>}
-          {indiv.map(c=>{const cd=fd(c.coverDoctorId);return cd&&<span key={c.id} style={{ background:"#fff7ed", color:"#ea580c", border:"1px solid #fed7aa", borderRadius:5, padding:"2px 8px", fontSize:10 }}>🔄 {cd.name}</span>;})}
+        {/* Names + coverages */}
+        <div style={{ flex:1, display:"flex", flexDirection:"column", gap:4, minWidth:0 }}>
+          {nightDocs.map(id=>fd(id)).filter(Boolean).map(d=>{
+            const myCovs = [];
+            (covs.am||[]).forEach(id=>{const c=fd(id);if(c)myCovs.push(`صباحاً: ${c.name}`);});
+            (covs.pm||[]).forEach(id=>{const c=fd(id);if(c)myCovs.push(`ظهراً: ${c.name}`);});
+            (covs.nextAm||[]).forEach(id=>{const c=fd(id);if(c)myCovs.push(`غداً صباحاً: ${c.name}`);});
+            return (
+              <div key={d.id} style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                <span style={{ background:d.color+"18", color:d.color, border:`1px solid ${d.color}55`, borderRadius:6, padding:"3px 11px", fontSize:13, fontWeight:700 }}>🌙 {d.name}</span>
+                {myCovs.map((t,i)=><span key={i} style={{ fontSize:11, color:"#15803d", background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:5, padding:"2px 8px" }}>↳ {t}</span>)}
+              </div>
+            );
+          })}
+          {nightDocs.length===0 && <span style={{ fontSize:13, color:"#cbd5e1" }}>— لا دوام مسائي</span>}
+          {indiv.map(c=>{const cd=fd(c.coverDoctorId);return cd&&<span key={c.id} style={{ background:"#fff7ed", color:"#ea580c", border:"1px solid #fed7aa", borderRadius:6, padding:"2px 9px", fontSize:12, width:"fit-content" }}>🔄 تغطية فردية: {cd.name}</span>;})}
+          {nd.note && <span style={{ fontSize:11, color:"#a16207", background:"#fffbeb", border:"1px solid #fde68a", borderRadius:6, padding:"2px 9px", width:"fit-content" }}>📝 {nd.note}</span>}
         </div>
-        {/* Status + chevron */}
-        {done && <span style={{ background:"#f0fdf4", color:"#15803d", borderRadius:14, padding:"2px 9px", fontSize:10, fontWeight:700, flexShrink:0 }}>✅</span>}
-        {pending>0 && <span style={{ background:"#fef2f2", color:"#dc2626", borderRadius:14, padding:"2px 9px", fontSize:10, fontWeight:700, flexShrink:0 }}>⚠️ {pending}</span>}
-        <span style={{ fontSize:12, color:"#94a3b8", flexShrink:0 }}>{expanded?"▲":"▼"}</span>
+        {/* Status */}
+        <div style={{ minWidth:70, textAlign:"center", flexShrink:0 }}>
+          {done && <span style={{ background:"#f0fdf4", color:"#15803d", borderRadius:14, padding:"3px 11px", fontSize:11, fontWeight:700 }}>✅ مكتمل</span>}
+          {pending>0 && <span style={{ background:"#fef2f2", color:"#dc2626", borderRadius:14, padding:"3px 11px", fontSize:11, fontWeight:700 }}>⚠️ {pending}</span>}
+        </div>
+        <span style={{ fontSize:14, color:"#94a3b8", flexShrink:0, width:16 }}>{expanded?"▲":"▼"}</span>
       </div>
 
       {/* Expanded body - inline editing */}
       {expanded && (
-        <div style={{ padding:"12px 14px", borderTop:"1px solid #f1f5f9" }}>
+        <div style={{ padding:"4px 16px 14px", borderTop:"1px solid #eef2f7" }}>
           {/* Night doctors with their coverage needs */}
           {nightDocs.map(id=>fd(id)).filter(Boolean).map(d => {
             const needs = docNeeds(d);
@@ -1052,11 +1508,24 @@ function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverag
                 <div style={{ display:"flex", alignItems:"center", gap:8, background:d.color+"14", padding:"7px 10px" }}>
                   <div style={{ ...AV, background:d.color, width:26, height:26, fontSize:9 }}>{sn(d.name).slice(0,2)}</div>
                   <span style={{ flex:1, fontSize:13, fontWeight:700, color:d.color }}>🌙 {d.name}</span>
-                  <button onClick={()=>{
+                  {(() => {
                     const covLines = docNeeds(d).map(n=>{ const ids=covs[n.key]||[]; const nm=ids.map(id=>fd(id)?.name).filter(Boolean).join("، "); return `- ${n.label}: ${nm?("يغطّيها "+nm):"تحتاج تغطية"}`; }).join("\n");
-                    mailtoAlert(d, `تنبيه دوام مسائي — ${DAYS[di]} ${date}`,
-                      `عزيزي الطبيب ${d.name}،\n\nلديك دوام مسائي يوم ${DAYS[di]} الموافق ${date}.\n${covLines?("\nالتغطيات:\n"+covLines):""}\n\nمركز دمام الطبي`);
-                  }} style={{ background:"#fff", border:`1px solid ${d.color}44`, color:d.color, cursor:"pointer", fontSize:11, borderRadius:6, padding:"2px 8px", fontWeight:700 }} title={d.email?`إرسال تنبيه إلى ${d.email}`:"لا يوجد إيميل — أضفه في صفحة الأطباء"}>📧 تنبيه</button>
+                    const subject = `تنبيه دوام مسائي — ${DAYS[di]} ${date}`;
+                    const body = `عزيزي الطبيب ${d.name}،\n\nلديك دوام مسائي يوم ${DAYS[di]} الموافق ${date}.\n${covLines?("\nالتغطيات:\n"+covLines):""}\n\nمركز طب الأسنان التخصصي\nرئيس قسم إصلاح الأسنان\nد. أمل العسكر`;
+                    const href = `mailto:${d.email||""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                    const waText = `🌙 تنبيه دوام مسائي\n\nعزيزي الطبيب ${d.name}،\nلديك دوام مسائي يوم ${DAYS[di]} الموافق ${date}.${covLines?("\n\nالتغطيات:\n"+covLines):""}\n\nمركز طب الأسنان التخصصي\nرئيس قسم إصلاح الأسنان\nد. أمل العسكر`;
+                    const waHref = `https://wa.me/${(d.phone||"").replace(/[^0-9]/g,"")}?text=${encodeURIComponent(waText)}`;
+                    return (
+                      <>
+                        <a href={waHref} target="_blank" rel="noopener noreferrer"
+                          style={{ background:"#fff", border:"1px solid #bbf7d0", color:"#16a34a", cursor:"pointer", fontSize:11, borderRadius:6, padding:"3px 9px", fontWeight:700, textDecoration:"none", display:"inline-block" }}
+                          title={d.phone?`واتساب إلى ${d.phone}`:"أضف رقم الجوال في صفحة الأطباء"}>📲</a>
+                        <a href={href} target="_blank" rel="noopener noreferrer"
+                          style={{ background:"#fff", border:`1px solid ${d.color}44`, color:d.color, cursor:"pointer", fontSize:11, borderRadius:6, padding:"3px 9px", fontWeight:700, textDecoration:"none", display:"inline-block" }}
+                          title={d.email?`إرسال تنبيه إلى ${d.email}`:"لا يوجد إيميل — أضفه في صفحة الأطباء"}>📧</a>
+                      </>
+                    );
+                  })()}
                   <button onClick={()=>onRemoveDoc(date,d.id)} style={{ background:"#fff", border:`1px solid ${d.color}44`, color:"#dc2626", cursor:"pointer", fontSize:12, borderRadius:6, padding:"2px 7px" }}>✕</button>
                 </div>
                 <div style={{ padding:"8px 10px" }}>
@@ -1095,7 +1564,9 @@ function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverag
               <option value="">➕ إضافة طبيب للدوام المسائي...</option>
               {doctors.filter(d=>!nightDocs.includes(d.id)).map(d=>{
                 const ol = onLeave(d,date,leaves);
-                return <option key={d.id} value={d.id} disabled={ol}>{ol?`🚫 ${d.name} (إجازة)`:d.name}{(d.nightDays||[]).includes(di)?" (ثابت)":""}</option>;
+                const blocked = (d.blockedDays||[]).includes(di);
+                const label = ol ? `🚫 ${d.name} (إجازة)` : blocked ? `⛔ ${d.name} (لا يعمل ${DAYS[di]})` : d.name;
+                return <option key={d.id} value={d.id} disabled={ol||blocked}>{label}{(d.nightDays||[]).includes(di)?" (ثابت)":""}</option>;
               })}
             </select>
           )}
@@ -1110,6 +1581,12 @@ function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverag
             </div>
           )}
 
+          {/* Day note */}
+          <div style={{ marginTop:6, marginBottom:8 }}>
+            <input type="text" defaultValue={nd.note||""} placeholder="📝 ملاحظة لهذا اليوم..."
+              onBlur={e=>onSetNote && onSetNote(date, e.target.value)}
+              style={{ width:"100%", padding:"7px 10px", border:"1px solid #e2e8f0", borderRadius:8, fontSize:12, outline:"none", background:"#fffef5" }} />
+          </div>
           {/* Footer actions */}
           {nightDocs.length>0 && (
             <div style={{ marginTop:6, display:"flex", justifyContent:"flex-end" }}>
@@ -1246,6 +1723,17 @@ function DoctorsPage({ doctors, leaves, today, fd, onUpdateDocs, showToast }) {
                         style={{ flex:1, padding:"7px 10px", border:"1px solid #e2e8f0", borderRadius:7, fontSize:12, outline:"none", direction:"ltr", textAlign:"left" }} />
                     </div>
                   </div>
+                  {/* Phone field for WhatsApp */}
+                  <div style={{ marginBottom:12, padding:"10px 12px", background:"#fff", borderRadius:8, border:"1px solid #e2e8f0" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <span>📲</span>
+                      <div style={{ fontSize:12, fontWeight:600, whiteSpace:"nowrap" }}>الجوال (واتساب)</div>
+                      <input type="tel" value={doc.phone||""} placeholder="9665xxxxxxxx"
+                        onChange={e=>onUpdateDocs(doctors.map(x=>x.id!==doc.id?x:{...x,phone:e.target.value}))}
+                        style={{ flex:1, padding:"7px 10px", border:"1px solid #e2e8f0", borderRadius:7, fontSize:12, outline:"none", direction:"ltr", textAlign:"left" }} />
+                    </div>
+                    <div style={{ fontSize:10, color:"#94a3b8", marginTop:5 }}>بصيغة دولية بدون + (مثال: 966501234567)</div>
+                  </div>
                   {/* Night days - multi select toggle */}
                   <div style={{ marginBottom:12, padding:"10px 12px", background:"#fff", borderRadius:8, border:"1px solid #e2e8f0" }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
@@ -1260,6 +1748,25 @@ function DoctorsPage({ doctors, leaves, today, fd, onUpdateDocs, showToast }) {
                             style={{ padding:"6px 12px", borderRadius:7, fontSize:12, fontWeight:700, cursor:"pointer", border: active?"2px solid #1e3a5f":"1px solid #e2e8f0",
                               background: active?"#0f1e36":"#f8fafc", color: active?"#93b4d8":"#64748b" }}>
                             {active?"🌙 ":""}{d}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {/* Blocked days - doctor cannot work */}
+                  <div style={{ marginBottom:12, padding:"10px 12px", background:"#fff", borderRadius:8, border:"1px solid #e2e8f0" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                      <span>🚫</span>
+                      <div style={{ fontSize:12, fontWeight:600 }}>أيام لا يعمل فيها <span style={{ color:"#94a3b8", fontWeight:400 }}>(تُستبعد من التوزيع التلقائي)</span></div>
+                    </div>
+                    <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+                      {DAYS.map((d,i) => {
+                        const active = (doc.blockedDays||[]).includes(i);
+                        return (
+                          <button key={i} onClick={() => onUpdateDocs(doctors.map(x=>{ if(x.id!==doc.id) return x; const cur=Array.isArray(x.blockedDays)?x.blockedDays:[]; return {...x, blockedDays: cur.includes(i)?cur.filter(y=>y!==i):[...cur,i].sort()}; }))}
+                            style={{ padding:"6px 12px", borderRadius:7, fontSize:12, fontWeight:700, cursor:"pointer", border: active?"2px solid #dc2626":"1px solid #e2e8f0",
+                              background: active?"#fef2f2":"#f8fafc", color: active?"#dc2626":"#64748b" }}>
+                            {active?"🚫 ":""}{d}
                           </button>
                         );
                       })}
@@ -1284,12 +1791,13 @@ function DoctorsPage({ doctors, leaves, today, fd, onUpdateDocs, showToast }) {
                             <tr key={di}>
                               <td style={{ padding:"4px 10px", fontWeight:700, fontSize:12, color:"#fff", background:"#7ea4e6", textAlign:"center" }}>{DAYS[di]}</td>
                               {["am","pm"].map(period => {
-                                const val = getSlot(doc,di,period);
+                                const raw = getSlot(doc,di,period);
+                                const val = (raw==="clinic_am"||raw==="clinic_pm") ? "clinic" : raw;
                                 const sc = SLOT_COLORS[val] || SLOT_COLORS[""];
                                 return (
                                   <td key={period} style={{ padding:"3px 4px" }}>
                                     <select value={val} onChange={e => updateSched(doc.id,di,period,e.target.value)}
-                                      style={{ width:"100%", padding:"6px 3px", borderRadius:6, border:`2px solid ${val?sc.text:"#e2e8f0"}`, background:sc.bg, color:sc.text, fontSize:11, fontWeight:600, cursor:"pointer", outline:"none" }}>
+                                      style={{ width:"100%", padding:"8px 4px", borderRadius:6, border:`2px solid ${val?sc.text:"#e2e8f0"}`, background:sc.bg, color:sc.text, fontSize:13, fontWeight:600, cursor:"pointer", outline:"none" }}>
                                       {SLOT_OPTS.map(([v,l]) => <option key={v} value={v}>{l}</option>)}
                                     </select>
                                   </td>
@@ -1585,7 +2093,8 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
     const myLeaves = leaves.filter(l=>l.doctorId===doc.id && (range==="all"||inRange(l.start,range)));
     const leaveDays = myLeaves.reduce((a,l)=>a+Math.round((new Date(l.end)-new Date(l.start))/86400000)+1, 0);
     const absenceDays = myLeaves.filter(l=>l.type==="sick"||l.type==="emergency").reduce((a,l)=>a+Math.round((new Date(l.end)-new Date(l.start))/86400000)+1, 0);
-    const tasks = Math.max(0, extraNights + totalCovs - absenceDays);
+    // الدوام المسائي يُحسب كيوم كامل (شفتين) في العبء
+    const tasks = Math.max(0, (extraNights * 2) + totalCovs - absenceDays);
     return { fixedNights, extraNights, nightCovs, indivCovs, totalCovs, leaveDays, absenceDays, tasks, myLeaves };
   };
 
@@ -1660,7 +2169,7 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
               <div style={{ fontSize:34, fontWeight:800, color:cls.color }}>{s.tasks}</div>
               <div>
                 <div style={{ fontWeight:700, color:cls.color }}>العبء الإضافي ({PERIODS[period]}) — {cls.label}</div>
-                <div style={{ fontSize:11, color:"#64748b" }}>= (مسائي إضافي + تغطيات) − غياب</div>
+                <div style={{ fontSize:11, color:"#64748b" }}>= (مسائي إضافي ×2 شفتين + تغطيات) − غياب</div>
               </div>
             </div>
 
@@ -1738,19 +2247,31 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
             {overview.map(({doc,s})=>{
               const cls = classify(s.tasks);
               const vsAvg = s.tasks - avgTasks;
+              const statBox = (label, val, color, bg) => (
+                <div style={{ background:bg, borderRadius:8, padding:"5px 4px", textAlign:"center", minWidth:52 }}>
+                  <div style={{ fontSize:15, fontWeight:800, color, lineHeight:1 }}>{val}</div>
+                  <div style={{ fontSize:9, color:"#94a3b8", marginTop:2 }}>{label}</div>
+                </div>
+              );
               return (
-                <div key={doc.id} onClick={()=>setSelId(String(doc.id))} style={{ display:"flex", alignItems:"center", gap:10, background:"#fff", border:`1px solid ${cls.border}`, borderRadius:9, padding:"8px 12px", cursor:"pointer", borderRight:`4px solid ${doc.color}` }}>
-                  <div style={{ ...AV, background:doc.color, width:30, height:30, fontSize:10 }}>{sn(doc.name).slice(0,2)}</div>
-                  <div style={{ flex:1, fontWeight:700, fontSize:13 }}>{doc.name}</div>
-                  <div style={{ display:"flex", gap:4, fontSize:10 }}>
-                    <span style={{ color:"#1d4ed8" }}>🌙{s.fixedNights+s.extraNights}</span>
-                    <span style={{ color:"#15803d" }}>🔄{s.totalCovs}</span>
-                    {s.absenceDays>0 && <span style={{ color:"#dc2626" }}>🏥{s.absenceDays}</span>}
+                <div key={doc.id} onClick={()=>setSelId(String(doc.id))} style={{ display:"flex", alignItems:"center", gap:10, background:"#fff", border:"1px solid #eef2f7", borderRadius:11, padding:"10px 12px", cursor:"pointer", borderRight:`4px solid ${doc.color}` }}>
+                  <div style={{ ...AV, background:doc.color, width:34, height:34, fontSize:11, borderRadius:9 }}>{sn(doc.name).slice(0,2)}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontWeight:700, fontSize:14, color:"#1e293b" }}>{doc.name}</div>
+                    <div style={{ fontSize:10, fontWeight:700, marginTop:2, color: Math.abs(vsAvg)<0.5?"#94a3b8":vsAvg>0?"#dc2626":"#15803d" }}>
+                      {Math.abs(vsAvg)<0.5?"≈ ضمن المتوسط":vsAvg>0?`▲ أعلى من المتوسط بـ ${vsAvg.toFixed(1)}`:`▼ أقل من المتوسط بـ ${Math.abs(vsAvg).toFixed(1)}`}
+                    </div>
                   </div>
-                  <div style={{ background:cls.bg, color:cls.color, border:`1px solid ${cls.border}`, borderRadius:14, padding:"3px 10px", fontSize:12, fontWeight:800, minWidth:28, textAlign:"center" }}>{s.tasks}</div>
-                  <span style={{ fontSize:9, fontWeight:700, minWidth:60, textAlign:"left", color: Math.abs(vsAvg)<0.5?"#94a3b8":vsAvg>0?"#dc2626":"#15803d" }}>
-                    {Math.abs(vsAvg)<0.5?"≈ المتوسط":vsAvg>0?`▲ +${vsAvg.toFixed(1)}`:`▼ ${vsAvg.toFixed(1)}`}
-                  </span>
+                  {/* Clear stat boxes */}
+                  <div style={{ display:"flex", gap:5 }}>
+                    {statBox("مسائي", s.fixedNights+s.extraNights, "#1d4ed8", "#eff4fb")}
+                    {statBox("تغطيات", s.totalCovs, "#15803d", "#eefaf3")}
+                    {s.absenceDays>0 && statBox("غياب", s.absenceDays, "#dc2626", "#fdeef0")}
+                    <div style={{ background:cls.bg, border:`1px solid ${cls.border}`, borderRadius:8, padding:"5px 8px", textAlign:"center", minWidth:54 }}>
+                      <div style={{ fontSize:16, fontWeight:800, color:cls.color, lineHeight:1 }}>{s.tasks}</div>
+                      <div style={{ fontSize:9, color:cls.color, marginTop:2, fontWeight:700 }}>العبء</div>
+                    </div>
+                  </div>
                 </div>
               );
             })}
