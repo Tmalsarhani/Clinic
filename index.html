@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>نظام الدوام المسائي — مركز دمام الطبي</title>
+<title>الجداول الطبية — قسم إصلاح الأسنان </title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
@@ -586,6 +586,52 @@ function App() {
     updateNight(next);
   };
 
+  // Auto-distribute pending coverages, least-loaded doctor first (fair load)
+  const autoFillPending = (year, monthIdx) => {
+    // Build current load per doctor (extra nights*2 + coverages - absences) for the month
+    const inM = (ds) => { const [y,m]=ds.split("-"); return +y===year && +m===monthIdx+1; };
+    const load = {}; doctors.forEach(d=>load[d.id]=0);
+    Object.entries(nightData).forEach(([date,nd])=>{
+      if(!inM(date)) return;
+      const di = dayIdx(date);
+      (nd.doctors||[]).forEach(id=>{ const d=fd(id); if(d && !(d.nightDays||[]).includes(di)) load[id]=(load[id]||0)+2; });
+      const c=nd.coverages||{};
+      [...(c.am||[]),...(c.pm||[]),...(c.nextAm||[])].forEach(id=>load[id]=(load[id]||0)+1);
+    });
+    coverages.forEach(cv=>{ if(inM(cv.date)){ load[cv.coverDoctorId]=(load[cv.coverDoctorId]||0)+1; if(cv.absentId) load[cv.absentId]=(load[cv.absentId]||0)-1; } });
+
+    const next = JSON.parse(JSON.stringify(nightData));
+    let filled = 0;
+    // Collect pending slots
+    Object.keys(next).filter(inM).sort().forEach(date=>{
+      const nd = next[date]; const di = dayIdx(date);
+      if (di<0) return;
+      const nextDate = nextWork(date); const nextDi = dayIdx(nextDate);
+      nd.coverages = nd.coverages || { am:[], pm:[], nextAm:[] };
+      (nd.doctors||[]).forEach(nightId=>{
+        const nightDoc = fd(nightId); if(!nightDoc) return;
+        const slots = [];
+        if (isClinic(getSlot(nightDoc,di,"am")) && !(nd.coverages.am||[]).length) slots.push({key:"am",covDate:date,covDi:di});
+        if (isClinic(getSlot(nightDoc,di,"pm")) && !(nd.coverages.pm||[]).length) slots.push({key:"pm",covDate:date,covDi:di});
+        if (isClinic(getSlot(nightDoc,nextDi,"am")) && !(nd.coverages.nextAm||[]).length) slots.push({key:"nextAm",covDate:nextDate,covDi:nextDi});
+        slots.forEach(({key,covDate,covDi})=>{
+          // candidates: not on leave, not blocked, not the night doctor, not already busy that period
+          const avail = getAvailable(doctors, nd.doctors||[], covDi, covDate, key==="pm"?"pm":"am", leaves, nightData, { [key]: nd.coverages[key]||[] }, coverages)
+            .filter(x=>x.status==="free");
+          if (!avail.length) return;
+          // pick least loaded
+          avail.sort((a,b)=>(load[a.doc.id]||0)-(load[b.doc.id]||0));
+          const chosen = avail[0].doc;
+          nd.coverages[key] = [...(nd.coverages[key]||[]), chosen.id];
+          load[chosen.id] = (load[chosen.id]||0) + 1;
+          filled++;
+        });
+      });
+    });
+    if (filled>0) { updateNight(next); showToast(`✅ تم توزيع ${filled} تغطية معلّقة بعدالة`); }
+    else showToast("لا توجد تغطيات معلّقة قابلة للتوزيع", "warn");
+  };
+
   const clearMonth = (year, month) => {
     const next = { ...nightData };
     Object.keys(next).forEach(date => {
@@ -776,7 +822,7 @@ function App() {
             );
           })()}
           {page==="dashboard" && <DashboardPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onGoto={setPage} onLoadSeed={loadJuneSeed} onImportExcel={importExcel} />}
-          {page==="monthly" && <MonthlyPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onAutoFill={(y,m,mode) => { let base = nightData; if(mode==="all"){ base={}; Object.keys(nightData).forEach(d=>{const [yy,mm]=d.split("-"); if(+yy!==y||+mm!==m+1) base[d]=nightData[d];}); } const next=autoFill(y,m,doctors,leaves,base); updateNight(next); showToast(mode==="all"?"✅ تم التوزيع الكامل":"✅ تم إكمال الأيام الناقصة"); }} onAddDoc={addNightDoc} onRemoveDoc={removeNightDoc} onAddCov={addCoverage} onRemoveCov={removeCoverage} onClearMonth={clearMonth} onResetDay={resetDay} onCopyDay={copyDay} onSetNote={setDayNote} onEnsureDay={ensureDay} onCopyMonth={copyMonth} onSwap={swapDoctors} approvals={approvals} onApprove={setMonthApproval} onAddIndiv={addIndivCoverage} onRemoveIndiv={removeIndivCoverage} />}
+          {page==="monthly" && <MonthlyPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onAutoFill={(y,m,mode) => { let base = nightData; if(mode==="all"){ base={}; Object.keys(nightData).forEach(d=>{const [yy,mm]=d.split("-"); if(+yy!==y||+mm!==m+1) base[d]=nightData[d];}); } const next=autoFill(y,m,doctors,leaves,base); updateNight(next); showToast(mode==="all"?"✅ تم التوزيع الكامل":"✅ تم إكمال الأيام الناقصة"); }} onAddDoc={addNightDoc} onRemoveDoc={removeNightDoc} onAddCov={addCoverage} onRemoveCov={removeCoverage} onClearMonth={clearMonth} onResetDay={resetDay} onCopyDay={copyDay} onSetNote={setDayNote} onEnsureDay={ensureDay} onCopyMonth={copyMonth} onSwap={swapDoctors} approvals={approvals} onApprove={setMonthApproval} onAddIndiv={addIndivCoverage} onRemoveIndiv={removeIndivCoverage} onAutoFillPending={autoFillPending} />}
           {page==="doctors"  && <DoctorsPage doctors={doctors} leaves={leaves} today={today} fd={fd} onUpdateDocs={updateDocs} showToast={showToast} />}
           {page==="leaves"   && <LeavesPage doctors={doctors} leaves={leaves} fd={fd} onUpdate={(next) => { setLeaves(next); S.set("fin_leaves",next); }} showToast={showToast} />}
           {page==="stats"    && <StatsPage doctors={doctors} nightData={nightData} coverages={coverages} leaves={leaves} />}
@@ -968,7 +1014,7 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
 // ══════════════════════════════════════════════════════
 // MONTHLY PAGE
 // ══════════════════════════════════════════════════════
-function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoFill, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onClearMonth, onResetDay, onCopyDay, onSetNote, onEnsureDay, onCopyMonth, onSwap, approvals, onApprove, onAddIndiv, onRemoveIndiv }) {
+function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoFill, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onClearMonth, onResetDay, onCopyDay, onSetNote, onEnsureDay, onCopyMonth, onSwap, approvals, onApprove, onAddIndiv, onRemoveIndiv, onAutoFillPending }) {
   const now = new Date();
   const [month, setMonth] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [selDate, setSelDate] = useState(null);
@@ -1444,6 +1490,18 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
             </div>
           ))}
         </div>
+
+        {/* Pending coverages auto-fill banner */}
+        {summary.pending>0 && (
+          <div style={{ background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:12, padding:"12px 16px", marginBottom:14, display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+            <span style={{ fontSize:20 }}>⚖️</span>
+            <div style={{ flex:1, minWidth:140 }}>
+              <div style={{ fontWeight:700, fontSize:13, color:"#c2410c" }}>يوجد {summary.pending} تغطية معلّقة</div>
+              <div style={{ fontSize:11, color:"#94a3b8" }}>توزيع تلقائي عادل — الأقل عبئاً أولاً</div>
+            </div>
+            <button onClick={()=>onAutoFillPending(month.y,month.m)} style={{ background:"#ea580c", color:"#fff", border:"none", borderRadius:8, padding:"9px 16px", fontWeight:700, fontSize:12, cursor:"pointer" }}>⚡ إكمال التغطيات المعلّقة بعدالة</button>
+          </div>
+        )}
 
         {/* 2) Tools & commands (collapsible) */}
         <div style={{ background:"#fff", border:"1px solid #eef2f7", borderRadius:12, marginBottom:14, overflow:"hidden" }}>
