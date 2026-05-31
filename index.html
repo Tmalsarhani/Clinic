@@ -294,18 +294,32 @@ function detectConflicts(doctors, leaves, nightData, coverages) {
     });
   });
   // 5. Absent doctor (individual coverage) is themselves assigned a duty same day
+  // Helper: find the previous workday's date string (whose nextAm coverage lands on `date`)
+  const prevWorkOf = (dateStr) => {
+    const d = new Date(dateStr);
+    for (let i=1;i<=4;i++){
+      const p = new Date(d); p.setDate(d.getDate()-i);
+      const wd = p.getDay(); // 0=Sun..6=Sat ; skip Fri(5),Sat(6)
+      if (wd!==5 && wd!==6) return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,"0")}-${String(p.getDate()).padStart(2,"0")}`;
+    }
+    return null;
+  };
   (coverages||[]).forEach(c=>{
     if (!c.absentId) return;
     const absId = c.absentId;
     const nm = fd(absId)?.name||"";
     // a) assigned as a cover doctor in another individual coverage same date
     const asCover = (coverages||[]).some(o=>o.date===c.date && o.coverDoctorId===absId);
-    // b) assigned in night-schedule coverage same date
+    // b) assigned in night-schedule coverage same date (am/pm of today)
     const nd = nightData[c.date]||{}; const cv = nd.coverages||{};
-    const inNightCov = [...(cv.am||[]),...(cv.pm||[]),...(cv.nextAm||[])].includes(absId);
+    const inTodayCov = [...(cv.am||[]),...(cv.pm||[])].includes(absId);
+    // b2) assigned to cover "tomorrow morning" from the PREVIOUS workday's record (lands on c.date)
+    const pw = prevWorkOf(c.date);
+    const prevNd = pw ? (nightData[pw]||{}) : {};
+    const inNextAmCov = ((prevNd.coverages||{}).nextAm||[]).includes(absId);
     // c) has a night shift same date
     const hasNight = (nd.doctors||[]).includes(absId);
-    if (asCover || inNightCov || hasNight) {
+    if (asCover || inTodayCov || inNextAmCov || hasNight) {
       conflicts.push({ type:"absent-busy", date:c.date, text:`${nm} مسجّل غائباً يوم ${c.date} لكنه مكلّف بتغطية/دوام نفس اليوم — راجع التكليف` });
     }
   });
@@ -1828,6 +1842,11 @@ function IndivCoverageAdder({ date, di, doctors, leaves, nightData, coverages, f
     const nd = nightData[date]||{}; const c = nd.coverages||{};
     const ids = [...(c[key]||[])];
     coverages.forEach(cv=>{ if(cv.date===date && cv.period===key) ids.push(cv.coverDoctorId); });
+    // For morning: a doctor covering "tomorrow morning" from the previous workday lands here
+    if (key==="am") {
+      const d = new Date(date);
+      for (let i=1;i<=4;i++){ const p=new Date(d); p.setDate(d.getDate()-i); const wd=p.getDay(); if(wd!==5&&wd!==6){ const ps=`${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,"0")}-${String(p.getDate()).padStart(2,"0")}`; ((nightData[ps]?.coverages||{}).nextAm||[]).forEach(id=>ids.push(id)); break; } }
+    }
     return ids;
   };
 
