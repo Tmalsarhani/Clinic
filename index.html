@@ -10,6 +10,7 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; font-family: 'Tajawal', 'Segoe UI', Tahoma, sans-serif; background:#f0f4f8; -webkit-font-smoothing:antialiased; }
@@ -292,10 +293,24 @@ function detectConflicts(doctors, leaves, nightData, coverages) {
       });
     });
   });
+  // 5. Absent doctor (individual coverage) is themselves assigned a duty same day
+  (coverages||[]).forEach(c=>{
+    if (!c.absentId) return;
+    const absId = c.absentId;
+    const nm = fd(absId)?.name||"";
+    // a) assigned as a cover doctor in another individual coverage same date
+    const asCover = (coverages||[]).some(o=>o.date===c.date && o.coverDoctorId===absId);
+    // b) assigned in night-schedule coverage same date
+    const nd = nightData[c.date]||{}; const cv = nd.coverages||{};
+    const inNightCov = [...(cv.am||[]),...(cv.pm||[]),...(cv.nextAm||[])].includes(absId);
+    // c) has a night shift same date
+    const hasNight = (nd.doctors||[]).includes(absId);
+    if (asCover || inNightCov || hasNight) {
+      conflicts.push({ type:"absent-busy", date:c.date, text:`${nm} مسجّل غائباً يوم ${c.date} لكنه مكلّف بتغطية/دوام نفس اليوم — راجع التكليف` });
+    }
+  });
   return conflicts;
 }
-
-// Storage
 const S = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
   set: (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
@@ -439,6 +454,53 @@ function App() {
   const removeIndivCoverage = (id) => {
     updateCoverages(coverages.filter(c => c.id !== id));
     showToast("تم الحذف", "warn");
+  };
+
+  const importExcel = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = window.XLSX.read(new Uint8Array(e.target.result), { type:"array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = window.XLSX.utils.sheet_to_json(ws, { header:1 });
+        const nameToId = {}; doctors.forEach(d=>{ nameToId[d.name.trim()] = d.id; nameToId[d.name.replace(/\s/g,"")] = d.id; });
+        const findId = nm => { if(!nm) return null; const t=nm.trim(); return nameToId[t] ?? nameToId[t.replace(/\s/g,"")] ?? null; };
+        const nextNight = { ...nightData };
+        const newCov = [...coverages];
+        let count = 0;
+        rows.slice(1).forEach(r => {
+          const date = (r[0]||"").toString().trim();
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+          const nightIds = (r[1]||"").toString().split(",").map(s=>findId(s)).filter(Boolean);
+          const am = (r[2]||"").toString().split(",").map(s=>findId(s)).filter(Boolean);
+          const pm = (r[3]||"").toString().split(",").map(s=>findId(s)).filter(Boolean);
+          const nextAm = (r[4]||"").toString().split(",").map(s=>findId(s)).filter(Boolean);
+          const note = (r[6]||"").toString().trim();
+          if (nightIds.length || am.length || pm.length || nextAm.length || note) {
+            nextNight[date] = { doctors:nightIds, coverages:{ am, pm, nextAm }, note };
+            count++;
+          }
+          // individual coverages col 5: "absent> cover / period ; ..."
+          const indivRaw = (r[5]||"").toString().trim();
+          if (indivRaw) {
+            indivRaw.split(";").forEach(part=>{
+              const m = part.split(">");
+              if (m.length<2) return;
+              const absentId = findId(m[0]);
+              const rest = m[1].split("/");
+              const coverId = findId(rest[0]);
+              const periodTxt = (rest[1]||"").trim();
+              const period = periodTxt.includes("صباح")?"am":periodTxt.includes("مسائي")?"evening":"pm";
+              if (absentId && coverId) newCov.push({ id:Date.now()+Math.random(), date, period, coverDoctorId:coverId, absentId, reason:"absence" });
+            });
+          }
+        });
+        updateNight(nextNight);
+        updateCoverages(newCov);
+        showToast(`✅ تم استيراد ${count} يوم من Excel`);
+      } catch(err) { showToast("تعذّر قراءة الملف — تأكد من القالب", "warn"); }
+    };
+    reader.readAsArrayBuffer(file);
   };
 
   const loadJuneSeed = () => {
@@ -699,7 +761,7 @@ function App() {
               </div>
             );
           })()}
-          {page==="dashboard" && <DashboardPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onGoto={setPage} />}
+          {page==="dashboard" && <DashboardPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onGoto={setPage} onLoadSeed={loadJuneSeed} onImportExcel={importExcel} />}
           {page==="monthly" && <MonthlyPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onAutoFill={(y,m,mode) => { let base = nightData; if(mode==="all"){ base={}; Object.keys(nightData).forEach(d=>{const [yy,mm]=d.split("-"); if(+yy!==y||+mm!==m+1) base[d]=nightData[d];}); } const next=autoFill(y,m,doctors,leaves,base); updateNight(next); showToast(mode==="all"?"✅ تم التوزيع الكامل":"✅ تم إكمال الأيام الناقصة"); }} onAddDoc={addNightDoc} onRemoveDoc={removeNightDoc} onAddCov={addCoverage} onRemoveCov={removeCoverage} onClearMonth={clearMonth} onResetDay={resetDay} onCopyDay={copyDay} onSetNote={setDayNote} onEnsureDay={ensureDay} onCopyMonth={copyMonth} onSwap={swapDoctors} approvals={approvals} onApprove={setMonthApproval} onAddIndiv={addIndivCoverage} onRemoveIndiv={removeIndivCoverage} />}
           {page==="doctors"  && <DoctorsPage doctors={doctors} leaves={leaves} today={today} fd={fd} onUpdateDocs={updateDocs} showToast={showToast} />}
           {page==="leaves"   && <LeavesPage doctors={doctors} leaves={leaves} fd={fd} onUpdate={(next) => { setLeaves(next); S.set("fin_leaves",next); }} showToast={showToast} />}
@@ -719,7 +781,7 @@ function App() {
 // ══════════════════════════════════════════════════════
 // DASHBOARD PAGE (Material-style)
 // ══════════════════════════════════════════════════════
-function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGoto }) {
+function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGoto, onLoadSeed, onImportExcel }) {
   const now = new Date();
   const thisMonth = (ds) => { const [y,m]=ds.split("-"); return +y===now.getFullYear() && +m===now.getMonth()+1; };
 
@@ -773,6 +835,20 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
 
   return (
     <div>
+      {/* Excel import */}
+      <div style={{ background:"#eefaf3", border:"1px solid #bbf7d0", borderRadius:14, padding:"14px 18px", marginBottom:16, display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+        <span style={{ fontSize:22 }}>📊</span>
+        <div style={{ flex:1, minWidth:160 }}>
+          <div style={{ fontWeight:700, fontSize:14, color:"#15803d" }}>تحميل الجدول من ملف Excel</div>
+          <div style={{ fontSize:11, color:"#94a3b8" }}>املأ القالب المنظّم وارفعه ليُعرض الشهر كاملاً</div>
+        </div>
+        <label style={{ background:"#15803d", color:"#fff", borderRadius:8, padding:"9px 18px", fontWeight:700, fontSize:13, cursor:"pointer" }}>
+          📂 اختر ملف Excel
+          <input type="file" accept=".xlsx,.xls" style={{ display:"none" }} onChange={e=>{ if(e.target.files[0]) onImportExcel(e.target.files[0]); }} />
+        </label>
+        <button onClick={onLoadSeed} style={{ background:"#fff", color:"#ea580c", border:"1px solid #fed7aa", borderRadius:8, padding:"9px 14px", fontWeight:700, fontSize:12, cursor:"pointer" }}>🧪 بيانات تجريبية</button>
+      </div>
+
       {/* Conflicts alert */}
       {conflicts.length>0 && (
         <div style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:14, padding:"14px 18px", marginBottom:16 }}>
@@ -892,6 +968,9 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
   const [swapB, setSwapB] = useState("");
   const monthKey = `${month.y}-${month.m}`;
   const isApproved = approvals && approvals[monthKey];
+  const [viewMode, setViewMode] = useState("table"); // table | boxes | calendar
+  const [subTab, setSubTab] = useState("night"); // night | extra
+  const [showTools, setShowTools] = useState(false);
 
   const calDays = useMemo(() => {
     const dim = new Date(month.y, month.m+1, 0).getDate();
@@ -1332,59 +1411,71 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
   return (
     <div style={{ display:"flex", gap:14 }}>
       <div style={{ flex:1, minWidth:0 }}>
-        {/* Controls */}
-        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
+        {/* 1) Month nav + stat boxes */}
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
           <button onClick={()=>setMonth(p=>p.m===0?{y:p.y-1,m:11}:{y:p.y,m:p.m-1})} style={Btn.nav}>→</button>
           <div style={{ fontWeight:800, fontSize:16, minWidth:120, textAlign:"center" }}>{MONTHS[month.m]} {month.y}</div>
           <button onClick={()=>setMonth(p=>p.m===11?{y:p.y+1,m:0}:{y:p.y,m:p.m+1})} style={Btn.nav}>←</button>
-          <div style={{ flex:1 }} />
-          <button onClick={()=>onAutoFill(month.y,month.m,"gaps")} style={{ ...Btn.primary, background:"linear-gradient(135deg,#1e3a5f,#2c5282)" }}>⚡ إكمال الناقص</button>
-          <button onClick={()=>onAutoFill(month.y,month.m,"all")} style={{ ...Btn.nav, color:"#2c5282", borderColor:"#cdddec" }}>🔄 توزيع كامل</button>
-          <button onClick={()=>{ const pm = month.m===0?{y:month.y-1,m:11}:{y:month.y,m:month.m-1}; onCopyMonth(pm.y,pm.m,month.y,month.m); }} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>📋 نسخ الشهر السابق</button>
-          <button onClick={()=>setShowSwap(s=>!s)} style={{ ...Btn.nav, color:"#7c3aed", borderColor:"#ddd6fe" }}>🔁 تبديل مناوبين</button>
-          <button onClick={printPDF} style={{ ...Btn.nav, color:"#15803d", borderColor:"#bbf7d0" }}>🖨️ جدول</button>
-          <button onClick={printCalendar} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>📅 تقويم</button>
-          <button onClick={printBoxes} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>🔲 مربعات</button>
-          <button onClick={exportExcel} style={{ ...Btn.nav, color:"#15803d", borderColor:"#bbf7d0" }}>📊 Excel</button>
-          <button onClick={exportICS} style={{ ...Btn.nav, color:"#2c5282", borderColor:"#cdddec" }}>📆 تقويم الجوال</button>
-          <button onClick={shareWhatsApp} style={{ ...Btn.nav, color:"#16a34a", borderColor:"#bbf7d0" }}>📲 واتساب</button>
-          <button onClick={printReport} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>📄 تقرير شهري</button>
-          <button onClick={printDoctorSheets} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>🗂️ أوراق الأطباء</button>
-          {confirmClear ? (
-            <span style={{ display:"inline-flex", gap:4, alignItems:"center" }}>
-              <span style={{ fontSize:11, color:"#dc2626", fontWeight:700 }}>متأكد؟</span>
-              <button onClick={()=>{ onClearMonth(month.y,month.m); setConfirmClear(false); }} style={{ ...Btn.nav, background:"#dc2626", color:"#fff", border:"none" }}>نعم، صفّر</button>
-              <button onClick={()=>setConfirmClear(false)} style={Btn.nav}>إلغاء</button>
-            </span>
-          ) : (
-            <button onClick={()=>setConfirmClear(true)} style={{ ...Btn.nav, color:"#dc2626", borderColor:"#fecaca" }}>🗑️ تصفير الشهر</button>
-          )}
         </div>
 
-        {/* Quick summary */}
         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginBottom:14 }}>
           {[{l:"أيام معيّنة",v:summary.assigned,c:"#1d4ed8",bg:"#eff6ff"},
             {l:"تغطيات معلّقة",v:summary.pending,c:"#dc2626",bg:"#fef2f2"},
             {l:"تغطيات مُعيّنة",v:summary.totalCov,c:"#15803d",bg:"#f0fdf4"},
             {l:"تغطيات فردية",v:summary.indiv,c:"#ea580c",bg:"#fff7ed"},
           ].map(({l,v,c,bg})=>(
-            <div key={l} style={{ background:bg, borderRadius:9, padding:"8px 6px", textAlign:"center" }}>
-              <div style={{ fontSize:22, fontWeight:800, color:c }}>{v}</div>
+            <div key={l} style={{ background:bg, borderRadius:11, padding:"12px 6px", textAlign:"center" }}>
+              <div style={{ fontSize:26, fontWeight:800, color:c }}>{v}</div>
               <div style={{ fontSize:10, color:"#64748b" }}>{l}</div>
             </div>
           ))}
         </div>
 
-        {/* Add specific evening shift + filter row */}
-        <div style={{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap", alignItems:"center" }}>
+        {/* 2) Tools & commands (collapsible) */}
+        <div style={{ background:"#fff", border:"1px solid #eef2f7", borderRadius:12, marginBottom:14, overflow:"hidden" }}>
+          <div onClick={()=>setShowTools(s=>!s)} style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", cursor:"pointer", background:"#f8fafc" }}>
+            <span style={{ fontWeight:700, fontSize:13, flex:1 }}>⚙️ الأوامر والخيارات</span>
+            <span style={{ fontSize:12, color:"#94a3b8" }}>{showTools?"▲ إخفاء":"▼ عرض"}</span>
+          </div>
+          {showTools && (
+            <div style={{ padding:14, display:"flex", flexWrap:"wrap", gap:8 }}>
+              <button onClick={()=>onAutoFill(month.y,month.m,"gaps")} style={{ ...Btn.primary, background:"linear-gradient(135deg,#1e3a5f,#2c5282)" }}>⚡ إكمال الناقص</button>
+              <button onClick={()=>onAutoFill(month.y,month.m,"all")} style={{ ...Btn.nav, color:"#2c5282", borderColor:"#cdddec" }}>🔄 توزيع كامل</button>
+              <button onClick={()=>{ const pm = month.m===0?{y:month.y-1,m:11}:{y:month.y,m:month.m-1}; onCopyMonth(pm.y,pm.m,month.y,month.m); }} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>📋 نسخ الشهر السابق</button>
+              <button onClick={()=>setShowSwap(s=>!s)} style={{ ...Btn.nav, color:"#7c3aed", borderColor:"#ddd6fe" }}>🔁 تبديل مناوبين</button>
+              <span style={{ width:1, background:"#e2e8f0", margin:"0 2px" }} />
+              <button onClick={printPDF} style={{ ...Btn.nav, color:"#15803d", borderColor:"#bbf7d0" }}>🖨️ جدول</button>
+              <button onClick={printCalendar} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>📅 تقويم</button>
+              <button onClick={printBoxes} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>🔲 مربعات</button>
+              <button onClick={printReport} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>📄 تقرير شهري</button>
+              <button onClick={printDoctorSheets} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>🗂️ أوراق الأطباء</button>
+              <span style={{ width:1, background:"#e2e8f0", margin:"0 2px" }} />
+              <button onClick={exportExcel} style={{ ...Btn.nav, color:"#15803d", borderColor:"#bbf7d0" }}>📊 Excel</button>
+              <button onClick={exportICS} style={{ ...Btn.nav, color:"#2c5282", borderColor:"#cdddec" }}>📆 تقويم الجوال</button>
+              <button onClick={shareWhatsApp} style={{ ...Btn.nav, color:"#16a34a", borderColor:"#bbf7d0" }}>📲 واتساب</button>
+              <span style={{ width:1, background:"#e2e8f0", margin:"0 2px" }} />
+              {confirmClear ? (
+                <span style={{ display:"inline-flex", gap:4, alignItems:"center" }}>
+                  <span style={{ fontSize:11, color:"#dc2626", fontWeight:700 }}>متأكد؟</span>
+                  <button onClick={()=>{ onClearMonth(month.y,month.m); setConfirmClear(false); }} style={{ ...Btn.nav, background:"#dc2626", color:"#fff", border:"none" }}>نعم، صفّر</button>
+                  <button onClick={()=>setConfirmClear(false)} style={Btn.nav}>إلغاء</button>
+                </span>
+              ) : (
+                <button onClick={()=>setConfirmClear(true)} style={{ ...Btn.nav, color:"#dc2626", borderColor:"#fecaca" }}>🗑️ تصفير الشهر</button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 3) Date picker + search + status filter */}
+        <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap", alignItems:"center", background:"#fff", border:"1px solid #eef2f7", borderRadius:12, padding:12 }}>
           <input type="date" style={{ ...SEL, width:"auto", flex:"0 0 auto" }} onChange={e=>{ if(e.target.value){ if(dayIdx(e.target.value)<0){ return; } onEnsureDay(e.target.value); setSelDate(e.target.value); setMonth({ y:+e.target.value.split("-")[0], m:+e.target.value.split("-")[1]-1 }); } }} value="" />
           <input type="text" placeholder="🔍 بحث باسم طبيب أو تاريخ..." value={search} onChange={e=>setSearch(e.target.value)} style={{ ...SEL, width:"auto", flex:"1 1 180px", minWidth:140 }} />
-          {search && <button onClick={()=>setSearch("")} style={{ ...Btn.nav, color:"#dc2626" }}>✕ مسح</button>}
+          {search && <button onClick={()=>setSearch("")} style={{ ...Btn.nav, color:"#dc2626" }}>✕</button>}
           <div style={{ flex:1 }} />
           {[["all","الكل"],["pending","⚠️ معلّق"],["done","✅ مكتمل"]].map(([k,l])=>(
             <button key={k} onClick={()=>setFilter(k)} style={{ padding:"5px 12px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", border: filter===k?"2px solid #1e3a5f":"1px solid #e2e8f0", background: filter===k?"#eff4fa":"#fff", color: filter===k?"#1e3a5f":"#64748b" }}>{l}</button>
           ))}
-          <button onClick={()=>setShowCal(s=>!s)} style={{ ...Btn.nav, color: showCal?"#1e3a5f":"#64748b" }}>{showCal?"📋 إخفاء التقويم":"📅 عرض التقويم"}</button>
         </div>
 
         {/* Calendar (secondary, toggle) */}
@@ -1460,17 +1551,33 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
           )}
         </div>
 
-        {/* MAIN: Clear table-style rows with expand-to-edit */}
+        {/* Sub-tabs: night schedule vs extra coverages */}
+        <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+          <button onClick={()=>setSubTab("night")} style={{ flex:1, padding:"11px", borderRadius:10, border:"none", cursor:"pointer", fontSize:14, fontWeight:700, background: subTab==="night"?"linear-gradient(135deg,#1e3a5f,#2c5282)":"#fff", color: subTab==="night"?"#fff":"#64748b", boxShadow: subTab==="night"?"0 4px 12px rgba(30,58,95,.25)":"0 1px 4px rgba(0,0,0,.05)" }}>🌙 الدوام المسائي وتغطياته</button>
+          <button onClick={()=>setSubTab("extra")} style={{ flex:1, padding:"11px", borderRadius:10, border:"none", cursor:"pointer", fontSize:14, fontWeight:700, background: subTab==="extra"?"linear-gradient(135deg,#ea580c,#f97316)":"#fff", color: subTab==="extra"?"#fff":"#64748b", boxShadow: subTab==="extra"?"0 4px 12px rgba(234,88,12,.25)":"0 1px 4px rgba(0,0,0,.05)" }}>🔄 التغطيات الإضافية (طارئة)</button>
+        </div>
+
+        {subTab==="extra" ? (
+          <ExtraCoveragesView date={null} doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} calDays={calDays} month={month} onAddIndiv={onAddIndiv} onRemoveIndiv={onRemoveIndiv} />
+        ) : (
+        /* 4) MAIN: section header + view toggle */
         <div>
-          <div style={{ fontWeight:800, fontSize:15, marginBottom:12, display:"flex", alignItems:"center", gap:8 }}>
-            📋 جدول الدوام المسائي
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
+            <span style={{ fontWeight:800, fontSize:15 }}>🌙 الدوام المسائي</span>
             <span style={{ fontSize:12, fontWeight:400, color:"#94a3b8" }}>({filledDays.length} يوم)</span>
+            <div style={{ flex:1 }} />
+            <span style={{ fontSize:11, color:"#64748b" }}>طريقة العرض:</span>
+            <div style={{ display:"flex", gap:0, border:"1px solid #cdddec", borderRadius:8, overflow:"hidden" }}>
+              <button onClick={()=>setViewMode("table")} style={{ padding:"6px 14px", border:"none", cursor:"pointer", fontSize:12, fontWeight:700, background: viewMode==="table"?"#1e3a5f":"#fff", color: viewMode==="table"?"#fff":"#64748b" }}>📋 جدول</button>
+              <button onClick={()=>setViewMode("boxes")} style={{ padding:"6px 14px", border:"none", cursor:"pointer", fontSize:12, fontWeight:700, background: viewMode==="boxes"?"#1e3a5f":"#fff", color: viewMode==="boxes"?"#fff":"#64748b" }}>🔲 مربعات</button>
+              <button onClick={()=>setViewMode("calendar")} style={{ padding:"6px 14px", border:"none", cursor:"pointer", fontSize:12, fontWeight:700, background: viewMode==="calendar"?"#1e3a5f":"#fff", color: viewMode==="calendar"?"#fff":"#64748b" }}>📅 تقويم</button>
+            </div>
           </div>
           {filledDays.length === 0 ? (
             <div style={{ textAlign:"center", color:"#94a3b8", padding:"34px 16px", fontSize:14, background:"linear-gradient(135deg,#f8fafc,#eff4fa)", borderRadius:14, border:"2px dashed #cdddec" }}>
-              ✨ لا توجد أيام بعد — اضغط <strong>⚡ توزيع تلقائي</strong> أو اختر تاريخاً لإضافة دوام مسائي
+              ✨ لا توجد أيام بعد — افتح ⚙️ الأوامر واضغط <strong>⚡ إكمال الناقص</strong> أو اختر تاريخاً
             </div>
-          ) : (
+          ) : viewMode==="table" ? (
             <div style={{ background:"#fff", borderRadius:12, overflow:"hidden", boxShadow:"0 4px 16px rgba(30,58,95,.06)" }}>
               {/* Column header */}
               <div style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 16px", background:"#1e3a5f", color:"#fff", fontSize:13, fontWeight:700 }}>
@@ -1489,6 +1596,79 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
                     onAddDoc={onAddDoc} onRemoveDoc={onRemoveDoc} onAddCov={onAddCov} onRemoveCov={onRemoveCov} onResetDay={onResetDay} onSetNote={onSetNote} onAddIndiv={onAddIndiv} onRemoveIndiv={onRemoveIndiv} />
                 ))}
               </div>
+            </div>
+          ) : viewMode==="boxes" ? (
+            /* Boxes view */
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:12 }}>
+              {filledDays.map(({ date, di, day }) => {
+                const nd = nightData[date]||{}; const covs = nd.coverages||{};
+                const docs = (nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
+                const indiv = coverages.filter(c=>c.date===date);
+                const isSel = selDate===date;
+                return (
+                  <div key={date} onClick={()=>setSelDate(isSel?null:date)} style={{ background:"#fff", borderRadius:12, border: isSel?"2px solid #2c5282":"1px solid #eef2f7", overflow:"hidden", cursor:"pointer", boxShadow:"0 2px 8px rgba(30,58,95,.05)" }}>
+                    <div style={{ background:"#1e3a5f", color:"#fff", padding:"7px 12px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                      <span style={{ fontWeight:800, fontSize:16 }}>{day}/{month.m+1}</span>
+                      <span style={{ fontSize:12, fontWeight:700 }}>{DAYS[di]}</span>
+                    </div>
+                    <div style={{ padding:10 }}>
+                      {docs.length ? docs.map(d=>{
+                        const myCov = [];
+                        const nDi = dayIdx(nextWork(date));
+                        if (isClinic(getSlot(d,di,"am")))  (covs.am||[]).forEach(id=>{const c=fd(id);if(c)myCov.push(`ص: ${c.name}`);});
+                        if (isClinic(getSlot(d,di,"pm")))  (covs.pm||[]).forEach(id=>{const c=fd(id);if(c)myCov.push(`ظ: ${c.name}`);});
+                        if (isClinic(getSlot(d,nDi,"am"))) (covs.nextAm||[]).forEach(id=>{const c=fd(id);if(c)myCov.push(`غد ص: ${c.name}`);});
+                        return (
+                          <div key={d.id} style={{ marginBottom:7 }}>
+                            <span style={{ background:d.color+"1e", color:d.color, border:`1px solid ${d.color}55`, borderRadius:6, padding:"3px 9px", fontSize:12, fontWeight:700, display:"inline-block" }}>🌙 {d.name}</span>
+                            {myCov.map((t,i)=><div key={i} style={{ fontSize:10, color:"#15803d", marginTop:2 }}>↳ {t}</div>)}
+                          </div>
+                        );
+                      }) : <div style={{ fontSize:11, color:"#cbd5e1" }}>لا دوام مسائي</div>}
+                      {indiv.map(c=>{const cd=fd(c.coverDoctorId);return cd&&<div key={c.id} style={{ fontSize:10, color:"#ea580c", marginTop:3 }}>🔄 {cd.name} ({(c.period==="am"?"ص":c.period==="evening"?"مسائي":"ظ")})</div>;})}
+                      {nd.note && <div style={{ fontSize:10, color:"#a16207", marginTop:4, background:"#fffbeb", borderRadius:5, padding:"2px 6px" }}>📝 {nd.note}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+          {/* Calendar view */}
+          {viewMode==="calendar" && filledDays.length>0 && (
+            <div style={{ background:"#fff", borderRadius:12, overflow:"hidden", border:"1px solid #e2e8f0" }}>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", background:"#1e3a5f" }}>
+                {DAYS.map(d => <div key={d} style={{ padding:"9px", textAlign:"center", color:"#fff", fontWeight:700, fontSize:12 }}>{d}</div>)}
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)" }}>
+                {Array.from({ length:firstOffset }, (_,i) => <div key={`e${i}`} style={{ minHeight:90, background:"#f8fafc", borderBottom:"1px solid #f1f5f9", borderLeft:"1px solid #f1f5f9" }} />)}
+                {calDays.map(({ date, di, day }) => {
+                  const nd = nightData[date] || {}; const covs = nd.coverages || {};
+                  const docs = (nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
+                  const isT = date===today; const isSel = selDate===date;
+                  return (
+                    <div key={date} onClick={() => setSelDate(isSel?null:date)}
+                      style={{ minHeight:90, padding:"5px 6px", cursor:"pointer", borderBottom:"1px solid #f1f5f9", borderLeft:"1px solid #f1f5f9",
+                        background: isSel?"#eff6ff":isT?"#fffbeb":"#fff", outline: isSel?"2px solid #2c5282":"none" }}>
+                      <div style={{ fontSize:10, color:isT?"#d97706":"#94a3b8", fontWeight:700, marginBottom:3 }}>{day}</div>
+                      {docs.map(d => <div key={d.id} style={{ background:d.color+"1e", border:`1px solid ${d.color}55`, borderRadius:4, padding:"2px 5px", marginBottom:2, fontSize:9, fontWeight:700, color:d.color }}>🌙 {d.name}</div>)}
+                      {!docs.length && <div style={{ fontSize:9, color:"#d1d5db", textAlign:"center", paddingTop:6 }}>—</div>}
+                      {(covs.am||[]).map(id=>fd(id)).filter(Boolean).map(d=><div key={d.id} style={{ fontSize:8, color:"#15803d" }}>(ص) {d.name}</div>)}
+                      {(covs.pm||[]).map(id=>fd(id)).filter(Boolean).map(d=><div key={d.id} style={{ fontSize:8, color:"#0891b2" }}>(ظ) {d.name}</div>)}
+                      {coverages.filter(c=>c.date===date).map(c=>{const cd=fd(c.coverDoctorId);return cd&&<div key={c.id} style={{ fontSize:8, color:"#ea580c" }}>🔄 {cd.name}</div>;})}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {/* Selected day editor in boxes/calendar mode */}
+          {(viewMode==="boxes"||viewMode==="calendar") && selDate && (
+            <div style={{ marginTop:14, background:"#fff", borderRadius:12, border:"2px solid #2c5282", overflow:"hidden" }}>
+              <DayCard date={selDate} di={dayIdx(selDate)} day={+selDate.split("-")[2]}
+                nd={nightData[selDate]||{}} indiv={coverages.filter(c=>c.date===selDate)}
+                doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd}
+                expanded={true} onToggle={()=>setSelDate(null)}
+                onAddDoc={onAddDoc} onRemoveDoc={onRemoveDoc} onAddCov={onAddCov} onRemoveCov={onRemoveCov} onResetDay={onResetDay} onSetNote={onSetNote} onAddIndiv={onAddIndiv} onRemoveIndiv={onRemoveIndiv} />
             </div>
           )}
 
@@ -1521,6 +1701,7 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
             );
           })()}
         </div>
+        )}
       </div>
 
       {/* PDF preview modal (fallback if download blocked) */}
@@ -1549,9 +1730,72 @@ const DAY_GRADIENTS = [
   "#1e3a5f", "#2c5282", "#3b6ca8", "#2c5282", "#1e3a5f",
 ];
 
+// Extra (emergency) individual coverages view — separate from night-shift coverages
+function ExtraCoveragesView({ doctors, leaves, nightData, coverages, fd, calDays, month, onAddIndiv, onRemoveIndiv }) {
+  const monthCovs = coverages.filter(c=>{ const [y,m]=c.date.split("-"); return +y===month.y && +m===month.m+1; });
+  const byDate = {};
+  monthCovs.forEach(c=>{ (byDate[c.date] = byDate[c.date]||[]).push(c); });
+  const dates = Object.keys(byDate).sort();
+  const REASONS = { absence:"غياب", sick:"إجازة مرضية", emergency:"طارئ", excuse:"عذر" };
+  const periodLabel = p => p==="am"?"☀️ صباح":p==="evening"?"🌙 مسائي":"🌅 ظهر";
+  const [pickDate, setPickDate] = useState("");
+
+  return (
+    <div>
+      <div style={{ background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:12, color:"#9a3412" }}>
+        ℹ️ التغطيات الإضافية الطارئة (غياب/مرض/عذر) — مستقلة عن تغطيات الدوام المسائي المخطّطة. لإضافة تغطية، اختر يوماً ثم سجّلها.
+      </div>
+
+      {/* Day picker to add */}
+      <div style={{ background:"#fff", border:"1px solid #eef2f7", borderRadius:12, padding:14, marginBottom:14 }}>
+        <div style={{ fontWeight:700, fontSize:13, marginBottom:10 }}>➕ تسجيل تغطية طارئة جديدة</div>
+        <input type="date" value={pickDate} onChange={e=>setPickDate(e.target.value)} style={{ ...SEL, marginBottom:10 }} />
+        {pickDate && dayIdx(pickDate)>=0 && (
+          <IndivCoverageAdder date={pickDate} di={dayIdx(pickDate)} doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} onAddIndiv={onAddIndiv} forceOpen={true} />
+        )}
+        {pickDate && dayIdx(pickDate)<0 && <div style={{ fontSize:12, color:"#dc2626" }}>اختر يوم عمل (الأحد-الخميس)</div>}
+      </div>
+
+      {/* List of existing extra coverages */}
+      <div style={{ fontWeight:800, fontSize:15, marginBottom:12 }}>🔄 التغطيات الطارئة المسجّلة ({monthCovs.length})</div>
+      {dates.length===0 ? (
+        <div style={{ textAlign:"center", color:"#94a3b8", padding:"30px", fontSize:13, background:"#f8fafc", borderRadius:12, border:"2px dashed #e2e8f0" }}>لا توجد تغطيات طارئة هذا الشهر</div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          {dates.map(date=>{
+            const di = dayIdx(date); const d = +date.split("-")[2];
+            return (
+              <div key={date} style={{ background:"#fff", border:"1px solid #fed7aa", borderRadius:11, overflow:"hidden" }}>
+                <div style={{ background:"#fff7ed", padding:"8px 12px", display:"flex", alignItems:"center", gap:8 }}>
+                  <span style={{ background:"#ea580c", color:"#fff", borderRadius:7, padding:"3px 10px", fontSize:13, fontWeight:800 }}>{d}/{month.m+1}</span>
+                  <span style={{ fontWeight:700, fontSize:13, color:"#9a3412" }}>{DAYS[di]}</span>
+                </div>
+                <div style={{ padding:10 }}>
+                  {byDate[date].map(c=>{
+                    const cd=fd(c.coverDoctorId); const ad=c.absentId?fd(c.absentId):null;
+                    return cd&&(
+                      <div key={c.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", background:"#fffdf9", border:"1px solid #fed7aa", borderRadius:8, marginBottom:5, fontSize:12 }}>
+                        <span style={{ background:"#fff7ed", color:"#ea580c", borderRadius:5, padding:"2px 8px", fontSize:10, fontWeight:700 }}>{periodLabel(c.period)}</span>
+                        <span style={{ flex:1, color:"#9a3412" }}><strong>{cd.name}</strong>{ad?` يغطّي عن ${ad.name}`:""} {c.reason?`(${REASONS[c.reason]||c.reason})`:""}</span>
+                        <button onClick={()=>onRemoveIndiv(c.id)} style={{ background:"none", border:"none", color:"#dc2626", cursor:"pointer", fontSize:14 }}>✕</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Extra (emergency) individual coverages view END
+
 // Inline adder for individual (absence-based) coverage within a day card
-function IndivCoverageAdder({ date, di, doctors, leaves, nightData, coverages, fd, onAddIndiv }) {
-  const [open, setOpen] = useState(false);
+function IndivCoverageAdder({ date, di, doctors, leaves, nightData, coverages, fd, onAddIndiv, forceOpen }) {
+  const [open, setOpen] = useState(!!forceOpen);
   const [absentId, setAbsentId] = useState("");
   const [reason, setReason] = useState("absence");
   const [covByPeriod, setCovByPeriod] = useState({ am:"", pm:"", evening:"" });
@@ -1711,10 +1955,12 @@ function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverag
         {/* Names + coverages */}
         <div style={{ flex:1, display:"flex", flexDirection:"column", gap:4, minWidth:0 }}>
           {nightDocs.map(id=>fd(id)).filter(Boolean).map(d=>{
+            // Only show coverage for the period where THIS doctor actually has a clinic
             const myCovs = [];
-            (covs.am||[]).forEach(id=>{const c=fd(id);if(c)myCovs.push(`صباحاً: ${c.name}`);});
-            (covs.pm||[]).forEach(id=>{const c=fd(id);if(c)myCovs.push(`ظهراً: ${c.name}`);});
-            (covs.nextAm||[]).forEach(id=>{const c=fd(id);if(c)myCovs.push(`غداً صباحاً: ${c.name}`);});
+            const nextDi2 = dayIdx(nextWork(date));
+            if (isClinic(getSlot(d,di,"am")))    (covs.am||[]).forEach(id=>{const c=fd(id);if(c)myCovs.push(`صباحاً: ${c.name}`);});
+            if (isClinic(getSlot(d,di,"pm")))    (covs.pm||[]).forEach(id=>{const c=fd(id);if(c)myCovs.push(`ظهراً: ${c.name}`);});
+            if (isClinic(getSlot(d,nextDi2,"am")))(covs.nextAm||[]).forEach(id=>{const c=fd(id);if(c)myCovs.push(`غداً صباحاً: ${c.name}`);});
             return (
               <div key={d.id} style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
                 <span style={{ background:d.color+"18", color:d.color, border:`1px solid ${d.color}55`, borderRadius:6, padding:"3px 11px", fontSize:13, fontWeight:700 }}>🌙 {d.name}</span>
@@ -2371,7 +2617,9 @@ function CoveragePage({ doctors, leaves, coverages, nightData, fd, onAdd, onRemo
 // ══════════════════════════════════════════════════════
 function StatsPage({ doctors, nightData, coverages, leaves }) {
   const [selId, setSelId] = useState("");
-  const [period, setPeriod] = useState("month"); // week | month | year
+  const [period, setPeriod] = useState("month"); // week|month|month2|month3|year|custom
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   // Compute per-doctor stats within a date filter
   const inRange = (dateStr, range) => {
@@ -2382,7 +2630,13 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
       return d >= weekAgo && d <= now;
     }
     if (range === "month") return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth();
+    if (range === "month2") { const back=new Date(now); back.setMonth(now.getMonth()-2); return d>=back && d<=now; }
+    if (range === "month3") { const back=new Date(now); back.setMonth(now.getMonth()-3); return d>=back && d<=now; }
     if (range === "year") return d.getFullYear()===now.getFullYear();
+    if (range === "custom") {
+      if (!customFrom || !customTo) return true;
+      return d >= new Date(customFrom) && d <= new Date(customTo);
+    }
     return true;
   };
 
@@ -2421,7 +2675,7 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
   const avgTasks = doctors.length ? totTasks/doctors.length : 0;
 
   const selDoc = doctors.find(d=>d.id===+selId);
-  const PERIODS = { week:"أسبوعي", month:"شهري", year:"سنوي" };
+  const PERIODS = { week:"أسبوع", month:"شهر", month2:"شهرين", month3:"3 أشهر", year:"سنة", custom:"فترة مخصّصة" };
   const SLOT_LABEL = { clinic:"عيادة", clinic_am:"عيادة", clinic_pm:"عيادة", admin:"إداري", training:"تدريب", audit:"تدقيق", virtual:"افتراضية", "":"—" };
   const LEAVE_TYPES = { annual:"سنوية", sick:"مرضية", emergency:"طارئة", other:"أخرى" };
 
@@ -2455,11 +2709,19 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
             </div>
 
             {/* Period toggle */}
-            <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+            <div style={{ display:"flex", gap:6, marginBottom:10, flexWrap:"wrap" }}>
               {Object.entries(PERIODS).map(([k,l])=>(
-                <button key={k} onClick={()=>setPeriod(k)} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, fontWeight:700, cursor:"pointer", border: period===k?"2px solid #1e3a5f":"1px solid #e2e8f0", background: period===k?"#eff4fa":"#fff", color: period===k?"#1e3a5f":"#64748b" }}>{l}</button>
+                <button key={k} onClick={()=>setPeriod(k)} style={{ flex:"1 1 80px", padding:"9px", borderRadius:9, fontSize:12, fontWeight:700, cursor:"pointer", border: period===k?"2px solid #1e3a5f":"1px solid #e2e8f0", background: period===k?"#eff4fa":"#fff", color: period===k?"#1e3a5f":"#64748b" }}>{l}</button>
               ))}
             </div>
+            {period==="custom" && (
+              <div style={{ display:"flex", gap:8, marginBottom:14, alignItems:"center", flexWrap:"wrap", background:"#f8fafc", borderRadius:9, padding:10 }}>
+                <span style={{ fontSize:12, color:"#64748b" }}>من:</span>
+                <input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)} style={{ ...SEL, width:"auto", flex:"1 1 130px" }} />
+                <span style={{ fontSize:12, color:"#64748b" }}>إلى:</span>
+                <input type="date" value={customTo} onChange={e=>setCustomTo(e.target.value)} style={{ ...SEL, width:"auto", flex:"1 1 130px" }} />
+              </div>
+            )}
 
             {/* Stat cards */}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))", gap:8, marginBottom:14 }}>
