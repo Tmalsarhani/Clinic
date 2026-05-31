@@ -276,6 +276,22 @@ function detectConflicts(doctors, leaves, nightData, coverages) {
     (covs.nextAm||[]).forEach(id=>addBooking(nextWork(date),"am",id));
   });
   (coverages||[]).forEach(c=>addBooking(c.date, c.period, c.coverDoctorId));
+
+  // 4. Same clinic period covered TWICE: night-schedule coverage + individual coverage for same absent doctor
+  Object.entries(nightData).forEach(([date,nd])=>{
+    const covs = nd.coverages||{};
+    (nd.doctors||[]).forEach(nightId=>{
+      ["am","pm"].forEach(slot=>{
+        const nightCovered = (covs[slot]||[]).length > 0;
+        // individual coverage for the SAME night doctor, same date, same period
+        const indiv = (coverages||[]).filter(c=>c.date===date && c.period===slot && c.absentId===nightId);
+        if (nightCovered && indiv.length) {
+          const nm = fd(nightId)?.name||"";
+          conflicts.push({ type:"double", date, text:`عيادة ${nm} (${slot==="am"?"صباح":"ظهر"}) ${date} مُغطّاة مرتين: مرة في جدول الدوام ومرة بتغطية فردية` });
+        }
+      });
+    });
+  });
   return conflicts;
 }
 
@@ -391,8 +407,23 @@ function App() {
     reader.readAsText(file);
   };
 
+  const [undoStack, setUndoStack] = useState([]);
+  const pushUndo = () => {
+    setUndoStack(s => [...s.slice(-9), { night: JSON.parse(JSON.stringify(nightData)), cov: JSON.parse(JSON.stringify(coverages)) }]);
+  };
+  const doUndo = () => {
+    setUndoStack(s => {
+      if (!s.length) { showToast("لا يوجد تعديل للتراجع عنه", "warn"); return s; }
+      const last = s[s.length-1];
+      setNightData(last.night); S.set("fin_night", last.night);
+      setCoverages(last.cov); S.set("fin_cov", last.cov);
+      showToast("↩️ تم التراجع");
+      return s.slice(0, -1);
+    });
+  };
+
   const updateDocs = next => { setDoctors(next); S.set("fin_docs", next); };
-  const updateNight = next => { setNightData(next); S.set("fin_night", next); };
+  const updateNight = next => { pushUndo(); setNightData(next); S.set("fin_night", next); };
   const updateCoverages = next => { setCoverages(next); S.set("fin_cov", next); };
 
   const setMonthApproval = (key, val) => {
@@ -408,6 +439,37 @@ function App() {
   const removeIndivCoverage = (id) => {
     updateCoverages(coverages.filter(c => c.id !== id));
     showToast("تم الحذف", "warn");
+  };
+
+  const loadJuneSeed = () => {
+    const N = {
+      "2026-06-01":[15],"2026-06-02":[8],"2026-06-03":[16,5],"2026-06-07":[8,16],
+      "2026-06-08":[12],"2026-06-09":[15],"2026-06-10":[8,20],"2026-06-11":[16,21,4],
+      "2026-06-14":[8,16],"2026-06-15":[6],"2026-06-16":[15],"2026-06-17":[8,20],
+      "2026-06-18":[16,9,13],"2026-06-21":[8,16],"2026-06-22":[3],"2026-06-23":[15],
+      "2026-06-24":[8,20],"2026-06-25":[16,7,10],"2026-06-28":[8,16],"2026-06-29":[19],"2026-06-30":[15],
+    };
+    const next = { ...nightData };
+    Object.entries(N).forEach(([d,ids])=>{
+      next[d] = { doctors:ids, coverages:{ am:[], pm:[], nextAm:[] }, note:"" };
+    });
+    updateNight(next);
+    // Clear coverages for June then add the known ones
+    const juneCov = coverages.filter(c=>{ const [y,m]=c.date.split("-"); return !(+y===2026&&+m===6); });
+    const add = (date,period,coverId,absentId)=>juneCov.push({ id:Date.now()+Math.random(), date, period, coverDoctorId:coverId, absentId, reason:"absence" });
+    // 4/6 عيادة عزيزة(5): مضر(3) صباحاً، العسكر(9) ظهراً
+    add("2026-06-04","am",3,5); add("2026-06-04","pm",9,5);
+    // 11/6 ثائرة(21) يغطيها مهدي(13) ، حنان(4) يغطيها ديمه(14)
+    add("2026-06-11","pm",13,21); add("2026-06-11","pm",14,4);
+    // 18/6 مهدي(13) يغطيها ثائرة(21)
+    add("2026-06-18","pm",21,13);
+    // 23/6 مضر(3) يغطيها بثينة(19)
+    add("2026-06-23","pm",19,3);
+    // 25/6 عسقلان(7) يغطيها العسكر(9)، شذا(10) يغطيها مضر(3)
+    add("2026-06-25","pm",9,7); add("2026-06-25","pm",3,10);
+    updateCoverages(juneCov);
+    setMonthApproval && setMonthApproval("2026-5", null);
+    showToast("✅ تم تحميل بيانات يونيو التجريبية");
   };
 
   const ensureDay = (date) => {
@@ -538,8 +600,7 @@ function App() {
 
   const TABS = [
     { id:"dashboard",icon:"📊", label:"لوحة التحكم" },
-    { id:"monthly",  icon:"🌙", label:"الدوام المسائي" },
-    { id:"coverage", icon:"🔄", label:"التغطيات الفردية" },
+    { id:"monthly",  icon:"🌙", label:"الدوام والتغطيات" },
     { id:"doctors",  icon:"👨‍⚕️", label:"الأطباء" },
     { id:"leaves",   icon:"🏖", label:"الإجازات" },
     { id:"stats",    icon:"📈", label:"الإحصائيات" },
@@ -586,6 +647,10 @@ function App() {
             style={{ width:"100%", padding:"8px", background:"linear-gradient(135deg,#1e3a5f,#2c5282)", border:"none", borderRadius:8, color:"#fff", cursor:"pointer", fontSize:11, fontWeight:700, boxShadow:"0 3px 10px rgba(30,58,95,.25)" }}>
             💾 حفظ الكل
           </button>
+          <button onClick={doUndo} disabled={!undoStack.length}
+            style={{ width:"100%", padding:"7px", marginTop:6, background: undoStack.length?"#fff":"#f1f5f9", border:"1px solid #cdddec", borderRadius:8, color: undoStack.length?"#2c5282":"#cbd5e1", cursor: undoStack.length?"pointer":"default", fontSize:10, fontWeight:700 }}>
+            ↩️ تراجع {undoStack.length>0?`(${undoStack.length})`:""}
+          </button>
           <div style={{ display:"flex", gap:5, marginTop:6 }}>
             <button onClick={() => { const data={docs:S.get("fin_docs"),leaves:S.get("fin_leaves"),night:S.get("fin_night"),cov:S.get("fin_cov"),exported:new Date().toISOString()}; const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`نسخة_احتياطية_${new Date().toISOString().split("T")[0]}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(url),1500); showToast("✅ تم تصدير النسخة"); }}
               style={{ flex:1, padding:"6px", background:"#fff", border:"1px solid #cdddec", borderRadius:7, color:"#2c5282", cursor:"pointer", fontSize:9, fontWeight:700 }}>⬇️ نسخة</button>
@@ -594,6 +659,10 @@ function App() {
               <input type="file" accept=".json" style={{ display:"none" }} onChange={e=>{ if(e.target.files[0]) restoreBackup(e.target.files[0]); }} />
             </label>
           </div>
+          <button onClick={loadJuneSeed}
+            style={{ width:"100%", padding:"6px", marginTop:6, background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:8, color:"#ea580c", cursor:"pointer", fontSize:9, fontWeight:700 }}>
+            🧪 تحميل بيانات يونيو التجريبية
+          </button>
           <button onClick={() => { S.set("fin_auth", false); setAuthed(false); }}
             style={{ width:"100%", padding:"6px", marginTop:6, background:"transparent", border:"1px solid #cdddec", borderRadius:8, color:"#2c5282", cursor:"pointer", fontSize:10, fontWeight:600 }}>
             🔒 قفل
@@ -631,8 +700,7 @@ function App() {
             );
           })()}
           {page==="dashboard" && <DashboardPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onGoto={setPage} />}
-          {page==="monthly" && <MonthlyPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onAutoFill={(y,m,mode) => { let base = nightData; if(mode==="all"){ base={}; Object.keys(nightData).forEach(d=>{const [yy,mm]=d.split("-"); if(+yy!==y||+mm!==m+1) base[d]=nightData[d];}); } const next=autoFill(y,m,doctors,leaves,base); updateNight(next); showToast(mode==="all"?"✅ تم التوزيع الكامل":"✅ تم إكمال الأيام الناقصة"); }} onAddDoc={addNightDoc} onRemoveDoc={removeNightDoc} onAddCov={addCoverage} onRemoveCov={removeCoverage} onClearMonth={clearMonth} onResetDay={resetDay} onCopyDay={copyDay} onSetNote={setDayNote} onEnsureDay={ensureDay} onCopyMonth={copyMonth} onSwap={swapDoctors} approvals={approvals} onApprove={setMonthApproval} />}
-          {page==="coverage" && <CoveragePage doctors={doctors} leaves={leaves} coverages={coverages} nightData={nightData} fd={fd} onAdd={addIndivCoverage} onRemove={removeIndivCoverage} showToast={showToast} />}
+          {page==="monthly" && <MonthlyPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onAutoFill={(y,m,mode) => { let base = nightData; if(mode==="all"){ base={}; Object.keys(nightData).forEach(d=>{const [yy,mm]=d.split("-"); if(+yy!==y||+mm!==m+1) base[d]=nightData[d];}); } const next=autoFill(y,m,doctors,leaves,base); updateNight(next); showToast(mode==="all"?"✅ تم التوزيع الكامل":"✅ تم إكمال الأيام الناقصة"); }} onAddDoc={addNightDoc} onRemoveDoc={removeNightDoc} onAddCov={addCoverage} onRemoveCov={removeCoverage} onClearMonth={clearMonth} onResetDay={resetDay} onCopyDay={copyDay} onSetNote={setDayNote} onEnsureDay={ensureDay} onCopyMonth={copyMonth} onSwap={swapDoctors} approvals={approvals} onApprove={setMonthApproval} onAddIndiv={addIndivCoverage} onRemoveIndiv={removeIndivCoverage} />}
           {page==="doctors"  && <DoctorsPage doctors={doctors} leaves={leaves} today={today} fd={fd} onUpdateDocs={updateDocs} showToast={showToast} />}
           {page==="leaves"   && <LeavesPage doctors={doctors} leaves={leaves} fd={fd} onUpdate={(next) => { setLeaves(next); S.set("fin_leaves",next); }} showToast={showToast} />}
           {page==="stats"    && <StatsPage doctors={doctors} nightData={nightData} coverages={coverages} leaves={leaves} />}
@@ -810,7 +878,7 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
 // ══════════════════════════════════════════════════════
 // MONTHLY PAGE
 // ══════════════════════════════════════════════════════
-function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoFill, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onClearMonth, onResetDay, onCopyDay, onSetNote, onEnsureDay, onCopyMonth, onSwap, approvals, onApprove }) {
+function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoFill, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onClearMonth, onResetDay, onCopyDay, onSetNote, onEnsureDay, onCopyMonth, onSwap, approvals, onApprove, onAddIndiv, onRemoveIndiv }) {
   const now = new Date();
   const [month, setMonth] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [selDate, setSelDate] = useState(null);
@@ -892,7 +960,7 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
     // From individual coverages
     (coverages||[]).forEach(c => {
       const ad = c.absentId ? fd(c.absentId) : null;
-      pushCov(c.date, c.coverDoctorId, c.period==="am"?"صباحاً":"ظهراً", `تغطية فردية${ad?` بدلاً من ${ad.name}`:""}`);
+      pushCov(c.date, c.coverDoctorId, (c.period==="am"?"صباحاً":c.period==="evening"?"مسائي":"ظهراً"), `تغطية فردية${ad?` بدلاً من ${ad.name}`:""}`);
     });
 
     // Build table 2 rows sorted by actual date
@@ -970,7 +1038,7 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
           }
           return `<div class="doc-block"><span class="doc" style="background:${d.color}22;color:${d.color};border-color:${d.color}55">🌙 ${d.name}</span>${inner}</div>`;
         }).join("");
-        const indivItems = coverages.filter(c=>c.date===date).map(c=>{ const cd=fd(c.coverDoctorId); const ad=c.absentId?fd(c.absentId):null; return cd?`🔄 ${cd.name} (${c.period==="am"?"صباحاً":"ظهراً"})${ad?` بدلاً من ${ad.name}`:""}`:""; }).filter(Boolean);
+        const indivItems = coverages.filter(c=>c.date===date).map(c=>{ const cd=fd(c.coverDoctorId); const ad=c.absentId?fd(c.absentId):null; return cd?`🔄 ${cd.name} (${(c.period==="am"?"صباحاً":c.period==="evening"?"مسائي":"ظهراً")})${ad?` بدلاً من ${ad.name}`:""}`:""; }).filter(Boolean);
         return `<div class="box">
           <div class="box-head"><span class="box-date">${dmy(date)}</span><span class="box-day">${DAYS[di]}</span></div>
           <div class="box-body">${docs.length ? docBlocks : '<span class="empty">لا دوام مسائي</span>'}</div>
@@ -1024,6 +1092,25 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
   };
 
   // Export as Excel (.xls via HTML table — opens in Excel/Numbers)
+  // Export evening shifts as ICS calendar file
+  const exportICS = () => {
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//DentalDept//Schedule//AR\r\nCALSCALE:GREGORIAN\r\n";
+    calDays.filter(({date})=>(nightData[date]?.doctors||[]).length).forEach(({date,di})=>{
+      const docs=(nightData[date]?.doctors||[]).map(id=>fd(id)).filter(Boolean);
+      const d = date.replace(/-/g,"");
+      docs.forEach(doc=>{
+        ics += "BEGIN:VEVENT\r\n";
+        ics += `UID:${date}-${doc.id}@dental\r\n`;
+        ics += `DTSTART;VALUE=DATE:${d}\r\n`;
+        ics += `SUMMARY:🌙 دوام مسائي - ${doc.name}\r\n`;
+        ics += `DESCRIPTION:دوام مسائي ${DAYS[di]} - قسم إصلاح الأسنان\r\n`;
+        ics += "END:VEVENT\r\n";
+      });
+    });
+    ics += "END:VCALENDAR";
+    downloadFile(ics, `الدوام_المسائي_${MONTHS[month.m]}_${month.y}.ics`, "text/calendar;charset=utf-8");
+  };
+
   const exportExcel = () => {
     const dmy = (ds) => `${ds.split("-")[2]}/${+ds.split("-")[1]}`;
     let rows = "";
@@ -1037,7 +1124,7 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
         if(isClinic(getSlot(d,di,"pm"))) covCell.push(`${d.name} ظهراً: ${(covs.pm||[]).map(id=>fd(id)?.name).filter(Boolean).join("،")||"غير معيّنة"}`);
         if(isClinic(getSlot(d,nextDi,"am"))) covCell.push(`${d.name} غداً صباحاً: ${(covs.nextAm||[]).map(id=>fd(id)?.name).filter(Boolean).join("،")||"غير معيّنة"}`);
       });
-      coverages.filter(c=>c.date===date).forEach(c=>{const cd=fd(c.coverDoctorId);if(cd)covCell.push(`تغطية فردية: ${cd.name} (${c.period==="am"?"صباحاً":"ظهراً"})`);});
+      coverages.filter(c=>c.date===date).forEach(c=>{const cd=fd(c.coverDoctorId);if(cd)covCell.push(`تغطية فردية: ${cd.name} (${(c.period==="am"?"صباحاً":c.period==="evening"?"مسائي":"ظهراً")})`);});
       rows += `<tr><td>${dmy(date)}</td><td>${DAYS[di]}</td><td>${docs.map(d=>d.name).join("، ")||"—"}</td><td>${covCell.join(" | ")||"لا تغطيات"}</td></tr>`;
     });
     const xls = `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"></head><body>
@@ -1259,6 +1346,7 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
           <button onClick={printCalendar} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>📅 تقويم</button>
           <button onClick={printBoxes} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>🔲 مربعات</button>
           <button onClick={exportExcel} style={{ ...Btn.nav, color:"#15803d", borderColor:"#bbf7d0" }}>📊 Excel</button>
+          <button onClick={exportICS} style={{ ...Btn.nav, color:"#2c5282", borderColor:"#cdddec" }}>📆 تقويم الجوال</button>
           <button onClick={shareWhatsApp} style={{ ...Btn.nav, color:"#16a34a", borderColor:"#bbf7d0" }}>📲 واتساب</button>
           <button onClick={printReport} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>📄 تقرير شهري</button>
           <button onClick={printDoctorSheets} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>🗂️ أوراق الأطباء</button>
@@ -1398,11 +1486,40 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
                     nd={nightData[date]||{}} indiv={coverages.filter(c=>c.date===date)}
                     doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd}
                     expanded={selDate===date} onToggle={()=>setSelDate(selDate===date?null:date)}
-                    onAddDoc={onAddDoc} onRemoveDoc={onRemoveDoc} onAddCov={onAddCov} onRemoveCov={onRemoveCov} onResetDay={onResetDay} onSetNote={onSetNote} />
+                    onAddDoc={onAddDoc} onRemoveDoc={onRemoveDoc} onAddCov={onAddCov} onRemoveCov={onRemoveCov} onResetDay={onResetDay} onSetNote={onSetNote} onAddIndiv={onAddIndiv} onRemoveIndiv={onRemoveIndiv} />
                 ))}
               </div>
             </div>
           )}
+
+          {/* Per-doctor monthly summary */}
+          {filledDays.length>0 && (() => {
+            const summ = doctors.map(doc=>{
+              let nights=0, covs=0;
+              calDays.forEach(({date,di})=>{
+                const nd=nightData[date]||{}; const c=nd.coverages||{};
+                if((nd.doctors||[]).includes(doc.id)) nights++;
+                covs += ((c.am||[]).includes(doc.id)?1:0)+((c.pm||[]).includes(doc.id)?1:0)+((c.nextAm||[]).includes(doc.id)?1:0);
+              });
+              covs += coverages.filter(c=>{const [y,m]=c.date.split("-");return c.coverDoctorId===doc.id&&+y===month.y&&+m===month.m+1;}).length;
+              return { doc, nights, covs };
+            }).filter(s=>s.nights||s.covs).sort((a,b)=>b.nights-a.nights);
+            if (!summ.length) return null;
+            return (
+              <div style={{ marginTop:18, background:"#fff", borderRadius:12, padding:16, border:"1px solid #eef2f7" }}>
+                <div style={{ fontWeight:700, fontSize:14, marginBottom:12 }}>📊 ملخص الشهر لكل طبيب</div>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:8 }}>
+                  {summ.map(({doc,nights,covs})=>(
+                    <div key={doc.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", background:"#f8fafc", borderRadius:9, borderRight:`4px solid ${doc.color}` }}>
+                      <span style={{ flex:1, fontSize:12, fontWeight:700, color:"#1e293b" }}>{doc.name}</span>
+                      <span style={{ fontSize:11, color:"#1d4ed8", fontWeight:700, background:"#eff4fb", borderRadius:5, padding:"2px 7px" }}>🌙 {nights}</span>
+                      {covs>0 && <span style={{ fontSize:11, color:"#15803d", fontWeight:700, background:"#eefaf3", borderRadius:5, padding:"2px 7px" }}>🔄 {covs}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -1432,7 +1549,127 @@ const DAY_GRADIENTS = [
   "#1e3a5f", "#2c5282", "#3b6ca8", "#2c5282", "#1e3a5f",
 ];
 
-function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverages, fd, expanded, onToggle, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onResetDay, onSetNote }) {
+// Inline adder for individual (absence-based) coverage within a day card
+function IndivCoverageAdder({ date, di, doctors, leaves, nightData, coverages, fd, onAddIndiv }) {
+  const [open, setOpen] = useState(false);
+  const [absentId, setAbsentId] = useState("");
+  const [reason, setReason] = useState("absence");
+  const [covByPeriod, setCovByPeriod] = useState({ am:"", pm:"", evening:"" });
+
+  const PERIODS = [
+    { key:"am", label:"☀️ صباح" },
+    { key:"pm", label:"🌅 ظهر" },
+    { key:"evening", label:"🌙 مسائي" },
+  ];
+  const REASONS = { absence:"غياب", sick:"إجازة مرضية", emergency:"طارئ", excuse:"عذر" };
+
+  const ad = doctors.find(d=>d.id===+absentId);
+
+  // For each period: does the absent doctor have a clinic? is it already covered by night schedule?
+  const periodInfo = (key) => {
+    if (!ad) return { hasClinic:false };
+    let hasClinic;
+    if (key==="evening") hasClinic = (nightData[date]?.doctors||[]).includes(ad.id) || (ad.nightDays||[]).includes(di);
+    else hasClinic = isClinic(getSlot(ad, di, key));
+    // already covered via night schedule (only am/pm, when absent doctor is the night doctor)
+    let alreadyCov = null;
+    if (key!=="evening" && (nightData[date]?.doctors||[]).includes(ad.id)) {
+      const ids = (nightData[date]?.coverages||{})[key]||[];
+      if (ids.length) alreadyCov = ids.map(id=>fd(id)?.name).filter(Boolean).join("، ");
+    }
+    return { hasClinic, alreadyCov };
+  };
+
+  const busyIds = (key) => {
+    const nd = nightData[date]||{}; const c = nd.coverages||{};
+    const ids = [...(c[key]||[])];
+    coverages.forEach(cv=>{ if(cv.date===date && cv.period===key) ids.push(cv.coverDoctorId); });
+    return ids;
+  };
+
+  // periods needing coverage (has clinic, not already covered)
+  const neededPeriods = ad ? PERIODS.filter(p=>{ const info=periodInfo(p.key); return info.hasClinic && !info.alreadyCov; }) : [];
+  const anyAssigned = Object.entries(covByPeriod).some(([k,v])=>v && neededPeriods.find(p=>p.key===k));
+
+  const save = () => {
+    if (!ad || !anyAssigned) return;
+    let count = 0;
+    neededPeriods.forEach(p=>{
+      const cid = covByPeriod[p.key];
+      if (cid) { onAddIndiv({ date, period:p.key, coverDoctorId:+cid, absentId:+absentId, reason }); count++; }
+    });
+    setAbsentId(""); setReason("absence"); setCovByPeriod({ am:"", pm:"", evening:"" }); setOpen(false);
+  };
+
+  if (!open) return (
+    <button onClick={()=>setOpen(true)} style={{ width:"100%", padding:"8px", background:"#fff", border:"1px dashed #fdba74", borderRadius:7, color:"#ea580c", cursor:"pointer", fontSize:12, fontWeight:700, marginTop:2 }}>➕ تسجيل غياب طبيب وتغطية فتراته</button>
+  );
+
+  return (
+    <div style={{ background:"#fffdf9", border:"1px solid #fed7aa", borderRadius:10, padding:12, marginTop:4 }}>
+      <div style={{ display:"flex", gap:6, marginBottom:10 }}>
+        <select value={absentId} onChange={e=>{ setAbsentId(e.target.value); setCovByPeriod({am:"",pm:"",evening:""}); }} style={{ ...SEL, fontSize:12, flex:2 }}>
+          <option value="">اختر الطبيب الغائب...</option>
+          {doctors.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+        <select value={reason} onChange={e=>setReason(e.target.value)} style={{ ...SEL, fontSize:12, flex:1 }}>
+          {Object.entries(REASONS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+        </select>
+      </div>
+
+      {ad && (
+        <div style={{ marginBottom:10 }}>
+          <div style={{ fontSize:11, color:"#92400e", fontWeight:700, marginBottom:8, background:"#fff7ed", borderRadius:6, padding:"6px 10px" }}>
+            📋 فترات د.{ad.name.replace("د.","")} يوم {DAYS[di]} — يغيب اليوم كاملاً:
+          </div>
+          {PERIODS.map(p=>{
+            const info = periodInfo(p.key);
+            if (!info.hasClinic) {
+              return (
+                <div key={p.key} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", marginBottom:5, background:"#f8fafc", borderRadius:7, fontSize:11, color:"#94a3b8" }}>
+                  <span style={{ minWidth:60, fontWeight:700 }}>{p.label}</span>
+                  <span>— لا يوجد لديه عيادة</span>
+                </div>
+              );
+            }
+            if (info.alreadyCov) {
+              return (
+                <div key={p.key} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", marginBottom:5, background:"#fffbeb", border:"1px solid #fde68a", borderRadius:7, fontSize:11, color:"#b45309" }}>
+                  <span style={{ minWidth:60, fontWeight:700 }}>{p.label}</span>
+                  <span>✓ مُغطّاة في الدوام المسائي ({info.alreadyCov})</span>
+                </div>
+              );
+            }
+            const busy = busyIds(p.key);
+            return (
+              <div key={p.key} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", marginBottom:5, background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:7 }}>
+                <span style={{ minWidth:60, fontWeight:700, fontSize:11, color:"#15803d" }}>{p.label}</span>
+                <span style={{ fontSize:10, color:"#15803d", whiteSpace:"nowrap" }}>يغطّيها:</span>
+                <select value={covByPeriod[p.key]} onChange={e=>setCovByPeriod(s=>({...s,[p.key]:e.target.value}))} style={{ ...SEL, fontSize:11, flex:1 }}>
+                  <option value="">اختر...</option>
+                  {doctors.filter(d=>d.id!==+absentId).map(d=>{
+                    const ol = onLeave(d,date,leaves); const bz = busy.includes(d.id);
+                    return <option key={d.id} value={d.id} disabled={ol||bz}>{ol?`🚫 ${d.name} (إجازة)`:bz?`⛔ ${d.name} (مشغول)`:d.name}</option>;
+                  })}
+                </select>
+              </div>
+            );
+          })}
+          {neededPeriods.length===0 && (
+            <div style={{ fontSize:11, color:"#94a3b8", textAlign:"center", padding:"6px" }}>لا توجد فترات تحتاج تغطية فردية لهذا الطبيب اليوم</div>
+          )}
+        </div>
+      )}
+
+      <div style={{ display:"flex", gap:6 }}>
+        <button onClick={save} disabled={!anyAssigned} style={{ flex:1, padding:"8px", background:anyAssigned?"#ea580c":"#fed7aa", color:"#fff", border:"none", borderRadius:7, fontSize:12, fontWeight:700, cursor:anyAssigned?"pointer":"default" }}>حفظ التغطيات</button>
+        <button onClick={()=>{ setOpen(false); setAbsentId(""); setCovByPeriod({am:"",pm:"",evening:""}); }} style={{ padding:"8px 16px", background:"#fff", border:"1px solid #e2e8f0", borderRadius:7, fontSize:12, cursor:"pointer" }}>إلغاء</button>
+      </div>
+    </div>
+  );
+}
+
+function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverages, fd, expanded, onToggle, onAddDoc, onRemoveDoc, onAddCov, onRemoveCov, onResetDay, onSetNote, onAddIndiv, onRemoveIndiv }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const nightDocs = nd.doctors || [];
   const covs = nd.coverages || { am:[], pm:[], nextAm:[] };
@@ -1500,6 +1737,30 @@ function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverag
       {/* Expanded body - inline editing */}
       {expanded && (
         <div style={{ padding:"4px 16px 14px", borderTop:"1px solid #eef2f7" }}>
+          {/* Per-day conflict banner */}
+          {(() => {
+            const dayConflicts = [];
+            (nd.doctors||[]).forEach(nid=>{
+              ["am","pm"].forEach(slot=>{
+                const nightCov = (covs[slot]||[]).length>0;
+                const dup = indiv.filter(c=>c.period===slot && c.absentId===nid);
+                if (nightCov && dup.length) dayConflicts.push(`عيادة ${fd(nid)?.name} (${slot==="am"?"صباح":"ظهر"}) مُغطّاة مرتين`);
+              });
+            });
+            // same cover doctor twice in same period
+            ["am","pm"].forEach(slot=>{
+              const ids = [...(covs[slot]||[]), ...indiv.filter(c=>c.period===slot).map(c=>c.coverDoctorId)];
+              const dups = ids.filter((x,i)=>ids.indexOf(x)!==i);
+              dups.forEach(id=>dayConflicts.push(`${fd(id)?.name} مسجّل مرتين في ${slot==="am"?"صباح":"ظهر"}`));
+            });
+            if (!dayConflicts.length) return null;
+            return (
+              <div style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:9, padding:"8px 12px", marginBottom:10 }}>
+                <div style={{ fontSize:12, fontWeight:700, color:"#dc2626", marginBottom:3 }}>⚠️ تعارض في هذا اليوم</div>
+                {[...new Set(dayConflicts)].map((t,i)=><div key={i} style={{ fontSize:11, color:"#991b1b" }}>🔴 {t}</div>)}
+              </div>
+            );
+          })()}
           {/* Night doctors with their coverage needs */}
           {nightDocs.map(id=>fd(id)).filter(Boolean).map(d => {
             const needs = docNeeds(d);
@@ -1571,15 +1832,24 @@ function DayCard({ date, di, day, nd, indiv, doctors, leaves, nightData, coverag
             </select>
           )}
 
-          {/* Individual coverages on this day */}
-          {indiv.length>0 && (
-            <div style={{ marginTop:4, paddingTop:8, borderTop:"1px dashed #e2e8f0" }}>
-              <div style={{ fontSize:10, fontWeight:700, color:"#ea580c", marginBottom:4 }}>🔄 تغطيات فردية (من صفحة التغطيات)</div>
-              {indiv.map(c=>{const cd=fd(c.coverDoctorId);return cd&&(
-                <div key={c.id} style={{ fontSize:10, color:"#ea580c", background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:5, padding:"3px 8px", marginBottom:3 }}>{cd.name} — {c.period==="am"?"صباحاً":"ظهراً"}</div>
-              );})}
-            </div>
-          )}
+          {/* Individual coverages on this day — full editor */}
+          <div style={{ marginTop:8, paddingTop:10, borderTop:"2px dashed #fed7aa" }}>
+            <div style={{ fontSize:12, fontWeight:700, color:"#ea580c", marginBottom:6 }}>🔄 تغطيات فردية (غياب / إجازة / عذر)</div>
+            {indiv.map(c=>{
+              const cd=fd(c.coverDoctorId); const ad=c.absentId?fd(c.absentId):null;
+              const reasonLabel = { absence:"غياب", sick:"إجازة مرضية", emergency:"طارئ", excuse:"عذر" }[c.reason]||c.reason||"";
+              return cd&&(
+                <div key={c.id} style={{ display:"flex", alignItems:"center", gap:6, fontSize:11, background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:7, padding:"5px 9px", marginBottom:4 }}>
+                  <span style={{ flex:1, color:"#9a3412" }}>
+                    <strong>{cd.name}</strong> يغطّي {(c.period==="am"?"صباحاً":c.period==="evening"?"مسائي":"ظهراً")}
+                    {ad?` — بدلاً من ${ad.name}`:""}{reasonLabel?` (${reasonLabel})`:""}
+                  </span>
+                  <button onClick={()=>onRemoveIndiv(c.id)} style={{ background:"none", border:"none", color:"#dc2626", cursor:"pointer", fontSize:13 }}>✕</button>
+                </div>
+              );
+            })}
+            <IndivCoverageAdder date={date} di={di} doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} onAddIndiv={onAddIndiv} />
+          </div>
 
           {/* Day note */}
           <div style={{ marginTop:6, marginBottom:8 }}>
@@ -1910,7 +2180,7 @@ function CoveragePage({ doctors, leaves, coverages, nightData, fd, onAdd, onRemo
   const [form, setForm] = useState({ absentId:"", date:"", period:"am", coverDoctorId:"", reason:"absence" });
   const [show, setShow] = useState(false);
   const REASONS = { absence:"غياب", excuse:"عذر", emergency:"طارئ", other:"أخرى" };
-  const PERIODS = { am:"☀️ صباح", pm:"🌅 ظهر" };
+  const PERIODS = { am:"☀️ صباح", pm:"🌅 ظهر", evening:"🌙 مسائي" };
 
   // Available doctors for the selected slot
   const availForForm = useMemo(() => {
@@ -1927,8 +2197,29 @@ function CoveragePage({ doctors, leaves, coverages, nightData, fd, onAdd, onRemo
     if (di < 0) return null;
     const ad = doctors.find(d=>d.id===+form.absentId);
     if (!ad) return null;
+    if (form.period === "evening") {
+      // Evening: doctor has a night assignment that day OR a fixed night day
+      const hasNight = (nightData[form.date]?.doctors||[]).includes(ad.id) || (ad.nightDays||[]).includes(di);
+      return hasNight;
+    }
     return isClinic(getSlot(ad, di, form.period));
-  }, [form.absentId, form.date, form.period, doctors]);
+  }, [form.absentId, form.date, form.period, doctors, nightData]);
+
+  // Check if the absent doctor's clinic in this period is ALREADY covered via the night schedule
+  const alreadyCoveredBy = useMemo(() => {
+    if (!form.absentId || !form.date || form.period==="evening") return null;
+    const ad = doctors.find(d=>d.id===+form.absentId);
+    if (!ad) return null;
+    // The absent doctor's clinic gets covered in night schedule if THEY are the night doctor that day
+    // and the matching coverage slot (am/pm) is filled.
+    const nd = nightData[form.date]||{};
+    if (!(nd.doctors||[]).includes(ad.id)) return null; // they're not the night doctor → night coverage doesn't apply
+    const covs = nd.coverages||{};
+    const ids = covs[form.period]||[];
+    if (!ids.length) return null;
+    const names = ids.map(id=>fd(id)?.name).filter(Boolean).join("، ");
+    return names || null;
+  }, [form.absentId, form.date, form.period, doctors, nightData]);
 
   const submit = () => {
     if (!form.date || !form.coverDoctorId) { showToast("أكمل البيانات", "warn"); return; }
@@ -1936,6 +2227,23 @@ function CoveragePage({ doctors, leaves, coverages, nightData, fd, onAdd, onRemo
     // Block coverage if the absent doctor has NO clinic in that period
     if (form.absentId && absentHasClinic === false) {
       showToast("الطبيب الغائب ليس لديه عيادة في هذه الفترة — لا تحتاج تغطية", "warn");
+      return;
+    }
+    // Block if this period is already covered via night schedule
+    if (alreadyCoveredBy) {
+      showToast(`هذه الفترة مُغطّاة بالفعل عبر جدول الدوام المسائي (${alreadyCoveredBy})`, "warn");
+      return;
+    }
+    // Block if the chosen cover doctor is already busy this same real period
+    const conflict = (() => {
+      const nd = nightData[form.date]||{}; const c = nd.coverages||{};
+      const sameSlotIds = [...(c[form.period]||[])];
+      // also night doctor themselves occupy evening; for am/pm check coverages
+      coverages.forEach(cv=>{ if(cv.date===form.date && cv.period===form.period) sameSlotIds.push(cv.coverDoctorId); });
+      return sameSlotIds.includes(+form.coverDoctorId);
+    })();
+    if (conflict) {
+      showToast("الطبيب المُغطّي مشغول في نفس الفترة بتغطية أخرى", "warn");
       return;
     }
     onAdd({
@@ -2015,14 +2323,19 @@ function CoveragePage({ doctors, leaves, coverages, nightData, fd, onAdd, onRemo
               🚫 {fd(+form.absentId)?.name} ليس لديه عيادة في {PERIODS[form.period]} هذا اليوم — لا تحتاج تغطية
             </div>
           )}
-          {form.absentId && absentHasClinic === true && (
+          {form.absentId && absentHasClinic === true && !alreadyCoveredBy && (
             <div style={{ background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:8, padding:"8px 12px", marginBottom:12, fontSize:12, color:"#15803d", fontWeight:600 }}>
               ✓ {fd(+form.absentId)?.name} لديه عيادة في {PERIODS[form.period]} — التغطية مطلوبة
             </div>
           )}
+          {alreadyCoveredBy && (
+            <div style={{ background:"#fffbeb", border:"1px solid #fde68a", borderRadius:8, padding:"8px 12px", marginBottom:12, fontSize:12, color:"#b45309", fontWeight:600 }}>
+              ⚠️ فترة {PERIODS[form.period]} لـ {fd(+form.absentId)?.name} مُغطّاة بالفعل في جدول الدوام المسائي بواسطة {alreadyCoveredBy} — لا حاجة لتغطية فردية
+            </div>
+          )}
 
           <div style={{ display:"flex", gap:8 }}>
-            <button style={{ ...Btn.primary, opacity:(form.absentId && absentHasClinic===false)?0.5:1 }} onClick={submit} disabled={form.absentId && absentHasClinic===false}>حفظ</button>
+            <button style={{ ...Btn.primary, opacity:((form.absentId && absentHasClinic===false)||alreadyCoveredBy)?0.5:1 }} onClick={submit} disabled={(form.absentId && absentHasClinic===false)||!!alreadyCoveredBy}>حفظ</button>
             <button style={Btn.secondary} onClick={()=>setShow(false)}>إلغاء</button>
           </div>
         </div>
