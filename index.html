@@ -11,6 +11,10 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>try{window.firebaseConfig={apiKey:"AIzaSyAFgGIFTVBzpVagVWLJz80xxbstkonG3j4",authDomain:"restorative-department.firebaseapp.com",databaseURL:"https://restorative-department-default-rtdb.europe-west1.firebasedatabase.app",projectId:"restorative-department",storageBucket:"restorative-department.firebasestorage.app",messagingSenderId:"687684043892",appId:"1:687684043892:web:23098f2dce7971bee2bd21"};firebase.initializeApp(window.firebaseConfig);window.fbAuth=firebase.auth();window.fbDB=firebase.database();}catch(e){console.warn("Firebase init failed",e);}</script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; font-family: 'Tajawal', 'Segoe UI', Tahoma, sans-serif; background:#f0f4f8; -webkit-font-smoothing:antialiased; }
@@ -551,44 +555,74 @@ const PIN_CODE = "1133";
 function LoginGate({ onSuccess }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [fbErr, setFbErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState("cloud"); // cloud | pin
 
   const submit = (val) => {
     if (val === PIN_CODE) { onSuccess(); }
     else { setError(true); setPin(""); setTimeout(()=>setError(false), 1500); }
   };
-
   const press = (n) => {
     const next = (pin + n).slice(0,4);
     setPin(next);
     if (next.length === 4) setTimeout(()=>submit(next), 150);
   };
 
+  const cloudLogin = () => {
+    if (!window.fbAuth) { setFbErr("الاتصال السحابي غير متاح"); return; }
+    if (!email || !pass) { setFbErr("أدخل البريد وكلمة المرور"); return; }
+    setBusy(true); setFbErr("");
+    window.fbAuth.signInWithEmailAndPassword(email.trim(), pass)
+      .then(()=>{ /* onAuthStateChanged handles the rest */ })
+      .catch(err=>{
+        const m = err.code==="auth/invalid-credential"||err.code==="auth/wrong-password"||err.code==="auth/user-not-found" ? "البريد أو كلمة المرور غير صحيحة"
+          : err.code==="auth/invalid-email" ? "صيغة البريد غير صحيحة"
+          : err.code==="auth/too-many-requests" ? "محاولات كثيرة، انتظر قليلاً"
+          : "تعذّر تسجيل الدخول";
+        setFbErr(m); setBusy(false);
+      });
+  };
+
   return (
-    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"radial-gradient(circle at 30% 20%, #2c5282 0%, #1e3a5f 40%, #0f1e36 100%)", direction:"rtl", fontFamily:"'Segoe UI',Tahoma,sans-serif" }}>
-      <div style={{ background:"#fff", borderRadius:20, padding:"32px 28px", width:330, boxShadow:"0 20px 60px rgba(0,0,0,.3)", textAlign:"center" }}>
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"radial-gradient(circle at 30% 20%, #2c5282 0%, #1e3a5f 40%, #0f1e36 100%)", direction:"rtl", fontFamily:"'Segoe UI',Tahoma,sans-serif", padding:16 }}>
+      <div style={{ background:"#fff", borderRadius:20, padding:"32px 28px", width:340, boxShadow:"0 20px 60px rgba(0,0,0,.3)", textAlign:"center" }}>
         <div style={{ width:72, height:72, borderRadius:20, background:"linear-gradient(135deg,#1e3a5f,#2c5282)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:38, margin:"0 auto 14px", boxShadow:"0 8px 20px rgba(30,58,95,.3)" }}>🦷</div>
         <div style={{ fontWeight:800, fontSize:20, color:"#1e293b" }}>قسم إصلاح الأسنان</div>
-        <div style={{ fontSize:13, color:"#64748b", marginTop:4 }}>مركز طب الأسنان التخصصي</div>
-        <div style={{ fontSize:13, color:"#2c5282", fontWeight:700, marginTop:14, marginBottom:4 }}>أهلاً بك 👋</div>
-        <div style={{ fontSize:12, color:"#94a3b8", marginBottom:18 }}>كل شي عندنا أسرار 😅</div>
+        <div style={{ fontSize:13, color:"#64748b", marginTop:4, marginBottom:18 }}>مركز طب الأسنان التخصصي</div>
 
-        {/* PIN dots */}
-        <div style={{ display:"flex", justifyContent:"center", gap:12, marginBottom:8 }}>
-          {[0,1,2,3].map(i => (
-            <div key={i} style={{ width:16, height:16, borderRadius:"50%", border:`2px solid ${error?"#dc2626":"#2c5282"}`, background: i<pin.length ? (error?"#dc2626":"#2c5282") : "transparent", transition:"all .15s" }} />
-          ))}
-        </div>
-        <div style={{ height:18, fontSize:12, color:"#dc2626", fontWeight:700, marginBottom:8 }}>{error ? "رقم سري خاطئ" : ""}</div>
-
-        {/* Keypad */}
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10 }}>
-          {[1,2,3,4,5,6,7,8,9].map(n => (
-            <button key={n} onClick={()=>press(String(n))} style={keyBtn}>{n}</button>
-          ))}
-          <button onClick={()=>setPin("")} style={{ ...keyBtn, fontSize:14, color:"#94a3b8" }}>مسح</button>
-          <button onClick={()=>press("0")} style={keyBtn}>0</button>
-          <button onClick={()=>setPin(p=>p.slice(0,-1))} style={{ ...keyBtn, fontSize:18, color:"#94a3b8" }}>⌫</button>
-        </div>
+        {mode==="cloud" ? (
+          <>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="البريد الإلكتروني" autoCapitalize="none"
+              style={{ width:"100%", padding:"11px 14px", border:"1px solid #e2e8f0", borderRadius:10, fontSize:14, outline:"none", marginBottom:10, direction:"ltr", textAlign:"left" }} />
+            <input type="password" value={pass} onChange={e=>setPass(e.target.value)} placeholder="كلمة المرور" onKeyDown={e=>{if(e.key==="Enter")cloudLogin();}}
+              style={{ width:"100%", padding:"11px 14px", border:"1px solid #e2e8f0", borderRadius:10, fontSize:14, outline:"none", marginBottom:10, direction:"ltr", textAlign:"left" }} />
+            <div style={{ height:18, fontSize:12, color:"#dc2626", fontWeight:700, marginBottom:8 }}>{fbErr}</div>
+            <button onClick={cloudLogin} disabled={busy} style={{ width:"100%", padding:"12px", background:busy?"#94a3b8":"linear-gradient(135deg,#1e3a5f,#2c5282)", color:"#fff", border:"none", borderRadius:10, fontSize:15, fontWeight:700, cursor:busy?"default":"pointer" }}>{busy?"جارٍ الدخول…":"تسجيل الدخول"}</button>
+            <button onClick={()=>setMode("pin")} style={{ marginTop:12, background:"none", border:"none", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>الدخول برقم سري (بدون سحابة)</button>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize:12, color:"#94a3b8", marginBottom:14 }}>دخول محلي بدون حفظ سحابي</div>
+            <div style={{ display:"flex", justifyContent:"center", gap:12, marginBottom:8 }}>
+              {[0,1,2,3].map(i => (
+                <div key={i} style={{ width:16, height:16, borderRadius:"50%", border:`2px solid ${error?"#dc2626":"#2c5282"}`, background: i<pin.length ? (error?"#dc2626":"#2c5282") : "transparent", transition:"all .15s" }} />
+              ))}
+            </div>
+            <div style={{ height:18, fontSize:12, color:"#dc2626", fontWeight:700, marginBottom:8 }}>{error ? "رقم سري خاطئ" : ""}</div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10 }}>
+              {[1,2,3,4,5,6,7,8,9].map(n => (
+                <button key={n} onClick={()=>press(String(n))} style={keyBtn}>{n}</button>
+              ))}
+              <button onClick={()=>setPin("")} style={{ ...keyBtn, fontSize:14, color:"#94a3b8" }}>مسح</button>
+              <button onClick={()=>press("0")} style={keyBtn}>0</button>
+              <button onClick={()=>setPin(p=>p.slice(0,-1))} style={{ ...keyBtn, fontSize:18, color:"#94a3b8" }}>⌫</button>
+            </div>
+            <button onClick={()=>setMode("cloud")} style={{ marginTop:14, background:"none", border:"none", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>الدخول بالحساب السحابي</button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -616,6 +650,49 @@ function App() {
   };
 
   const fd = id => doctors.find(d => d.id === id);
+
+  // ─── Firebase cloud sync (Phase 1: admin login + cloud storage) ───
+  const [fbUser, setFbUser] = useState(null);
+  const [cloudReady, setCloudReady] = useState(false);
+  const cloudLoaded = React.useRef(false);
+  const DB_PATH = "clinicData/main";
+
+  React.useEffect(() => {
+    try {
+      if (!window.fbAuth) { setCloudReady(true); return; }
+      const unsub = window.fbAuth.onAuthStateChanged(u => {
+        setFbUser(u || null);
+        if (u) {
+          setAuthed(true); S.set("fin_auth", true);
+          window.fbDB.ref(DB_PATH).once("value").then(snap => {
+            const d = snap.val();
+            if (d) {
+              if (d.docs)  { setDoctors(d.docs);   S.set("fin_docs", d.docs); }
+              if (d.leaves){ setLeaves(d.leaves);  S.set("fin_leaves", d.leaves); }
+              if (d.night) { setNightData(d.night);S.set("fin_night", d.night); }
+              if (d.cov)   { setCoverages(d.cov);  S.set("fin_cov", d.cov); }
+              if (d.approvals){ setApprovals(d.approvals); S.set("fin_approvals", d.approvals); }
+            }
+            cloudLoaded.current = true;
+            setCloudReady(true);
+          }).catch(()=>{ cloudLoaded.current = true; setCloudReady(true); });
+        } else {
+          setCloudReady(true);
+        }
+      });
+      return () => { try { unsub && unsub(); } catch(e){} };
+    } catch(e) { setCloudReady(true); }
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      if (!window.fbDB || !fbUser || !cloudLoaded.current) return;
+      const t = setTimeout(() => {
+        try { window.fbDB.ref(DB_PATH).set({ docs:doctors, leaves, night:nightData, cov:coverages, approvals, updated:Date.now() }).catch(()=>{}); } catch(e){}
+      }, 800);
+      return () => clearTimeout(t);
+    } catch(e) {}
+  }, [doctors, leaves, nightData, coverages, approvals, fbUser]);
 
   const save = () => {
     S.set("fin_docs",   doctors);
@@ -1003,7 +1080,7 @@ function App() {
               </label>
             </div>
           </div>
-          <button onClick={() => { S.set("fin_auth", false); setAuthed(false); }}
+          <button onClick={() => { if(window.fbAuth) window.fbAuth.signOut(); S.set("fin_auth", false); setAuthed(false); }}
             style={{ width:"100%", padding:"6px", marginTop:8, background:"transparent", border:"1px solid #cdddec", borderRadius:8, color:"#2c5282", cursor:"pointer", fontSize:10, fontWeight:600 }}>
             🔒 قفل
           </button>
