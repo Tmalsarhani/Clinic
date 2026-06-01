@@ -445,8 +445,9 @@ function analyzeDay(date, doctors, leaves, nightData, coverages, loadMap) {
     const id=+idStr;
     const dutyAm = (occupied.am[id]||[]).some(r=>r.includes("تغطية"));
     const dutyPm = (occupied.pm[id]||[]).some(r=>r.includes("تغطية"));
-    const dutyEve = (nd.doctors||[]).includes(id) || (occupied.evening[id]||[]).some(r=>r.includes("تغطية"));
-    if (dutyAm||dutyPm||dutyEve) conflicts.push({ type:"absent-busy", date, text:`${fd(id)?.name||""} غائب/في إجازة يوم ${fmtDate(date)} لكنه مكلّف بتغطية/دوام نفس اليوم` });
+    const inNight = (nd.doctors||[]).includes(id);
+    const dutyEve = inNight || (occupied.evening[id]||[]).some(r=>r.includes("تغطية"));
+    if (dutyAm||dutyPm||dutyEve) conflicts.push({ type:"absent-busy", date, docId:id, inNight, text:`${fd(id)?.name||""} غائب/في إجازة يوم ${fmtDate(date)} لكنه مكلّف بتغطية/دوام نفس اليوم` });
   });
 
   // CONFLICT (RULE: one day = one task): evening-busy doctor also has a daytime coverage duty same day
@@ -874,6 +875,31 @@ function App() {
     updateNight(next);
   };
 
+  // Fix "absent but assigned" conflict: remove ALL of this doctor's duties on that date
+  const removeAllDutiesForDay = (date, docId) => {
+    const next = { ...nightData };
+    // clean this day's record
+    const cur = next[date] || { doctors:[], coverages:{ am:[], pm:[], nextAm:[] } };
+    const covs = cur.coverages || { am:[], pm:[], nextAm:[] };
+    next[date] = {
+      ...cur,
+      doctors: (cur.doctors||[]).filter(id => id !== docId),
+      coverages: {
+        am: (covs.am||[]).filter(id=>id!==docId),
+        pm: (covs.pm||[]).filter(id=>id!==docId),
+        nextAm: (covs.nextAm||[]).filter(id=>id!==docId),
+      }
+    };
+    // clean the PREVIOUS workday's nextAm (which lands on this morning)
+    const d = new Date(date);
+    for (let i=1;i<=4;i++){ const p=new Date(d); p.setDate(d.getDate()-i); const wd=p.getDay(); if(wd!==5&&wd!==6){ const ps=`${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,"0")}-${String(p.getDate()).padStart(2,"0")}`; const pnd=next[ps]; if(pnd?.coverages?.nextAm?.includes(docId)){ next[ps]={...pnd, coverages:{...pnd.coverages, nextAm:pnd.coverages.nextAm.filter(id=>id!==docId)}}; } break; } }
+    updateNight(next);
+    // also remove individual coverages where this doctor is the cover on that date
+    const cleanedCov = coverages.filter(c => !(c.date===date && c.coverDoctorId===docId));
+    if (cleanedCov.length !== coverages.length) updateCoverages(cleanedCov);
+    showToast("✅ تم إزالة تكليف الطبيب لهذا اليوم");
+  };
+
   // Auto-distribute pending coverages, least-loaded doctor first (fair load)
   const autoFillPending = (year, monthIdx) => {
     // Build current load per doctor (extra nights*2 + coverages - absences) for the month
@@ -1100,7 +1126,7 @@ function App() {
           </div>
         </div>
         <div style={{ flex:1, overflowY:"auto", padding:22 }}>
-          {page==="dashboard" && <DashboardPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onGoto={setPage} onLoadSeed={loadJuneSeed} onImportExcel={importExcel} onAddIndiv={addIndivCoverage} />}
+          {page==="dashboard" && <DashboardPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onGoto={setPage} onLoadSeed={loadJuneSeed} onImportExcel={importExcel} onAddIndiv={addIndivCoverage} onRemoveDuties={removeAllDutiesForDay} onAddDoc={addNightDoc} />}
           {page==="monthly" && <MonthlyPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onAutoFill={(y,m,mode) => { let base = nightData; if(mode==="all"){ base={}; Object.keys(nightData).forEach(d=>{const [yy,mm]=d.split("-"); if(+yy!==y||+mm!==m+1) base[d]=nightData[d];}); } const next=autoFill(y,m,doctors,leaves,base); updateNight(next); showToast(mode==="all"?"✅ تم التوزيع الكامل":"✅ تم إكمال الأيام الناقصة"); }} onAddDoc={addNightDoc} onRemoveDoc={removeNightDoc} onAddCov={addCoverage} onRemoveCov={removeCoverage} onClearMonth={clearMonth} onResetDay={resetDay} onCopyDay={copyDay} onSetNote={setDayNote} onEnsureDay={ensureDay} onCopyMonth={copyMonth} onSwap={swapDoctors} approvals={approvals} onApprove={setMonthApproval} onAddIndiv={addIndivCoverage} onRemoveIndiv={removeIndivCoverage} onAutoFillPending={autoFillPending} onSetSlots={setDaySlots} />}
           {page==="coverage" && <CoveragePageFull doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} onAddIndiv={addIndivCoverage} onRemoveIndiv={removeIndivCoverage} />}
           {page==="doctors"  && <DoctorsPage doctors={doctors} leaves={leaves} today={today} fd={fd} onUpdateDocs={updateDocs} showToast={showToast} />}
@@ -1121,7 +1147,7 @@ function App() {
 // ══════════════════════════════════════════════════════
 // DASHBOARD PAGE (Material-style)
 // ══════════════════════════════════════════════════════
-function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGoto, onLoadSeed, onImportExcel, onAddIndiv }) {
+function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGoto, onLoadSeed, onImportExcel, onAddIndiv, onRemoveDuties, onAddDoc }) {
   const [covDate, setCovDate] = useState("");
   const now = new Date();
   const thisMonth = (ds) => { const [y,m]=ds.split("-"); return +y===now.getFullYear() && +m===now.getMonth()+1; };
@@ -1250,14 +1276,41 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
         </div>
       )}
 
-      {/* Conflicts alert */}
+      {/* Conflicts alert with fix buttons */}
       {conflicts.length>0 && (
         <div style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:14, padding:"14px 18px", marginBottom:16 }}>
-          <div style={{ fontWeight:800, fontSize:14, color:"#dc2626", marginBottom:8 }}>⚠️ تعارضات تحتاج انتباه ({conflicts.length})</div>
-          {conflicts.slice(0,6).map((c,i)=>(
-            <div key={i} style={{ fontSize:12, color:"#991b1b", padding:"4px 0", borderTop:i>0?"1px solid #fecaca":"none" }}>🔴 {c.text}</div>
-          ))}
-          {conflicts.length>6 && <div style={{ fontSize:11, color:"#dc2626", marginTop:4 }}>+ {conflicts.length-6} تعارضات أخرى</div>}
+          <div style={{ fontWeight:800, fontSize:14, color:"#dc2626", marginBottom:10 }}>⚠️ تعارضات تحتاج انتباه ({conflicts.length})</div>
+          {conflicts.map((c,i)=>{
+            const fixable = c.type==="absent-busy" && c.docId && c.date;
+            // suggest a replacement (least loaded, free, not absent) for night shift if applicable
+            let sugg = null;
+            if (fixable && c.inNight) {
+              const an = analyzeDay(c.date, doctors, leaves, nightData, coverages, null);
+              const occ = an.occupied||{am:{},pm:{},evening:{}};
+              const di = dayIdx(c.date);
+              const cands = doctors.filter(d=>
+                d.id!==c.docId && !(d.nightDays&&d.nightDays.length) &&
+                !onLeave(d,c.date,leaves) && !(d.blockedDays||[]).includes(di) &&
+                !(occ.evening?.[d.id]?.length) && !(occ.am?.[d.id]?.length) && !(occ.pm?.[d.id]?.length)
+              );
+              sugg = cands[0]?.id;
+            }
+            return (
+              <div key={i} style={{ padding:"8px 0", borderTop:i>0?"1px solid #fecaca":"none" }}>
+                <div style={{ fontSize:12, color:"#991b1b", marginBottom:fixable?6:0 }}>🔴 {c.text}</div>
+                {fixable && (
+                  <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                    <button onClick={()=>onRemoveDuties(c.date, c.docId)} style={{ background:"#dc2626", color:"#fff", border:"none", borderRadius:7, padding:"5px 12px", fontSize:11, fontWeight:700, cursor:"pointer" }}>🗑️ إزالة التكليف</button>
+                    {c.inNight && (sugg
+                      ? <button onClick={()=>{ onRemoveDuties(c.date, c.docId); setTimeout(()=>onAddDoc(c.date, sugg), 60); }} style={{ background:"#15803d", color:"#fff", border:"none", borderRadius:7, padding:"5px 12px", fontSize:11, fontWeight:700, cursor:"pointer" }}>🔄 استبدال بـ {fd(sugg)?.name}</button>
+                      : <span style={{ fontSize:10, color:"#dc2626", alignSelf:"center" }}>لا يوجد بديل متاح للاستبدال</span>
+                    )}
+                    <button onClick={()=>onGoto("monthly")} style={{ background:"#fff", color:"#1e3a5f", border:"1px solid #cdddec", borderRadius:7, padding:"5px 12px", fontSize:11, fontWeight:700, cursor:"pointer" }}>فتح في الجدول</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
