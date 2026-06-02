@@ -901,6 +901,22 @@ function App() {
     } catch(e) {}
   }, [doctors, leaves, nightData, coverages, approvals, fbUser, role]);
 
+  // ─── مزامنة مباشرة لحساب الطبيب (قراءة فقط): تنعكس تعديلات المدير فوراً دون إعادة دخول ───
+  React.useEffect(() => {
+    if (role !== "doctor" || !window.fbDB || !fbUser) return;
+    const ref = window.fbDB.ref(DB_PATH);
+    const handler = ref.on("value", snap => {
+      const d = snap.val();
+      if (!d) return;
+      setDoctors(d.docs || INIT_DOCTORS);
+      setLeaves(d.leaves || []);
+      setNightData(d.night || {});
+      setCoverages(d.cov || []);
+      setApprovals(d.approvals || {});
+    });
+    return () => { try { ref.off("value", handler); } catch(e){} };
+  }, [role, fbUser]);
+
   const save = () => {
     S.set("fin_docs",   doctors);
     S.set("fin_leaves", leaves);
