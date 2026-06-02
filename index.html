@@ -15,6 +15,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>try{window.firebaseConfig={apiKey:"AIzaSyAFgGIFTVBzpVagVWLJz80xxbstkonG3j4",authDomain:"restorative-department.firebaseapp.com",databaseURL:"https://restorative-department-default-rtdb.europe-west1.firebasedatabase.app",projectId:"restorative-department",storageBucket:"restorative-department.firebasestorage.app",messagingSenderId:"687684043892",appId:"1:687684043892:web:23098f2dce7971bee2bd21"};firebase.initializeApp(window.firebaseConfig);window.fbAuth=firebase.auth();window.fbDB=firebase.database();}catch(e){console.warn("Firebase init failed",e);}</script>
+<script>try{window.fbSecondaryApp=firebase.initializeApp(window.firebaseConfig,"userCreator");}catch(e){console.warn("secondary init failed",e);}</script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; font-family: 'Tajawal', 'Segoe UI', Tahoma, sans-serif; background:#f0f4f8; -webkit-font-smoothing:antialiased; }
@@ -563,6 +564,164 @@ const S = {
 };
 
 // ══════════════════════════════════════════════════════
+// CREATE LOGIN BUTTON — admin creates a Firebase account for a doctor (linked by email)
+// Uses a secondary Firebase app so the admin stays logged in.
+// ══════════════════════════════════════════════════════
+function CreateLoginButton({ doc, showToast }) {
+  const [open, setOpen] = useState(false);
+  const [pass, setPass] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const email = (doc.email || "").trim();
+
+  const create = () => {
+    if (!email || !email.includes("@")) { showToast("أدخل بريد الطبيب أولاً في الحقل أعلاه", "warn"); return; }
+    if (!pass || pass.length < 6) { showToast("كلمة المرور 6 أحرف على الأقل", "warn"); return; }
+    if (!window.fbSecondaryApp) { showToast("الاتصال السحابي غير متاح", "warn"); return; }
+    setBusy(true);
+    const secAuth = window.fbSecondaryApp.auth();
+    secAuth.createUserWithEmailAndPassword(email, pass)
+      .then(() => secAuth.signOut())
+      .then(() => { setBusy(false); setDone(true); setOpen(false); setPass(""); showToast("✅ تم إنشاء حساب الطبيب"); })
+      .catch(err => {
+        setBusy(false);
+        const m = err.code==="auth/email-already-in-use" ? "هذا البريد له حساب مسبقاً"
+          : err.code==="auth/weak-password" ? "كلمة المرور ضعيفة (6 أحرف+)"
+          : err.code==="auth/invalid-email" ? "صيغة البريد غير صحيحة"
+          : "تعذّر الإنشاء";
+        showToast(m, "warn");
+      });
+  };
+
+  if (done) return (
+    <div style={{ display:"flex", alignItems:"center", gap:8, background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:8, padding:"7px 10px", fontSize:12, color:"#15803d", fontWeight:700 }}>
+      ✅ تم إنشاء الحساب — سلّم الطبيب بريده وكلمة المرور
+    </div>
+  );
+
+  if (!open) return (
+    <button onClick={()=>setOpen(true)} style={{ width:"100%", padding:"8px", background:"#fff", border:"1px dashed #93b4d8", borderRadius:8, color:"#1e3a5f", cursor:"pointer", fontSize:12, fontWeight:700 }}>🔑 إنشاء حساب دخول لهذا الطبيب</button>
+  );
+
+  return (
+    <div style={{ background:"#f8fbff", border:"1px solid #dbe7f3", borderRadius:9, padding:10 }}>
+      <div style={{ fontSize:11, color:"#64748b", marginBottom:6, direction:"ltr", textAlign:"right" }}>📧 {email || "— لا يوجد بريد —"}</div>
+      <input type="text" value={pass} onChange={e=>setPass(e.target.value)} placeholder="كلمة مرور مؤقتة (6 أحرف+)"
+        style={{ width:"100%", padding:"8px 10px", border:"1px solid #e2e8f0", borderRadius:7, fontSize:12, outline:"none", direction:"ltr", textAlign:"left", marginBottom:8 }} />
+      <div style={{ display:"flex", gap:6 }}>
+        <button onClick={create} disabled={busy} style={{ flex:1, padding:"8px", background:busy?"#94a3b8":"linear-gradient(135deg,#1e3a5f,#2c5282)", color:"#fff", border:"none", borderRadius:7, fontSize:12, fontWeight:700, cursor:busy?"default":"pointer" }}>{busy?"جارٍ الإنشاء…":"إنشاء"}</button>
+        <button onClick={()=>{ setOpen(false); setPass(""); }} style={{ padding:"8px 14px", background:"#fff", border:"1px solid #e2e8f0", borderRadius:7, fontSize:12, cursor:"pointer" }}>إلغاء</button>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════
+// DOCTOR VIEW — read-only personal page (shown when a doctor logs in)
+// ══════════════════════════════════════════════════════
+function DoctorView({ doctor, doctors, leaves, nightData, coverages, fd, today, onSignOut }) {
+  const now = new Date();
+  const [month, setMonth] = useState({ y:now.getFullYear(), m:now.getMonth() });
+
+  if (!doctor) return (
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#f0f4f8", direction:"rtl", fontFamily:"'Tajawal',Tahoma,sans-serif", padding:20 }}>
+      <div style={{ background:"#fff", borderRadius:16, padding:30, textAlign:"center", maxWidth:360, boxShadow:"0 12px 40px rgba(0,0,0,.12)" }}>
+        <div style={{ fontSize:42, marginBottom:10 }}>⚠️</div>
+        <div style={{ fontWeight:800, fontSize:16, marginBottom:6 }}>حسابك غير مرتبط بطبيب</div>
+        <div style={{ fontSize:13, color:"#64748b", marginBottom:18, lineHeight:1.7 }}>بريدك غير مطابق لأي طبيب في النظام. تواصل مع مدير النظام لإضافة بريدك في ملفك.</div>
+        <button onClick={onSignOut} style={{ ...Btn.primary, padding:"10px 22px" }}>🔒 تسجيل الخروج</button>
+      </div>
+    </div>
+  );
+
+  const inMonth = ds => { const [y,m]=ds.split("-"); return +y===month.y && +m===month.m+1; };
+  const dim = new Date(month.y, month.m+1, 0).getDate();
+  const monthDates = [];
+  for (let d=1; d<=dim; d++){ const ds=`${month.y}-${String(month.m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; if(dayIdx(ds)>=0) monthDates.push(ds); }
+
+  const duties = [];
+  monthDates.forEach(ds=>{
+    const di=dayIdx(ds); const nd=nightData[ds]||{}; const c=nd.coverages||{};
+    if((nd.doctors||[]).includes(doctor.id)) duties.push({ date:ds, di, type:"night", icon:"🌙", label:"دوام مسائي", color:"#1e3a5f" });
+    if((c.am||[]).includes(doctor.id)) duties.push({ date:ds, di, type:"cov", icon:"☀️", label:"تغطية صباح", color:"#15803d" });
+    if((c.pm||[]).includes(doctor.id)) duties.push({ date:ds, di, type:"cov", icon:"🌅", label:"تغطية ظهر", color:"#0891b2" });
+    if((c.nextAm||[]).includes(doctor.id)){ const nw=nextWork(ds); duties.push({ date:nw, di:dayIdx(nw), type:"cov", icon:"🌄", label:"تغطية صباح (يوم تالٍ)", color:"#15803d" }); }
+  });
+  coverages.filter(cv=>cv.coverDoctorId===doctor.id && inMonth(cv.date)).forEach(cv=>{
+    const ad=cv.absentId?fd(cv.absentId):null;
+    duties.push({ date:cv.date, di:dayIdx(cv.date), type:"indiv", icon:"🔄", label:`تغطية فردية (${cv.period==="am"?"صباح":cv.period==="evening"?"مسائي":"ظهر"})`, detail:ad?`بدلاً من ${ad.name}`:"", color:"#ea580c" });
+  });
+  duties.sort((a,b)=>a.date.localeCompare(b.date));
+
+  const myLeaves = (leaves||[]).filter(l=>l.doctorId===doctor.id);
+  const nightCount = duties.filter(d=>d.type==="night").length;
+  const covCount = duties.filter(d=>d.type!=="night").length;
+  const calCells = monthDates.map(ds=>({ ds, di:dayIdx(ds), d:+ds.split("-")[2] }));
+  const firstOff = calCells[0]?.di ?? 0;
+  const SLABEL = { clinic:"عيادة", clinic_am:"عيادة", clinic_pm:"عيادة", admin:"إداري", training:"تدريب", audit:"تدقيق", virtual:"افتراضية", "":"—" };
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#f0f4f8", direction:"rtl", fontFamily:"'Tajawal','Segoe UI',Tahoma,sans-serif", paddingBottom:30 }}>
+      <div style={{ background:"linear-gradient(135deg,#1e3a5f,#2c5282)", color:"#fff", padding:"18px 20px", display:"flex", alignItems:"center", gap:14 }}>
+        <div style={{ width:52, height:52, borderRadius:14, background:doctor.color, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800, fontSize:18, flexShrink:0 }}>{sn(doctor.name).slice(0,2)}</div>
+        <div style={{ flex:1 }}><div style={{ fontWeight:800, fontSize:18 }}>{doctor.name}</div><div style={{ fontSize:12, opacity:.85 }}>{rankLabel(rankOf(doctor))} · قسم إصلاح الأسنان</div></div>
+        <button onClick={onSignOut} style={{ background:"rgba(255,255,255,.15)", border:"1px solid rgba(255,255,255,.3)", color:"#fff", borderRadius:9, padding:"8px 14px", fontSize:12, fontWeight:700, cursor:"pointer" }}>🔒 خروج</button>
+      </div>
+      <div style={{ maxWidth:560, margin:"0 auto", padding:16 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14, justifyContent:"center" }}>
+          <button onClick={()=>setMonth(p=>p.m===0?{y:p.y-1,m:11}:{y:p.y,m:p.m-1})} style={Btn.nav}>→</button>
+          <div style={{ fontWeight:800, fontSize:16, minWidth:130, textAlign:"center" }}>{MONTHS[month.m]} {month.y}</div>
+          <button onClick={()=>setMonth(p=>p.m===11?{y:p.y+1,m:0}:{y:p.y,m:p.m+1})} style={Btn.nav}>←</button>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
+          <div style={{ background:"#fff", borderRadius:14, padding:14, textAlign:"center", borderTop:"3px solid #1e3a5f" }}><div style={{ fontSize:28, fontWeight:800, color:"#1e3a5f" }}>{nightCount}</div><div style={{ fontSize:11, color:"#64748b" }}>🌙 دوام مسائي</div></div>
+          <div style={{ background:"#fff", borderRadius:14, padding:14, textAlign:"center", borderTop:"3px solid #15803d" }}><div style={{ fontSize:28, fontWeight:800, color:"#15803d" }}>{covCount}</div><div style={{ fontSize:11, color:"#64748b" }}>🔄 تغطيات</div></div>
+        </div>
+        <div style={{ background:"#fff", borderRadius:16, padding:16, marginBottom:16, boxShadow:"0 4px 16px rgba(30,58,95,.06)" }}>
+          <div style={{ fontWeight:800, fontSize:15, marginBottom:12 }}>📋 مهامي هذا الشهر</div>
+          {duties.length===0 ? <div style={{ textAlign:"center", color:"#cbd5e1", padding:"20px 0", fontSize:13 }}>لا توجد مهام مسجّلة</div> : duties.map((dt,i)=>(
+            <div key={i} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 0", borderTop:i>0?"1px solid #f1f5f9":"none" }}>
+              <div style={{ background:dt.color, color:"#fff", borderRadius:10, minWidth:46, height:46, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                <span style={{ fontWeight:800, fontSize:16, lineHeight:1 }}>{dt.date.split("-")[2]}</span><span style={{ fontSize:9, opacity:.85 }}>{DAYS[dt.di]}</span></div>
+              <div style={{ flex:1 }}><div style={{ fontWeight:700, fontSize:14, color:dt.color }}>{dt.icon} {dt.label}</div>{dt.detail && <div style={{ fontSize:11, color:"#94a3b8" }}>{dt.detail}</div>}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ background:"#fff", borderRadius:16, padding:16, marginBottom:16, boxShadow:"0 4px 16px rgba(30,58,95,.06)" }}>
+          <div style={{ fontWeight:800, fontSize:15, marginBottom:12 }}>📅 تقويمي</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:5 }}>
+            {DAYS.map(d=><div key={d} style={{ textAlign:"center", fontSize:11, fontWeight:700, color:"#64748b" }}>{d}</div>)}
+            {Array.from({length:firstOff},(_, i)=><div key={`o${i}`} />)}
+            {calCells.map(({ds,di,d})=>{ const my=duties.filter(x=>x.date===ds); const isT=ds===today; return (
+              <div key={ds} style={{ minHeight:50, borderRadius:9, border:isT?"2px solid #2c5282":"1px solid #eef2f7", background:my.length?"#f8fbff":"#fff", padding:"4px 3px", textAlign:"center" }}>
+                <div style={{ fontSize:12, fontWeight:700, color:isT?"#2c5282":"#475569" }}>{d}</div>{my.map((x,i)=><div key={i} style={{ fontSize:11 }}>{x.icon}</div>)}
+              </div>); })}
+          </div>
+        </div>
+        <div style={{ background:"#fff", borderRadius:16, padding:16, marginBottom:16, boxShadow:"0 4px 16px rgba(30,58,95,.06)" }}>
+          <div style={{ fontWeight:800, fontSize:15, marginBottom:12 }}>🗓 جدولي الأسبوعي</div>
+          <div style={{ overflowX:"auto" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", minWidth:300 }}>
+              <thead><tr style={{ background:"#5b8def" }}><th style={{ padding:7, fontSize:12, color:"#fff" }}>اليوم</th><th style={{ padding:7, fontSize:12, color:"#fff" }}>صباح</th><th style={{ padding:7, fontSize:12, color:"#fff" }}>ظهر</th><th style={{ padding:7, fontSize:12, color:"#fff" }}>مسائي</th></tr></thead>
+              <tbody>{[0,1,2,3,4].map(di=>{ const isE=(doctor.nightDays||[]).includes(di); const am=getSlot(doctor,di,"am"),pm=getSlot(doctor,di,"pm"); const cell=v=>({ padding:7, fontSize:11, textAlign:"center", border:"1px solid #f1f5f9", background:(SLOT_COLORS[v]||SLOT_COLORS[""]).bg, color:(SLOT_COLORS[v]||SLOT_COLORS[""]).text, fontWeight:600 }); return (
+                <tr key={di}><td style={{ padding:7, fontSize:11, fontWeight:700, color:"#fff", background:"#7ea4e6", textAlign:"center" }}>{DAYS[di]}</td><td style={cell(am)}>{am?SLABEL[am]:"—"}</td><td style={cell(pm)}>{pm?SLABEL[pm]:"—"}</td><td style={{ padding:7, fontSize:11, textAlign:"center", border:"1px solid #f1f5f9", background:isE?"#0f1e36":"#fff", color:isE?"#93b4d8":"#cbd5e1", fontWeight:700 }}>{isE?"🌙 عيادة":"—"}</td></tr>); })}</tbody>
+            </table>
+          </div>
+        </div>
+        <div style={{ background:"#fff", borderRadius:16, padding:16, boxShadow:"0 4px 16px rgba(30,58,95,.06)" }}>
+          <div style={{ fontWeight:800, fontSize:15, marginBottom:12 }}>🏖 إجازاتي</div>
+          {myLeaves.length===0 ? <div style={{ textAlign:"center", color:"#cbd5e1", padding:"16px 0", fontSize:13 }}>لا توجد إجازات مسجّلة</div> : myLeaves.map(l=>{ const days=Math.round((new Date(l.end)-new Date(l.start))/86400000)+1; const T={annual:"سنوية",sick:"مرضية",emergency:"طارئة",other:"أخرى"}; return (
+            <div key={l.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", background:"#f8fafc", borderRadius:9, marginBottom:6, fontSize:12 }}>
+              <span style={{ background:"#eff4fa", color:"#1e3a5f", borderRadius:6, padding:"2px 9px", fontSize:11, fontWeight:700 }}>{T[l.type]||l.type}</span><span style={{ flex:1 }}>{l.start} ← {l.end}</span><strong>{days} يوم</strong>
+            </div>); })}
+        </div>
+        <div style={{ textAlign:"center", marginTop:18, fontSize:11, color:"#94a3b8" }}>مركز طب الأسنان التخصصي — قسم إصلاح الأسنان · عرض الطبيب (قراءة فقط)</div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════
 // APP
 // ══════════════════════════════════════════════════════
 // LOGIN GATE
@@ -672,6 +831,9 @@ function App() {
   const [cloudReady, setCloudReady] = useState(false);
   const cloudLoaded = React.useRef(false);
   const DB_PATH = "clinicData/main";
+  // ─── Role: "admin" (full access) or "doctor" (read-only own page). Determined by matching login email to a doctor's email ───
+  const [role, setRole] = useState("admin");
+  const [myDoctorId, setMyDoctorId] = useState(null);
 
   React.useEffect(() => {
     try {
@@ -689,9 +851,15 @@ function App() {
               if (d.cov)   { setCoverages(d.cov);  S.set("fin_cov", d.cov); }
               if (d.approvals){ setApprovals(d.approvals); S.set("fin_approvals", d.approvals); }
             }
+            // ─── Determine role by matching login email to a doctor's email ───
+            const docsList = (d && d.docs) ? d.docs : (S.get("fin_docs") || INIT_DOCTORS);
+            const em = (u.email || "").trim().toLowerCase();
+            const mine = em ? docsList.find(x => (x.email || "").trim().toLowerCase() === em) : null;
+            if (mine) { setRole("doctor"); setMyDoctorId(mine.id); }
+            else      { setRole("admin");  setMyDoctorId(null); }
             cloudLoaded.current = true;
             setCloudReady(true);
-          }).catch(()=>{ cloudLoaded.current = true; setCloudReady(true); });
+          }).catch(()=>{ setRole("admin"); cloudLoaded.current = true; setCloudReady(true); });
         } else {
           setCloudReady(true);
         }
@@ -702,13 +870,13 @@ function App() {
 
   React.useEffect(() => {
     try {
-      if (!window.fbDB || !fbUser || !cloudLoaded.current) return;
+      if (!window.fbDB || !fbUser || !cloudLoaded.current || role !== "admin") return;
       const t = setTimeout(() => {
         try { window.fbDB.ref(DB_PATH).set({ docs:doctors, leaves, night:nightData, cov:coverages, approvals, updated:Date.now() }).catch(()=>{}); } catch(e){}
       }, 800);
       return () => clearTimeout(t);
     } catch(e) {}
-  }, [doctors, leaves, nightData, coverages, approvals, fbUser]);
+  }, [doctors, leaves, nightData, coverages, approvals, fbUser, role]);
 
   const save = () => {
     S.set("fin_docs",   doctors);
@@ -1070,6 +1238,12 @@ function App() {
   ];
 
   if (!authed) return <LoginGate onSuccess={() => { setAuthed(true); S.set("fin_auth", true); }} />;
+
+  const signOut = () => { try { if (window.fbAuth) window.fbAuth.signOut(); } catch(e){} S.set("fin_auth", false); setAuthed(false); setRole("admin"); setMyDoctorId(null); };
+  // While a Firebase user is logging in, wait until role + data resolve (prevents admin UI flashing to a doctor)
+  if (fbUser && !cloudReady) return <div className="loading">⏳ جاري التحقق من الصلاحيات...</div>;
+  // Doctor accounts see only their own read-only page
+  if (role === "doctor") return <DoctorView doctor={fd(myDoctorId)} doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onSignOut={signOut} />;
 
   return (
     <div style={{ display:"flex", minHeight:"100vh", background:"#f0f4f8", direction:"rtl", fontFamily:"'Segoe UI',Tahoma,sans-serif", fontSize:14 }}>
@@ -2968,6 +3142,12 @@ function DoctorsPage({ doctors, leaves, today, fd, onUpdateDocs, showToast }) {
                       <input type="tel" value={doc.phone||""} placeholder="الجوال (واتساب) 9665xxxxxxxx"
                         onChange={e=>onUpdateDocs(doctors.map(x=>x.id!==doc.id?x:{...x,phone:e.target.value}))}
                         style={{ flex:1, padding:"7px 10px", border:"1px solid #e2e8f0", borderRadius:7, fontSize:12, outline:"none", direction:"ltr", textAlign:"left" }} />
+                    </div>
+                    {/* Login account creation — links by email */}
+                    <div style={{ marginTop:12, paddingTop:12, borderTop:"1px dashed #cbd5e1" }}>
+                      <div style={{ fontSize:11, fontWeight:700, color:"#64748b", marginBottom:8 }}>🔐 حساب الدخول للطبيب</div>
+                      <CreateLoginButton doc={doc} showToast={showToast} />
+                      <div style={{ fontSize:10, color:"#94a3b8", marginTop:6, lineHeight:1.6 }}>الطبيب يدخل ببريده أعلاه فيرى صفحته فقط (قراءة فقط). تأكّد من تعبئة البريد قبل الإنشاء.</div>
                     </div>
                   </div>
                   {isDirty && <div style={{ marginTop:8, display:"flex", justifyContent:"flex-end" }}><button style={Btn.primary} onClick={()=>setChanged(p=>({...p,[doc.id]:false}))}>💾 حفظ</button></div>}
