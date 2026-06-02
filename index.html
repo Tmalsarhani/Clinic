@@ -969,13 +969,18 @@ function App() {
       if (+y===year && +m===month+1) delete next[date];
     });
     updateNight(next);
-    showToast("تم تصفير الشهر", "warn");
+    // also clear individual coverages for this month
+    const cleanedCov = coverages.filter(c => { const [y,m]=c.date.split("-"); return !(+y===year && +m===month+1); });
+    if (cleanedCov.length !== coverages.length) updateCoverages(cleanedCov);
+    showToast("تم تصفير الشهر (الدوام + التغطيات)", "warn");
   };
 
   const resetDay = (date) => {
     const next = { ...nightData };
     delete next[date];
     updateNight(next);
+    const cleanedCov = coverages.filter(c => c.date !== date);
+    if (cleanedCov.length !== coverages.length) updateCoverages(cleanedCov);
     showToast("تم إعادة تعيين اليوم", "warn");
   };
 
@@ -2019,8 +2024,6 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
               <button onClick={printDoctorSheets} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>🗂️ أوراق الأطباء</button>
               <button onClick={exportExcel} style={{ ...Btn.nav, color:"#15803d", borderColor:"#bbf7d0" }}>📊 Excel</button>
               <button onClick={exportICS} style={{ ...Btn.nav, color:"#2c5282", borderColor:"#cdddec" }}>📆 تقويم الجوال</button>
-              <button onClick={shareWhatsApp} style={{ ...Btn.nav, color:"#16a34a", borderColor:"#bbf7d0" }}>📲 واتساب</button>
-              <button onClick={shareEmailAll} style={{ ...Btn.nav, color:"#1e3a5f", borderColor:"#cdddec" }}>📧 إيميل للجميع</button>
             </div>
           )}
         </div>
@@ -2087,19 +2090,6 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
             </div>
           </div>
         )}
-
-        {/* Share bar (always available) */}
-        <div style={{ background:"#eef4fb", border:"1px solid #cdddec", borderRadius:12, padding:"12px 16px", marginBottom:16, display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
-          <span style={{ fontSize:22 }}>📤</span>
-          <div style={{ flex:1, minWidth:140 }}>
-            <div style={{ fontWeight:700, fontSize:14, color:"#1e3a5f" }}>مشاركة جدول {MONTHS[month.m]} {month.y}</div>
-            <div style={{ fontSize:11, color:"#94a3b8" }}>أرسل الجدول للأطباء عبر واتساب أو الإيميل</div>
-          </div>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            <button onClick={shareWhatsApp} style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:8, padding:"9px 18px", fontWeight:700, fontSize:13, cursor:"pointer" }}>📲 مشاركة عبر واتساب</button>
-            <button onClick={shareEmailAll} style={{ background:"#1e3a5f", color:"#fff", border:"none", borderRadius:8, padding:"9px 18px", fontWeight:700, fontSize:13, cursor:"pointer" }}>📧 إرسال بالإيميل للجميع</button>
-          </div>
-        </div>
 
         {/* Evening schedule (single column) */}
         <div>
