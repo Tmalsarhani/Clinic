@@ -564,6 +564,22 @@ const S = {
 };
 
 // ══════════════════════════════════════════════════════
+// BLOCKED SCREEN — unauthorized account (email not matched & not an admin email)
+// ══════════════════════════════════════════════════════
+function BlockedScreen({ onSignOut }) {
+  return (
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#f0f4f8", direction:"rtl", fontFamily:"'Tajawal',Tahoma,sans-serif", padding:20 }}>
+      <div style={{ background:"#fff", borderRadius:16, padding:30, textAlign:"center", maxWidth:380, boxShadow:"0 12px 40px rgba(0,0,0,.12)" }}>
+        <div style={{ fontSize:42, marginBottom:10 }}>🚫</div>
+        <div style={{ fontWeight:800, fontSize:17, marginBottom:6 }}>لا تملك صلاحية الدخول</div>
+        <div style={{ fontSize:13, color:"#64748b", marginBottom:18, lineHeight:1.8 }}>هذا البريد غير مرتبط بأي طبيب وغير مُصرّح كمدير. تأكّد أن بريدك مُسجّل في ملفك من قِبل المدير، أو تواصل معه.</div>
+        <button onClick={onSignOut} style={{ ...Btn.primary, padding:"10px 22px" }}>🔒 تسجيل الخروج</button>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════
 // CREATE LOGIN BUTTON — admin creates a Firebase account for a doctor (linked by email)
 // Uses a secondary Firebase app so the admin stays logged in.
 // ══════════════════════════════════════════════════════
@@ -727,6 +743,9 @@ function DoctorView({ doctor, doctors, leaves, nightData, coverages, fd, today, 
 // LOGIN GATE
 // ══════════════════════════════════════════════════════
 const PIN_CODE = "1133";
+// ⬇️ مهم: ضع هنا بريد (بريدات) المدير المصرّح له بالدخول السحابي بصلاحية كاملة.
+// أي بريد غير مطابق لطبيب وغير موجود هنا = يُمنع من الدخول (وليس مديراً افتراضياً).
+const ADMIN_EMAILS = ["tmalsarhani@gmail.com"];
 function LoginGate({ onSuccess }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
@@ -837,35 +856,39 @@ function App() {
 
   React.useEffect(() => {
     try {
-      if (!window.fbAuth) { setCloudReady(true); return; }
+      if (!window.fbAuth) { setRole("admin"); setCloudReady(true); return; }
       const unsub = window.fbAuth.onAuthStateChanged(u => {
         setFbUser(u || null);
         if (u) {
           setAuthed(true); S.set("fin_auth", true);
+          setCloudReady(false); // انتظر تحديد الدور وتحميل البيانات قبل عرض أي واجهة
           window.fbDB.ref(DB_PATH).once("value").then(snap => {
             const d = snap.val();
-            if (d) {
-              if (d.docs)  { setDoctors(d.docs);   S.set("fin_docs", d.docs); }
-              if (d.leaves){ setLeaves(d.leaves);  S.set("fin_leaves", d.leaves); }
-              if (d.night) { setNightData(d.night);S.set("fin_night", d.night); }
-              if (d.cov)   { setCoverages(d.cov);  S.set("fin_cov", d.cov); }
-              if (d.approvals){ setApprovals(d.approvals); S.set("fin_approvals", d.approvals); }
+            if (d) { // السحابة هي مصدر الحقيقة — نكتب فوق أي بيانات محلية قديمة (يمنع الإجازات الوهمية)
+              setDoctors(d.docs || INIT_DOCTORS); S.set("fin_docs", d.docs || INIT_DOCTORS);
+              setLeaves(d.leaves || []);          S.set("fin_leaves", d.leaves || []);
+              setNightData(d.night || {});        S.set("fin_night", d.night || {});
+              setCoverages(d.cov || []);          S.set("fin_cov", d.cov || []);
+              setApprovals(d.approvals || {});    S.set("fin_approvals", d.approvals || {});
             }
-            // ─── Determine role by matching login email to a doctor's email ───
+            // ─── تحديد الدور بمطابقة بريد الدخول مع بريد الأطباء ───
             const docsList = (d && d.docs) ? d.docs : (S.get("fin_docs") || INIT_DOCTORS);
             const em = (u.email || "").trim().toLowerCase();
             const mine = em ? docsList.find(x => (x.email || "").trim().toLowerCase() === em) : null;
-            if (mine) { setRole("doctor"); setMyDoctorId(mine.id); }
-            else      { setRole("admin");  setMyDoctorId(null); }
+            const isAdminEmail = em && ADMIN_EMAILS.map(a => a.trim().toLowerCase()).includes(em);
+            if (mine && !isAdminEmail) { setRole("doctor"); setMyDoctorId(mine.id); }
+            else if (isAdminEmail)     { setRole("admin");  setMyDoctorId(null); }
+            else                       { setRole("blocked"); setMyDoctorId(null); } // غير مصرّح — لا مدير افتراضي
             cloudLoaded.current = true;
             setCloudReady(true);
-          }).catch(()=>{ setRole("admin"); cloudLoaded.current = true; setCloudReady(true); });
+          }).catch(()=>{ setRole("blocked"); cloudLoaded.current = true; setCloudReady(true); });
         } else {
+          setRole("admin"); // لا يوجد مستخدم سحابي → دخول محلي/PIN كمدير
           setCloudReady(true);
         }
       });
       return () => { try { unsub && unsub(); } catch(e){} };
-    } catch(e) { setCloudReady(true); }
+    } catch(e) { setRole("admin"); setCloudReady(true); }
   }, []);
 
   React.useEffect(() => {
@@ -1240,9 +1263,10 @@ function App() {
   if (!authed) return <LoginGate onSuccess={() => { setAuthed(true); S.set("fin_auth", true); }} />;
 
   const signOut = () => { try { if (window.fbAuth) window.fbAuth.signOut(); } catch(e){} S.set("fin_auth", false); setAuthed(false); setRole("admin"); setMyDoctorId(null); };
-  // While a Firebase user is logging in, wait until role + data resolve (prevents admin UI flashing to a doctor)
-  if (fbUser && !cloudReady) return <div className="loading">⏳ جاري التحقق من الصلاحيات...</div>;
-  // Doctor accounts see only their own read-only page
+  // انتظر حتى تُحسم الصلاحية وتُحمّل البيانات قبل عرض أي شيء (يمنع ظهور واجهة المدير للطبيب)
+  if (!cloudReady) return <div className="loading">⏳ جاري التحقق من الصلاحيات...</div>;
+  if (role === "blocked") return <BlockedScreen onSignOut={signOut} />;
+  // حساب الطبيب يرى صفحته فقط (قراءة فقط)
   if (role === "doctor") return <DoctorView doctor={fd(myDoctorId)} doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onSignOut={signOut} />;
 
   return (
