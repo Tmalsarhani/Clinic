@@ -743,9 +743,9 @@ function DoctorView({ doctor, doctors, leaves, nightData, coverages, fd, today, 
 // LOGIN GATE
 // ══════════════════════════════════════════════════════
 const PIN_CODE = "1133";
-// ⬇️ مهم: ضع هنا بريد (بريدات) المدير المصرّح له بالدخول السحابي بصلاحية كاملة.
-// أي بريد غير مطابق لطبيب وغير موجود هنا = يُمنع من الدخول (وليس مديراً افتراضياً).
-const ADMIN_EMAILS = ["tmalsarhani@gmail.com"];
+// (اختياري) للتشديد: ضع بريد المدير هنا فيُمنع أي بريد آخر غير الأطباء.
+// اتركها فارغة [] = أي بريد غير مطابق لطبيب يدخل كمدير (لا حبس).
+const ADMIN_EMAILS = [];
 function LoginGate({ onSuccess }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
@@ -836,6 +836,7 @@ function App() {
   const [approvals, setApprovals] = useState(() => S.get("fin_approvals") || {});
   const [page,      setPage]      = useState("dashboard");
   const [toast,     setToast]     = useState(null);
+  const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | saved | error
   const today = new Date().toISOString().split("T")[0];
 
   const showToast = (msg, type="ok") => {
@@ -849,6 +850,7 @@ function App() {
   const [fbUser, setFbUser] = useState(null);
   const [cloudReady, setCloudReady] = useState(false);
   const cloudLoaded = React.useRef(false);
+  const syncWarned = React.useRef(false);
   const DB_PATH = "clinicData/main";
   // ─── Role: "admin" (full access) or "doctor" (read-only own page). Determined by matching login email to a doctor's email ───
   const [role, setRole] = useState("admin");
@@ -877,8 +879,8 @@ function App() {
             const mine = em ? docsList.find(x => (x.email || "").trim().toLowerCase() === em) : null;
             const isAdminEmail = em && ADMIN_EMAILS.map(a => a.trim().toLowerCase()).includes(em);
             if (mine && !isAdminEmail) { setRole("doctor"); setMyDoctorId(mine.id); }
-            else if (isAdminEmail)     { setRole("admin");  setMyDoctorId(null); }
-            else                       { setRole("blocked"); setMyDoctorId(null); } // غير مصرّح — لا مدير افتراضي
+            else if (isAdminEmail || ADMIN_EMAILS.length === 0) { setRole("admin"); setMyDoctorId(null); } // قائمة فارغة = أي بريد غير طبيب يعتبر مديراً
+            else                       { setRole("blocked"); setMyDoctorId(null); }
             cloudLoaded.current = true;
             setCloudReady(true);
           }).catch(()=>{ setRole("blocked"); cloudLoaded.current = true; setCloudReady(true); });
@@ -894,8 +896,13 @@ function App() {
   React.useEffect(() => {
     try {
       if (!window.fbDB || !fbUser || !cloudLoaded.current || role !== "admin") return;
+      setSyncStatus("saving");
       const t = setTimeout(() => {
-        try { window.fbDB.ref(DB_PATH).set({ docs:doctors, leaves, night:nightData, cov:coverages, approvals, updated:Date.now() }).catch(()=>{}); } catch(e){}
+        try {
+          window.fbDB.ref(DB_PATH).set({ docs:doctors, leaves, night:nightData, cov:coverages, approvals, updated:Date.now() })
+            .then(()=>{ syncWarned.current=false; setSyncStatus("saved"); })
+            .catch(()=>{ setSyncStatus("error"); if(!syncWarned.current){ syncWarned.current=true; showToast("⚠️ تعذّر المزامنة السحابية — راجع قواعد Firebase Rules","warn"); } });
+        } catch(e){ setSyncStatus("error"); }
       }, 800);
       return () => clearTimeout(t);
     } catch(e) {}
@@ -1319,7 +1326,16 @@ function App() {
           })}
         </nav>
         <div style={{ padding:14, margin:12, borderRadius:12, background:"linear-gradient(135deg,#eff4fa,#e2ecf7)" }}>
-          <div style={{ color:"#94a3b8", fontSize:10, marginBottom:8 }}>📅 {today}</div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+            <div style={{ color:"#94a3b8", fontSize:10 }}>📅 {today}</div>
+            {fbUser && (
+              <span style={{ fontSize:9, fontWeight:700, borderRadius:6, padding:"2px 7px",
+                background: syncStatus==="error"?"#fef2f2":syncStatus==="saving"?"#fffbeb":"#f0fdf4",
+                color: syncStatus==="error"?"#dc2626":syncStatus==="saving"?"#d97706":"#15803d" }}>
+                {syncStatus==="error"?"⚠️ خطأ مزامنة":syncStatus==="saving"?"⏳ يحفظ…":"☁️ متزامن"}
+              </span>
+            )}
+          </div>
           <button onClick={() => { save(); showToast("✅ تم الحفظ"); }}
             style={{ width:"100%", padding:"8px", background:"linear-gradient(135deg,#1e3a5f,#2c5282)", border:"none", borderRadius:8, color:"#fff", cursor:"pointer", fontSize:11, fontWeight:700, boxShadow:"0 3px 10px rgba(30,58,95,.25)" }}>
             💾 حفظ الكل
