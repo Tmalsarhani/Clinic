@@ -635,7 +635,7 @@ function CreateLoginButton({ doc, showToast }) {
 // ══════════════════════════════════════════════════════
 // DOCTOR VIEW — read-only personal page (shown when a doctor logs in)
 // ══════════════════════════════════════════════════════
-function DoctorView({ doctor, doctors, leaves, nightData, coverages, fd, today, onSignOut }) {
+function DoctorView({ doctor, doctors, leaves, nightData, coverages, fd, today, onSignOut, onRefresh }) {
   const now = new Date();
   const [month, setMonth] = useState({ y:now.getFullYear(), m:now.getMonth() });
 
@@ -658,20 +658,27 @@ function DoctorView({ doctor, doctors, leaves, nightData, coverages, fd, today, 
   const duties = [];
   monthDates.forEach(ds=>{
     const di=dayIdx(ds); const nd=nightData[ds]||{}; const c=nd.coverages||{};
-    if((nd.doctors||[]).includes(doctor.id)) duties.push({ date:ds, di, type:"night", icon:"🌙", label:"دوام مسائي", color:"#1e3a5f" });
-    if((c.am||[]).includes(doctor.id)) duties.push({ date:ds, di, type:"cov", icon:"☀️", label:"تغطية صباح", color:"#15803d" });
-    if((c.pm||[]).includes(doctor.id)) duties.push({ date:ds, di, type:"cov", icon:"🌅", label:"تغطية ظهر", color:"#0891b2" });
-    if((c.nextAm||[]).includes(doctor.id)){ const nw=nextWork(ds); duties.push({ date:nw, di:dayIdx(nw), type:"cov", icon:"🌄", label:"تغطية صباح (يوم تالٍ)", color:"#15803d" }); }
+    const ownerNames = (nd.doctors||[]).map(id=>fd(id)?.name).filter(Boolean).join("، ");
+    if((nd.doctors||[]).includes(doctor.id)) duties.push({ date:ds, di, type:"night", icon:"🌙", label:"دوام مسائي", detail:"", color:"#1e3a5f" });
+    if((c.am||[]).includes(doctor.id)) duties.push({ date:ds, di, type:"cov", icon:"☀️", label:"تغطية صباح", detail: ownerNames?`عيادة ${ownerNames}`:"", color:"#15803d" });
+    if((c.pm||[]).includes(doctor.id)) duties.push({ date:ds, di, type:"cov", icon:"🌅", label:"تغطية ظهر", detail: ownerNames?`عيادة ${ownerNames}`:"", color:"#0891b2" });
+    if((c.nextAm||[]).includes(doctor.id)){ const nw=nextWork(ds); duties.push({ date:nw, di:dayIdx(nw), type:"cov", icon:"🌄", label:"تغطية صباح", detail: ownerNames?`عيادة ${ownerNames} (صاحب الدوام المسائي ${DAYS[di]})`:"اليوم التالي للدوام المسائي", color:"#15803d" }); }
   });
   coverages.filter(cv=>cv.coverDoctorId===doctor.id && inMonth(cv.date)).forEach(cv=>{
     const ad=cv.absentId?fd(cv.absentId):null;
-    duties.push({ date:cv.date, di:dayIdx(cv.date), type:"indiv", icon:"🔄", label:`تغطية فردية (${cv.period==="am"?"صباح":cv.period==="evening"?"مسائي":"ظهر"})`, detail:ad?`بدلاً من ${ad.name}`:"", color:"#ea580c" });
+    duties.push({ date:cv.date, di:dayIdx(cv.date), type:"indiv", icon:"🔄", label:`تغطية ${cv.period==="am"?"صباح":cv.period==="evening"?"مسائي":"ظهر"}`, detail: ad?`عيادة ${ad.name}`:"تغطية فردية", color:"#ea580c" });
   });
   duties.sort((a,b)=>a.date.localeCompare(b.date));
 
   const myLeaves = (leaves||[]).filter(l=>l.doctorId===doctor.id);
   const nightCount = duties.filter(d=>d.type==="night").length;
   const covCount = duties.filter(d=>d.type!=="night").length;
+  // أيام الإجازة/الغياب ضمن الشهر المعروض فقط
+  const mStart = new Date(month.y, month.m, 1), mEnd = new Date(month.y, month.m+1, 0);
+  const leaveDaysInMonth = (l) => { const s=new Date(l.start)<mStart?mStart:new Date(l.start); const e=new Date(l.end)>mEnd?mEnd:new Date(l.end); return e<s?0:Math.round((e-s)/86400000)+1; };
+  const leaveDays   = myLeaves.reduce((a,l)=>a+leaveDaysInMonth(l),0);
+  const absenceDays = myLeaves.filter(l=>l.type==="sick"||l.type==="emergency").reduce((a,l)=>a+leaveDaysInMonth(l),0);
+  const loadTotal   = nightCount*2 + covCount;
   const calCells = monthDates.map(ds=>({ ds, di:dayIdx(ds), d:+ds.split("-")[2] }));
   const firstOff = calCells[0]?.di ?? 0;
   const SLABEL = { clinic:"عيادة", clinic_am:"عيادة", clinic_pm:"عيادة", admin:"إداري", training:"تدريب", audit:"تدقيق", virtual:"افتراضية", "":"—" };
@@ -681,6 +688,7 @@ function DoctorView({ doctor, doctors, leaves, nightData, coverages, fd, today, 
       <div style={{ background:"linear-gradient(135deg,#1e3a5f,#2c5282)", color:"#fff", padding:"18px 20px", display:"flex", alignItems:"center", gap:14 }}>
         <div style={{ width:52, height:52, borderRadius:14, background:doctor.color, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800, fontSize:18, flexShrink:0 }}>{sn(doctor.name).slice(0,2)}</div>
         <div style={{ flex:1 }}><div style={{ fontWeight:800, fontSize:18 }}>{doctor.name}</div><div style={{ fontSize:12, opacity:.85 }}>{rankLabel(rankOf(doctor))} · قسم إصلاح الأسنان</div></div>
+        <button onClick={onRefresh} style={{ background:"rgba(255,255,255,.15)", border:"1px solid rgba(255,255,255,.3)", color:"#fff", borderRadius:9, padding:"8px 12px", fontSize:12, fontWeight:700, cursor:"pointer" }}>🔄 تحديث</button>
         <button onClick={onSignOut} style={{ background:"rgba(255,255,255,.15)", border:"1px solid rgba(255,255,255,.3)", color:"#fff", borderRadius:9, padding:"8px 14px", fontSize:12, fontWeight:700, cursor:"pointer" }}>🔒 خروج</button>
       </div>
       <div style={{ maxWidth:560, margin:"0 auto", padding:16 }}>
@@ -689,9 +697,25 @@ function DoctorView({ doctor, doctors, leaves, nightData, coverages, fd, today, 
           <div style={{ fontWeight:800, fontSize:16, minWidth:130, textAlign:"center" }}>{MONTHS[month.m]} {month.y}</div>
           <button onClick={()=>setMonth(p=>p.m===11?{y:p.y+1,m:0}:{y:p.y,m:p.m+1})} style={Btn.nav}>←</button>
         </div>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
-          <div style={{ background:"#fff", borderRadius:14, padding:14, textAlign:"center", borderTop:"3px solid #1e3a5f" }}><div style={{ fontSize:28, fontWeight:800, color:"#1e3a5f" }}>{nightCount}</div><div style={{ fontSize:11, color:"#64748b" }}>🌙 دوام مسائي</div></div>
-          <div style={{ background:"#fff", borderRadius:14, padding:14, textAlign:"center", borderTop:"3px solid #15803d" }}><div style={{ fontSize:28, fontWeight:800, color:"#15803d" }}>{covCount}</div><div style={{ fontSize:11, color:"#64748b" }}>🔄 تغطيات</div></div>
+        <div style={{ background:"#fff", borderRadius:16, padding:16, marginBottom:16, boxShadow:"0 4px 16px rgba(30,58,95,.06)" }}>
+          <div style={{ fontWeight:800, fontSize:15, marginBottom:12 }}>📊 ملخصي — {MONTHS[month.m]} {month.y}</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8 }}>
+            {[{i:"🌙",l:"دوام مسائي",v:nightCount,c:"#1e3a5f"},
+              {i:"🔄",l:"تغطيات",v:covCount,c:"#15803d"},
+              {i:"🏖",l:"إجازات (يوم)",v:leaveDays,c:"#d97706"},
+              {i:"🏥",l:"غياب (يوم)",v:absenceDays,c:"#dc2626"},
+            ].map(s=>(
+              <div key={s.l} style={{ background:"#f8fafc", border:"1px solid #eef2f7", borderTop:`3px solid ${s.c}`, borderRadius:12, padding:"10px 4px", textAlign:"center" }}>
+                <div style={{ fontSize:16 }}>{s.i}</div>
+                <div style={{ fontSize:22, fontWeight:800, color:s.c, lineHeight:1.1 }}>{s.v}</div>
+                <div style={{ fontSize:9, color:"#64748b", marginTop:2 }}>{s.l}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop:12, background:"linear-gradient(135deg,#eff4fa,#e2ecf7)", borderRadius:12, padding:"12px 14px", display:"flex", alignItems:"center", gap:12 }}>
+            <div style={{ fontSize:30, fontWeight:800, color:"#1e3a5f", lineHeight:1 }}>{loadTotal}</div>
+            <div><div style={{ fontWeight:800, fontSize:13, color:"#1e3a5f" }}>إجمالي العبء هذا الشهر</div><div style={{ fontSize:10, color:"#64748b", marginTop:2 }}>= (دوام مسائي ×2) + التغطيات</div></div>
+          </div>
         </div>
         <div style={{ background:"#fff", borderRadius:16, padding:16, marginBottom:16, boxShadow:"0 4px 16px rgba(30,58,95,.06)" }}>
           <div style={{ fontWeight:800, fontSize:15, marginBottom:12 }}>📋 مهامي هذا الشهر</div>
@@ -920,9 +944,26 @@ function App() {
       setNightData(d.night || {});
       setCoverages(d.cov || []);
       setApprovals(d.approvals || {});
-    });
+      setSyncStatus("saved");
+    }, (err) => { console.warn("doctor sync error", err); setSyncStatus("error"); });
     return () => { try { ref.off("value", handler); } catch(e){} };
   }, [role, fbUser]);
+
+  // قراءة يدوية فورية من السحابة (زر التحديث في صفحة الطبيب + تشخيص)
+  const refreshFromCloud = () => {
+    if (!window.fbDB) { showToast("الاتصال السحابي غير متاح", "warn"); return; }
+    window.fbDB.ref(DB_PATH).once("value").then(snap => {
+      const d = snap.val();
+      if (d) {
+        setDoctors(d.docs || INIT_DOCTORS);
+        setLeaves(d.leaves || []);
+        setNightData(d.night || {});
+        setCoverages(d.cov || []);
+        setApprovals(d.approvals || {});
+        showToast("✅ تم التحديث من السحابة");
+      } else { showToast("⚠️ لا توجد بيانات في السحابة بعد", "warn"); }
+    }).catch(() => showToast("⚠️ تعذّر القراءة من السحابة — راجع قواعد Firebase", "warn"));
+  };
 
   const save = () => {
     S.set("fin_docs",   doctors);
@@ -1290,7 +1331,7 @@ function App() {
   if (!cloudReady) return <div className="loading">⏳ جاري التحقق من الصلاحيات...</div>;
   if (role === "blocked") return <BlockedScreen onSignOut={signOut} />;
   // حساب الطبيب يرى صفحته فقط (قراءة فقط)
-  if (role === "doctor") return <DoctorView doctor={fd(myDoctorId)} doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onSignOut={signOut} />;
+  if (role === "doctor") return <DoctorView doctor={fd(myDoctorId)} doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onSignOut={signOut} onRefresh={refreshFromCloud} />;
 
   return (
     <div style={{ display:"flex", minHeight:"100vh", background:"#f0f4f8", direction:"rtl", fontFamily:"'Segoe UI',Tahoma,sans-serif", fontSize:14 }}>
