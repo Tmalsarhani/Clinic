@@ -480,6 +480,58 @@ const RANK_REF = { consultant:8, specialist:9 };
 const rankOf = doc => doc?.rank || "specialist";
 const rankLabel = r => r==="consultant" ? "استشاري" : "أخصائي";
 
+// ─── CAPP 001 Physician Job Planning: Supportive Sessions (SS) by admin position ───
+// Week = 10 sessions. Direct (CCS) target = 10 - SS. (Hospitals column, Appendix 2)
+const POS_SS = { head:3, chairperson:4, director:6 };
+const POS_LABEL = { none:"بلا منصب إداري", head:"رئيس وحدة / قسم فرعي", chairperson:"رئيس قسم", director:"مدير" };
+// العبء الوظيفي = هدف فترات الرعاية المباشرة أسبوعياً
+const directTarget = doc => {
+  const p = doc?.adminPosition || "none";
+  if (p !== "none" && POS_SS[p] != null) return 10 - POS_SS[p];
+  return RANK_REF[rankOf(doc)] || 9;
+};
+const ssTarget = doc => 10 - directTarget(doc);
+
+// الفترات التي تُحسب Direct (رعاية مباشرة) — التدريب معتمد Direct بقرار القسم
+const DIRECT_SLOTS = ["clinic","clinic_am","clinic_pm","virtual","audit","training"];
+// previous working day (Sun–Thu) before a given date
+const prevWorkDay = ds => { const dd=new Date(ds); for(let i=1;i<=4;i++){ const p=new Date(dd); p.setDate(dd.getDate()-i); if(p.getDay()!==5&&p.getDay()!==6) return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,"0")}-${String(p.getDate()).padStart(2,"0")}`; } return null; };
+
+// فترات العمل الفعلية للطبيب عبر مجموعة تواريخ → {direct, supportive}
+// القاعدة: عيادته المُغطّاة عنه تُلغى منه وتُنسب لمن غطّاها · مسائي = 2 Direct · تغطية = 1 Direct
+function doctorSessions(doctor, dates, nightData, coverages, leaves) {
+  let direct = 0, supportive = 0;
+  if (!doctor) return { direct, supportive };
+  (dates||[]).forEach(date => {
+    const di = dayIdx(date); if (di < 0) return;
+    const nd = nightData[date] || {}; const c = nd.coverages || {};
+    const isEve = (nd.doctors||[]).includes(doctor.id);
+    const onLv = onLeave(doctor, date, leaves||[]);
+    const pw = prevWorkDay(date);
+    const prevNextAm = pw ? ((nightData[pw]?.coverages||{}).nextAm || []) : [];
+    const dind = (coverages||[]).filter(x => x.date === date);
+    if (isEve) {
+      direct += 2;                         // دوام مسائي: عيادته النهارية تُغطّى وتنتقل للمُغطّي
+    } else if (!onLv) {
+      ["am","pm"].forEach(per => {
+        const slot = getSlot(doctor, di, per);
+        if (DIRECT_SLOTS.includes(slot)) {
+          const indCov = dind.some(x => x.period===per && x.absentId===doctor.id);
+          if (!indCov) direct += 1;        // حضرها بنفسه (لم تُغطَّ)
+        } else if (slot === "admin" || slot === "") {
+          supportive += 1;                 // إداري / فراغ
+        }
+      });
+    }
+    // تغطيات يؤدّيها لزملاء = +1 Direct لكل واحدة
+    (c.am||[]).forEach(id => { if (id===doctor.id) direct += 1; });
+    (c.pm||[]).forEach(id => { if (id===doctor.id) direct += 1; });
+    prevNextAm.forEach(id => { if (id===doctor.id) direct += 1; });
+    dind.forEach(x => { if (x.coverDoctorId===doctor.id) direct += 1; });
+  });
+  return { direct, supportive };
+}
+
 // Workload per doctor for a month, by ACTUAL worked periods.
 // Rules: each worked period = 1; empty period = 0; evening shift = 2; coverage performed = 1.
 // A doctor's own clinic period is NOT counted if it was covered by someone else, or the doctor is absent/on-leave.
@@ -679,6 +731,22 @@ function DoctorView({ doctor, doctors, leaves, nightData, coverages, fd, today, 
   const leaveDays   = myLeaves.reduce((a,l)=>a+leaveDaysInMonth(l),0);
   const absenceDays = myLeaves.filter(l=>l.type==="sick"||l.type==="emergency").reduce((a,l)=>a+leaveDaysInMonth(l),0);
   const loadTotal   = nightCount*2 + covCount;
+  // العبء الوظيفي = هدف فترات الرعاية المباشرة حسب الدرجة + المنصب الإداري (CAPP 001)
+  const baseLoad = directTarget(doctor);
+  const ssGoal   = ssTarget(doctor);
+  // العبء الإضافي = الدوام المسائي الإضافي (غير الثابت) ×2 + كل التغطيات
+  const fixedNightCount = duties.filter(d=>d.type==="night" && (doctor.nightDays||[]).includes(d.di)).length;
+  const extraNightCount = Math.max(0, nightCount - fixedNightCount);
+  const extraLoad = extraNightCount*2 + covCount;
+  // فترات العمل الفعلية (Direct / Supportive) — أسبوعي/شهري/سنوي
+  const _now = new Date(); const _sun = new Date(_now); _sun.setDate(_now.getDate()-_now.getDay());
+  const _fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const weekDates = Array.from({length:5},(_,i)=>{ const d=new Date(_sun); d.setDate(_sun.getDate()+i); return _fmt(d); });
+  const yearDates = [];
+  for (let m=0;m<12;m++){ const dm=new Date(month.y,m+1,0).getDate(); for(let d=1;d<=dm;d++){ const ds=`${month.y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; if(dayIdx(ds)>=0) yearDates.push(ds); } }
+  const sWeek  = doctorSessions(doctor, weekDates,  nightData, coverages, leaves);
+  const sMonth = doctorSessions(doctor, monthDates, nightData, coverages, leaves);
+  const sYear  = doctorSessions(doctor, yearDates,  nightData, coverages, leaves);
   const calCells = monthDates.map(ds=>({ ds, di:dayIdx(ds), d:+ds.split("-")[2] }));
   const firstOff = calCells[0]?.di ?? 0;
   const SLABEL = { clinic:"عيادة", clinic_am:"عيادة", clinic_pm:"عيادة", admin:"إداري", training:"تدريب", audit:"تدقيق", virtual:"افتراضية", "":"—" };
@@ -699,6 +767,18 @@ function DoctorView({ doctor, doctors, leaves, nightData, coverages, fd, today, 
         </div>
         <div style={{ background:"#fff", borderRadius:16, padding:16, marginBottom:16, boxShadow:"0 4px 16px rgba(30,58,95,.06)" }}>
           <div style={{ fontWeight:800, fontSize:15, marginBottom:12 }}>📊 ملخصي — {MONTHS[month.m]} {month.y}</div>
+          <div style={{ display:"flex", gap:10, marginBottom:12 }}>
+            <div style={{ flex:1, background:"#eff4fa", border:"1px solid #dbe7f3", borderRadius:12, padding:"12px 8px", textAlign:"center" }}>
+              <div style={{ fontSize:30, fontWeight:800, color:"#1e3a5f", lineHeight:1 }}>{baseLoad}</div>
+              <div style={{ fontSize:12, color:"#1e3a5f", fontWeight:800, marginTop:5 }}>العبء الوظيفي</div>
+              <div style={{ fontSize:9, color:"#94a3b8", marginTop:2 }}>{rankLabel(rankOf(doctor))}{(doctor.adminPosition&&doctor.adminPosition!=="none")?` · ${POS_LABEL[doctor.adminPosition]}`:""} — Direct/أسبوع</div>
+            </div>
+            <div style={{ flex:1, background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:12, padding:"12px 8px", textAlign:"center" }}>
+              <div style={{ fontSize:30, fontWeight:800, color:"#ea580c", lineHeight:1 }}>+{extraLoad}</div>
+              <div style={{ fontSize:12, color:"#ea580c", fontWeight:800, marginTop:5 }}>العبء الإضافي</div>
+              <div style={{ fontSize:9, color:"#94a3b8", marginTop:2 }}>مسائي إضافي ×2 + تغطيات</div>
+            </div>
+          </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8 }}>
             {[{i:"🌙",l:"دوام مسائي",v:nightCount,c:"#1e3a5f"},
               {i:"🔄",l:"تغطيات",v:covCount,c:"#15803d"},
@@ -712,10 +792,29 @@ function DoctorView({ doctor, doctors, leaves, nightData, coverages, fd, today, 
               </div>
             ))}
           </div>
-          <div style={{ marginTop:12, background:"linear-gradient(135deg,#eff4fa,#e2ecf7)", borderRadius:12, padding:"12px 14px", display:"flex", alignItems:"center", gap:12 }}>
-            <div style={{ fontSize:30, fontWeight:800, color:"#1e3a5f", lineHeight:1 }}>{loadTotal}</div>
-            <div><div style={{ fontWeight:800, fontSize:13, color:"#1e3a5f" }}>إجمالي العبء هذا الشهر</div><div style={{ fontSize:10, color:"#64748b", marginTop:2 }}>= (دوام مسائي ×2) + التغطيات</div></div>
-          </div>
+          <div style={{ marginTop:10, fontSize:10, color:"#94a3b8", textAlign:"center" }}>العبء الوظيفي = هدف فترات الرعاية المباشرة (Direct) أسبوعياً حسب الدرجة والمنصب · والإضافي ما زاد عليه</div>
+        </div>
+        {/* فترات العمل الفعلية — Direct / Supportive */}
+        <div style={{ background:"#fff", borderRadius:16, padding:16, marginBottom:16, boxShadow:"0 4px 16px rgba(30,58,95,.06)" }}>
+          <div style={{ fontWeight:800, fontSize:15, marginBottom:3 }}>🪑 فترات العمل الفعلية</div>
+          <div style={{ fontSize:10, color:"#94a3b8", marginBottom:12 }}>المباشرة (Direct): عيادة·افتراضية·تدقيق·تدريب·مسائي·تغطية — والمساندة (Supportive): إداري·فراغ. الفترة المُغطّاة عنك تُنسب لمن أدّاها.</div>
+          {[["هذا الأسبوع", sWeek, baseLoad, ssGoal],
+            ["شهر "+MONTHS[month.m], sMonth, null, null],
+            ["سنة "+month.y, sYear, null, null],
+          ].map(([lbl,s,dGoal,sGoal])=>(
+            <div key={lbl} style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 0", borderBottom:"1px solid #f1f5f9" }}>
+              <div style={{ flex:1, fontSize:13, fontWeight:700, color:"#334155" }}>{lbl}</div>
+              <div style={{ minWidth:84, textAlign:"center", background:"#eff4fa", borderRadius:9, padding:"6px 4px" }}>
+                <div style={{ fontSize:18, fontWeight:800, color:"#1e3a5f", lineHeight:1 }}>{s.direct}{dGoal!=null && <span style={{ fontSize:11, color:"#94a3b8", fontWeight:700 }}> / {dGoal}</span>}</div>
+                <div style={{ fontSize:9, color:"#64748b", marginTop:2 }}>Direct (مباشرة)</div>
+              </div>
+              <div style={{ minWidth:84, textAlign:"center", background:"#fef9ec", borderRadius:9, padding:"6px 4px" }}>
+                <div style={{ fontSize:18, fontWeight:800, color:"#b45309", lineHeight:1 }}>{s.supportive}{sGoal!=null && <span style={{ fontSize:11, color:"#cbb37a", fontWeight:700 }}> / {sGoal}</span>}</div>
+                <div style={{ fontSize:9, color:"#92766b", marginTop:2 }}>Supportive (مساندة)</div>
+              </div>
+            </div>
+          ))}
+          <div style={{ marginTop:10, fontSize:10, color:"#94a3b8", textAlign:"center" }}>الأسبوعي للأسبوع الجاري · أرقام «/ الهدف» تقارن بالخطة المعتمدة (المجموع المتوقّع 10/أسبوع)</div>
         </div>
         <div style={{ background:"#fff", borderRadius:16, padding:16, marginBottom:16, boxShadow:"0 4px 16px rgba(30,58,95,.06)" }}>
           <div style={{ fontWeight:800, fontSize:15, marginBottom:12 }}>📋 مهامي هذا الشهر</div>
@@ -3139,6 +3238,17 @@ function DoctorsPage({ doctors, leaves, today, fd, onUpdateDocs, showToast }) {
                     <div style={{ display:"flex", gap:8 }}>
                       <button onClick={()=>onUpdateDocs(doctors.map(x=>x.id!==doc.id?x:{...x,rank:"consultant"}))} style={{ flex:1, padding:"9px", borderRadius:8, fontSize:12, fontWeight:700, cursor:"pointer", border:(doc.rank==="consultant")?"2px solid #1e3a5f":"1px solid #e2e8f0", background:(doc.rank==="consultant")?"#eff4fa":"#fff", color:(doc.rank==="consultant")?"#1e3a5f":"#64748b" }}>استشاري (8 فترات)</button>
                       <button onClick={()=>onUpdateDocs(doctors.map(x=>x.id!==doc.id?x:{...x,rank:"specialist"}))} style={{ flex:1, padding:"9px", borderRadius:8, fontSize:12, fontWeight:700, cursor:"pointer", border:(doc.rank!=="consultant")?"2px solid #15803d":"1px solid #e2e8f0", background:(doc.rank!=="consultant")?"#f0fdf4":"#fff", color:(doc.rank!=="consultant")?"#15803d":"#64748b" }}>أخصائي (9 فترات)</button>
+                    </div>
+                  </div>
+                  {/* Admin position — adjusts the functional (Direct) target per CAPP 001 */}
+                  <div style={{ marginBottom:12, padding:"10px 12px", background:"#fff", borderRadius:8, border:"1px solid #e2e8f0" }}>
+                    <div style={{ fontSize:12, fontWeight:600, marginBottom:6 }}>🏷️ المنصب الإداري (يضبط العبء الوظيفي)</div>
+                    <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                      {[["none","بلا منصب"],["head","رئيس وحدة"],["chairperson","رئيس قسم"],["director","مدير"]].map(([val,lbl])=>{
+                        const active=(doc.adminPosition||"none")===val;
+                        const tgt=val==="none"?(RANK_REF[doc.rank||"specialist"]||9):(10-POS_SS[val]);
+                        return <button key={val} onClick={()=>onUpdateDocs(doctors.map(x=>x.id!==doc.id?x:{...x,adminPosition:val}))} style={{ flex:"1 1 45%", padding:"8px", borderRadius:8, fontSize:11, fontWeight:700, cursor:"pointer", border:active?"2px solid #1e3a5f":"1px solid #e2e8f0", background:active?"#eff4fa":"#fff", color:active?"#1e3a5f":"#64748b" }}>{lbl} <span style={{ fontSize:9, opacity:.8 }}>({tgt} Direct)</span></button>;
+                      })}
                     </div>
                   </div>
                   {/* Night days - multi select toggle */}
