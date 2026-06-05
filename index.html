@@ -3779,6 +3779,21 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
     return true;
   };
 
+  // كل أيام العمل (الأحد–الخميس) ضمن المدى المختار — لقياس المتوقّع المتناسب
+  const rangeWorkingDates = (range) => {
+    const now = new Date(); let start, end;
+    if (range==="week"){ end=new Date(now); start=new Date(now); start.setDate(now.getDate()-6); }
+    else if (range==="month"){ start=new Date(now.getFullYear(),now.getMonth(),1); end=new Date(now.getFullYear(),now.getMonth()+1,0); }
+    else if (range==="month2"){ end=new Date(now); start=new Date(now); start.setMonth(now.getMonth()-2); }
+    else if (range==="month3"){ end=new Date(now); start=new Date(now); start.setMonth(now.getMonth()-3); }
+    else if (range==="year"){ start=new Date(now.getFullYear(),0,1); end=new Date(now.getFullYear(),11,31); }
+    else if (range==="custom"){ if(!customFrom||!customTo) return []; start=new Date(customFrom); end=new Date(customTo); }
+    else { const ks=[...Object.keys(nightData),...(coverages||[]).map(c=>c.date)].sort(); if(!ks.length) return []; start=new Date(ks[0]); end=new Date(ks[ks.length-1]); }
+    const out=[]; const cur=new Date(start);
+    while(cur<=end){ const ds=`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,"0")}-${String(cur.getDate()).padStart(2,"0")}`; if(dayIdx(ds)>=0) out.push(ds); cur.setDate(cur.getDate()+1); }
+    return out;
+  };
+
   const calcStats = (doc, range) => {
     const fixedDays = doc.nightDays || [];
     let fixedNights = 0, extraNights = 0;
@@ -3801,34 +3816,17 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
     const absenceDays = myLeaves.filter(l=>l.type==="sick"||l.type==="emergency").reduce((a,l)=>a+Math.round((new Date(l.end)-new Date(l.start))/86400000)+1, 0);
     // الدوام المسائي يُحسب كيوم كامل (شفتين) في العبء
     const tasks = Math.max(0, (extraNights * 2) + totalCovs - absenceDays);
-    // فترات العمل الفعلية (النظام الجديد): كل فترة عمل=1، مسائي=2، تغطية=1، الفراغ=0
-    let workedPeriods = 0;
-    const dimDates = new Set();
-    Object.keys(nightData).forEach(d=>{ if(range==="all"||inRange(d,range)) dimDates.add(d); });
-    (coverages||[]).forEach(c=>{ if(range==="all"||inRange(c.date,range)) dimDates.add(c.date); });
-    dimDates.forEach(date=>{
-      const di=dayIdx(date); if(di<0) return;
-      const nd=nightData[date]||{}; const c=nd.coverages||{};
-      const pwf=(ds)=>{const dd=new Date(ds);for(let i=1;i<=4;i++){const p=new Date(dd);p.setDate(dd.getDate()-i);if(p.getDay()!==5&&p.getDay()!==6)return p.toISOString().split("T")[0];}return null;};
-      const pw=pwf(date); const prevNextAm=pw?((nightData[pw]?.coverages||{}).nextAm||[]):[];
-      const dind=(coverages||[]).filter(x=>x.date===date);
-      if((nd.doctors||[]).includes(doc.id)) workedPeriods+=2;
-      ["am","pm"].forEach(per=>{
-        if(!isClinic(getSlot(doc,di,per))) return;
-        const onLv=onLeave(doc,date,leaves);
-        const isEve=(nd.doctors||[]).includes(doc.id);
-        const indCov=dind.some(x=>x.period===per&&x.absentId===doc.id);
-        const nCov=isEve&&(per==="am"?[...(c.am||[]),...prevNextAm].length>0:(c.pm||[]).length>0);
-        if(!(onLv||indCov||nCov)) workedPeriods+=1;
-      });
-      (c.am||[]).forEach(id=>{if(id===doc.id)workedPeriods+=1;});
-      (c.pm||[]).forEach(id=>{if(id===doc.id)workedPeriods+=1;});
-      prevNextAm.forEach(id=>{if(id===doc.id)workedPeriods+=1;});
-      dind.forEach(x=>{if(x.coverDoctorId===doc.id)workedPeriods+=1;});
-    });
+    // فترات العمل الفعلية حسب نموذج Direct/Supportive المعتمد (CAPP 001)
+    const rangeDates = rangeWorkingDates(range);
+    const sess = doctorSessions(doc, rangeDates, nightData, coverages, leaves);
+    const workedPeriods = sess.direct;
+    const supportivePeriods = sess.supportive;
+    const weeks = rangeDates.length ? rangeDates.length/5 : 0;
     const rank = rankOf(doc);
-    const expected = RANK_REF[rank] || 9;
-    return { fixedNights, extraNights, nightCovs, indivCovs, totalCovs, leaveDays, absenceDays, tasks, myLeaves, workedPeriods, expected, rank };
+    // المتوقّع متناسب مع عدد أسابيع الفترة (الهدف الأسبوعي × الأسابيع)
+    const expected   = Math.round(directTarget(doc) * weeks);
+    const ssExpected = Math.round(ssTarget(doc) * weeks);
+    return { fixedNights, extraNights, nightCovs, indivCovs, totalCovs, leaveDays, absenceDays, tasks, myLeaves, workedPeriods, supportivePeriods, expected, ssExpected, weeks, rank };
   };
 
   const classify = (t) => t<=1 ? { label:"خفيف", color:"#15803d", bg:"#f0fdf4", border:"#bbf7d0" }
@@ -3905,24 +3903,27 @@ function StatsPage({ doctors, nightData, coverages, leaves }) {
               ))}
             </div>
 
-            {/* Worked periods vs rank reference */}
+            {/* Worked periods vs scaled target */}
             {(() => {
-              const wp = s.workedPeriods||0; const exp = s.expected||9;
+              const wp = s.workedPeriods||0; const exp = s.expected||0;
+              const sp = s.supportivePeriods||0; const ssExp = s.ssExpected||0;
+              const wk = s.weeks||0;
               const diff = wp - exp;
-              const col = diff>1 ? "#dc2626" : diff< -1 ? "#d97706" : "#15803d";
-              const bg = diff>1 ? "#fef2f2" : diff< -1 ? "#fffbeb" : "#f0fdf4";
+              const col = diff>2 ? "#dc2626" : diff< -2 ? "#d97706" : "#15803d";
+              const bg = diff>2 ? "#fef2f2" : diff< -2 ? "#fffbeb" : "#f0fdf4";
               return (
                 <div style={{ background:bg, border:`1px solid ${col}33`, borderRadius:12, padding:"14px 16px", marginBottom:14, display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
                   <div style={{ textAlign:"center" }}>
-                    <div style={{ fontSize:34, fontWeight:800, color:col }}>{wp}</div>
-                    <div style={{ fontSize:10, color:"#64748b" }}>فترات العمل الفعلية</div>
+                    <div style={{ fontSize:34, fontWeight:800, color:col, lineHeight:1 }}>{wp}<span style={{ fontSize:15, color:"#94a3b8" }}> / {exp}</span></div>
+                    <div style={{ fontSize:10, color:"#64748b" }}>Direct فعلي / متوقّع</div>
                   </div>
                   <div style={{ flex:1, minWidth:160 }}>
-                    <div style={{ fontWeight:800, color:col, fontSize:14 }}>{rankLabel(s.rank)} — المتوقّع {exp} فترة</div>
+                    <div style={{ fontWeight:800, color:col, fontSize:14 }}>{rankLabel(s.rank)}{(s.weeks?` — ${directTarget(selDoc)}×${wk.toFixed(1)} أسبوع`:"")}</div>
                     <div style={{ fontSize:12, color:"#64748b", marginTop:3 }}>
-                      {diff>1 ? `أعلى من المتوقّع بـ ${diff} فترة` : diff< -1 ? `أقل من المتوقّع بـ ${Math.abs(diff)} فترة` : "ضمن المعدّل المتوقّع ✓"}
+                      {diff>2 ? `أعلى من المتوقّع بـ ${diff} فترة` : diff< -2 ? `أقل من المتوقّع بـ ${Math.abs(diff)} فترة` : "ضمن المعدّل المتوقّع ✓"}
                     </div>
-                    <div style={{ fontSize:10, color:"#94a3b8", marginTop:4 }}>كل فترة عمل=1 · مسائي=2 · تغطية=1 · الفراغ=0 · ما يُغطّى لا يُحسب</div>
+                    <div style={{ fontSize:11, color:"#b45309", marginTop:4 }}>مساندة (Supportive): {sp} / {ssExp}</div>
+                    <div style={{ fontSize:10, color:"#94a3b8", marginTop:3 }}>Direct: عيادة·افتراضية·تدقيق·تدريب · مسائي=2 · تغطية=1 · المُغطّى لا يُحسب</div>
                   </div>
                 </div>
               );
