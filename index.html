@@ -1965,12 +1965,6 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
       (covs.am||[]).forEach(id => chkCov(id,"am","صباحاً",date,di));
       (covs.pm||[]).forEach(id => chkCov(id,"pm","ظهراً",date,di));
       (covs.nextAm||[]).forEach(id => chkCov(id,"nextAm","صباح اليوم التالي",nw,nwDi));
-      // عيادات الطبيب المسائي غير المُغطّاة
-      docs.forEach(id => { const d = fd(id); if (!d) return;
-        if (isClinic(getSlot(d,di,"am")) && !(covs.am||[]).length) warns.add(`${dmy(date)} ${DAYS[di]} · عيادة د.${d.name} صباحاً غير مُغطّاة`);
-        if (isClinic(getSlot(d,di,"pm")) && !(covs.pm||[]).length) warns.add(`${dmy(date)} ${DAYS[di]} · عيادة د.${d.name} ظهراً غير مُغطّاة`);
-        if (isClinic(getSlot(d,nwDi,"am")) && !(covs.nextAm||[]).length) warns.add(`${dmy(date)} ${DAYS[di]} · عيادة د.${d.name} صباح اليوم التالي غير مُغطّاة`);
-      });
     });
     // التغطيات الفردية: المُغطّي في إجازة
     (coverages||[]).forEach(cv => { const [yy,mm]=cv.date.split("-"); if(+yy!==month.y||+mm!==month.m+1) return;
@@ -3771,9 +3765,9 @@ function CoveragePage({ doctors, leaves, coverages, nightData, fd, onAdd, onRemo
   const [picks, setPicks] = useState({});
   const gapKey = g => `${g.date}|${g.period}|${g.ownerId}`;
   const gapList = useMemo(() => analyzeMonth(covMonth.y, covMonth.m, doctors, leaves, nightData, coverages).gaps.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.period.localeCompare(b.period)), [covMonth, doctors, leaves, nightData, coverages]);
-  const availForGap = g => getAvailable(doctors, [g.ownerId], g.di, g.date, g.period, leaves, nightData, {}, coverages);
-  const coverGap = g => { const av=availForGap(g); const sel=picks[gapKey(g)]; const coverId = sel?+sel:(av[0]?.id); if(!coverId){ showToast("لا يوجد طبيب متاح لهذه الفترة","warn"); return; } onAdd({ absentId:g.ownerId, date:g.date, period:g.period, coverDoctorId:coverId, reason:"absence" }); };
-  const coverAll = () => { let done=0; gapList.forEach(g=>{ const av=availForGap(g); const sel=picks[gapKey(g)]; const coverId=sel?+sel:(av[0]?.id); if(coverId){ onAdd({ absentId:g.ownerId, date:g.date, period:g.period, coverDoctorId:coverId, reason:"absence" }); done++; } }); showToast(done?`✅ غُطّيت ${done} عيادة بالأنسب`:"لا يوجد متاح","" ); };
+  const availForGap = g => getAvailable(doctors, [g.ownerId], g.di, g.date, g.period, leaves, nightData, {}, coverages).filter(a=>a.status!=="leave");
+  const coverGap = g => { const av=availForGap(g); const sel=picks[gapKey(g)]; const coverId = sel?+sel:(av[0]?.doc?.id); if(!coverId){ showToast("لا يوجد طبيب متاح لهذه الفترة","warn"); return; } onAdd({ absentId:g.ownerId, date:g.date, period:g.period, coverDoctorId:coverId, reason:"absence" }); };
+  const coverAll = () => { let done=0; gapList.forEach(g=>{ const av=availForGap(g); const sel=picks[gapKey(g)]; const coverId=sel?+sel:(av[0]?.doc?.id); if(coverId){ onAdd({ absentId:g.ownerId, date:g.date, period:g.period, coverDoctorId:coverId, reason:"absence" }); done++; } }); showToast(done?`✅ غُطّيت ${done} عيادة بالأنسب`:"لا يوجد متاح","" ); };
 
   // Available doctors for the selected slot
   const availForForm = useMemo(() => {
@@ -3879,8 +3873,8 @@ function CoveragePage({ doctors, leaves, coverages, nightData, fd, onAdd, onRemo
                   {av.length===0 ? <div style={{ fontSize:11, color:"#dc2626", fontWeight:700 }}>⚠️ لا يوجد طبيب متاح</div> : (
                     <div style={{ display:"flex", gap:6, alignItems:"center" }}>
                       <select value={picks[gapKey(g)]||""} onChange={e=>setPicks(p=>({...p,[gapKey(g)]:e.target.value}))} style={{ flex:1, padding:"7px", borderRadius:8, border:"1px solid #fed7aa", fontSize:12, fontFamily:"inherit" }}>
-                        <option value="">الأنسب: د.{av[0].name} (الأقل عبئاً)</option>
-                        {av.map(a=><option key={a.id} value={a.id}>د.{a.name}</option>)}
+                        <option value="">الأنسب: د.{av[0].doc.name}</option>
+                        {av.map(a=><option key={a.doc.id} value={a.doc.id}>د.{a.doc.name}{a.status==="warn"?" (لديه التزام)":""}</option>)}
                       </select>
                       <button onClick={()=>coverGap(g)} style={{ background:"#15803d", color:"#fff", border:"none", borderRadius:8, padding:"7px 14px", fontSize:12, fontWeight:800, cursor:"pointer", whiteSpace:"nowrap" }}>✓ تغطية</button>
                     </div>
