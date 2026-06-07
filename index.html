@@ -35,6 +35,28 @@
   input:focus,select:focus{ border-color:var(--accent)!important; box-shadow:0 0 0 3px rgba(20,184,166,.12); }
   @keyframes fade{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;} }
   .fade{ animation:fade .25s ease; }
+  /* ── full web layout ── */
+  .shell{ display:flex; min-height:100vh; }
+  .sidebar{ width:250px; flex-shrink:0; background:#fff; border-left:1px solid var(--line); position:sticky; top:0; height:100vh; display:flex; flex-direction:column; padding:18px 14px; }
+  .brand{ display:flex; align-items:center; gap:11px; padding:6px 10px 20px; }
+  .navbtn{ display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:12px; border:none; background:none; font-size:14.5px; font-weight:600; color:var(--sub); cursor:pointer; text-align:start; width:100%; margin-bottom:3px; }
+  .navbtn .ic{ font-size:18px; width:22px; text-align:center; }
+  .navbtn.active{ background:#ecfdf5; color:var(--primary); }
+  .navbtn:not(.active):hover{ background:#f3f6f9; }
+  .main{ flex:1; min-width:0; display:flex; flex-direction:column; }
+  .topbar{ background:#fff; border-bottom:1px solid var(--line); padding:15px 28px; position:sticky; top:0; z-index:40; }
+  .topbar h1{ margin:0; font-size:18px; font-weight:700; }
+  .topbar p{ margin:2px 0 0; font-size:12.5px; color:var(--sub); }
+  .content{ padding:26px 28px; max-width:1160px; width:100%; margin:0 auto; }
+  .bottomnav{ display:none; }
+  .grid-cards{ display:grid; grid-template-columns:repeat(auto-fill,minmax(380px,1fr)); gap:14px; align-items:start; }
+  @media (max-width:880px){
+    .sidebar{ display:none; }
+    .bottomnav{ display:flex; position:fixed; bottom:0; inset-inline:0; background:#fff; border-top:1px solid var(--line); z-index:50; box-shadow:0 -2px 12px rgba(16,40,60,.05); }
+    .content{ padding:16px 15px 86px; }
+    .topbar{ padding:13px 16px; }
+    .grid-cards{ grid-template-columns:1fr; }
+  }
 </style>
 </head>
 <body>
@@ -865,7 +887,7 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
     </div>
 
     {sorted.length===0 ? <Empty icon="🏖" title="لا إجازات مسجّلة" /> :
-      sorted.map(l=>{ const d=fd(l.doctorId); if(!d) return null;
+      <div className="grid-cards">{sorted.map(l=>{ const d=fd(l.doctorId); if(!d) return null;
         // impact
         const clinics=[],carried=[],evening=[];
         const s=new Date(l.start),e=new Date(l.end);
@@ -876,7 +898,7 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
           coverages.forEach(cv=>{ if(cv.date===ds&&cv.coverDoctorId===d.id) carried.push({ds,p:cv.period}); });
         }
         const uncovered = l.clinicClosed!==false?0:clinics.filter(c=>!c.cov).length;
-        return <div key={l.id} style={{ ...card(), padding:14, marginBottom:10 }}>
+        return <div key={l.id} style={{ ...card(), padding:14 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
             <Avatar doc={d} size={34}/>
             <div style={{ flex:1 }}>
@@ -900,7 +922,7 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
             {evening.length>0&&<div style={{ fontSize:11, color:"#7c3aed", marginTop:3 }}>🌙 دوامه المسائي: {evening.length} — يحتاج بديلاً</div>}
           </div>
         </div>;
-      })}
+      })}</div>}
   </div>;
 }
 
@@ -919,8 +941,8 @@ function DoctorsPage({ doctors, leaves, today, fd, setDoctors, showToast }) {
       <button onClick={addDoc} style={sBtn(C.primary)}>إضافة</button>
     </div>
     {doctors.length===0 ? <Empty icon="👨‍⚕️" title="لا أطباء بعد" hint="أضف أول طبيب من الأعلى" /> :
-      doctors.map(d=>{ const isOpen=open===d.id; return (
-        <div key={d.id} style={{ ...card(), marginBottom:10, overflow:"hidden", borderInlineStart:`4px solid ${d.color}` }}>
+      <div className="grid-cards">{doctors.map(d=>{ const isOpen=open===d.id; return (
+        <div key={d.id} style={{ ...card(), overflow:"hidden", borderInlineStart:`4px solid ${d.color}` }}>
           <div onClick={()=>setOpen(isOpen?null:d.id)} style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px", cursor:"pointer" }}>
             <Avatar doc={d} size={34}/>
             <div style={{ flex:1 }}><div style={{ fontWeight:700, fontSize:14 }}>{d.name}</div><div style={{ fontSize:11, color:C.sub }}>{rankLabel(rankOf(d))} · هدف الرعاية {directTarget(d)}</div></div>
@@ -947,7 +969,7 @@ function DoctorsPage({ doctors, leaves, today, fd, setDoctors, showToast }) {
             <button onClick={()=>{ if(confirm("حذف الطبيب؟")) del(d.id); }} style={{ ...sGhost, color:C.err, width:"100%" }}>حذف الطبيب</button>
           </div>}
         </div>
-      ); })}
+      ); })}</div>}
   </div>;
 }
 
@@ -967,9 +989,9 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
       <div style={{ fontSize:11.5, color:C.sub, marginTop:3 }}>Direct (رعاية) مقابل المتوقّع · حسب سياسة CAPP 001</div>
     </div>
     {doctors.length===0 ? <Empty icon="📈" title="لا بيانات بعد" /> :
-      overview.map(({d,sess,expectDirect})=>{
+      <div className="grid-cards">{overview.map(({d,sess,expectDirect})=>{
         const pct = expectDirect?Math.min(100,Math.round(sess.direct/expectDirect*100)):0;
-        return <div key={d.id} style={{ ...card(), padding:14, marginBottom:10 }}>
+        return <div key={d.id} style={{ ...card(), padding:14 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
             <Avatar doc={d} size={32}/>
             <div style={{ flex:1 }}><div style={{ fontWeight:700, fontSize:13.5 }}>{d.name}</div><div style={{ fontSize:11, color:C.sub }}>{rankLabel(rankOf(d))}</div></div>
@@ -981,13 +1003,37 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
             <span>دعم: <b>{sess.supportive}</b></span>
           </div>
         </div>;
-      })}
+      })}</div>}
   </div>;
 }
 
+// ════════════════════════════════ SEED (أطباء القسم) ════════════════════════════════
+const _SM = { c:"clinic", v:"virtual", a:"audit", t:"training", d:"admin", x:"" };
+const _mkSched = r => { const s={}; for(let i=0;i<5;i++) s[i]={ pm:_SM[r[i][0]], am:_SM[r[i][1]] }; return s; };
+const _SEED = [
+  ["محمد الشهراني",[0],[["c","c"],["x","t"],["c","d"],["d","c"],["c","d"]]],
+  ["طارق السرحاني",[],[["x","t"],["c","c"],["x","c"],["c","t"],["c","c"]]],
+  ["ثائرة المهناء",[0],[["c","c"],["v","a"],["c","x"],["c","x"],["x","c"]]],
+  ["مهدي الشايب",[1],[["x","v"],["c","c"],["x","t"],["c","t"],["c","c"]]],
+  ["ديمة كمال",[3],[["c","a"],["d","c"],["d","c"],["c","v"],["c","d"]]],
+  ["مريم الإبراهيم",[2],[["c","x"],["x","c"],["c","a"],["c","c"],["v","c"]]],
+  ["بثينة الغانم",[0],[["c","d"],["d","c"],["t","c"],["c","d"],["c","v"]]],
+  ["عبدالرحمن الفرحان",[1],[["c","x"],["c","v"],["c","x"],["c","c"],["c","x"]]],
+  ["أمل عسقلان",[0],[["c","a"],["c","d"],["d","c"],["c","v"],["c","d"]]],
+  ["بسام القريافي",[2],[["x","x"],["c","v"],["c","c"],["x","x"],["c","x"]]],
+  ["شذا القحطاني",[4],[["t","x"],["c","v"],["d","c"],["d","c"],["c","t"]]],
+  ["أمل العسكر",[1],[["c","v"],["d","c"],["c","t"],["c","t"],["t","d"]]],
+  ["فايزة الشهري",[1],[["d","d"],["c","c"],["d","d"],["c","c"],["d","d"]]],
+  ["حنان المحيسن",[1],[["c","c"],["c","t"],["x","x"],["a","v"],["c","c"]]],
+  ["محمد القحطاني",[0],[["d","c"],["t","c"],["d","t"],["c","d"],["c","d"]]],
+  ["مضر فتيح",[4],[["c","t"],["c","d"],["c","d"],["t","c"],["d","c"]]],
+  ["عزيزة دريهم",[4],[["d","v"],["d","d"],["c","d"],["c","c"],["c","c"]]],
+];
+const SEED_DOCTORS = _SEED.map((e,i)=>({ id:9001+i, name:e[0], color:PALETTE[i%PALETTE.length], nightDays:e[1], blockedDays:[], rank:"specialist", adminPosition:"none", sched:_mkSched(e[2]) }));
+
 // ════════════════════════════════ APP ════════════════════════════════
 function App() {
-  const [doctors, setDoctors]     = useState(()=>S.get("v2_docs")||[]);
+  const [doctors, setDoctors]     = useState(()=>{ const st=S.get("v2_docs"); return (st&&st.length)?st:SEED_DOCTORS; });
   const [leaves, setLeaves]       = useState(()=>S.get("v2_leaves")||[]);
   const [nightData, setNight]     = useState(()=>S.get("v2_night")||{});
   const [coverages, setCoverages] = useState(()=>S.get("v2_cov")||[]);
@@ -1002,23 +1048,36 @@ function App() {
   const showToast = (msg,kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null),2200); };
 
   const TABS = [["dashboard","الرئيسية","◧"],["engine","الدوام والتغطيات","🌙"],["leaves","الإجازات","🏖"],["doctors","الأطباء","👨‍⚕️"],["stats","الإحصائيات","📈"]];
-
-  return <div style={{ maxWidth:680, margin:"0 auto", paddingBottom:78 }}>
-    {/* header */}
-    <div style={{ background:"#fff", borderBottom:`1px solid ${C.line}`, padding:"14px 18px", position:"sticky", top:0, zIndex:50, display:"flex", alignItems:"center", gap:11 }}>
-      <div style={{ width:38, height:38, borderRadius:11, background:"linear-gradient(135deg,#0f766e,#14b8a6)", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:19, fontWeight:800 }}>ط</div>
-      <div><div style={{ fontWeight:700, fontSize:15 }}>الجداول الطبية</div><div style={{ fontSize:11, color:C.sub }}>إدارة الدوام والتغطيات</div></div>
-    </div>
-    {/* content */}
-    <div style={{ padding:"16px 16px 0" }}>
+  const cur = TABS.find(t=>t[0]===page);
+  const subt = { dashboard:"نظرة عامة وتنبيهات", engine:"المحرك — حلول · مسائي · تغطيات", leaves:"تسجيل الإجازات وأثرها", doctors:"بيانات الأطباء وجداولهم", stats:"العبء الوظيفي والتقارير" };
+  const pageEl = <>
       {page==="dashboard" && <Dashboard doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} onGoto={setPage} />}
       {page==="engine" && <EnginePage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setNight={setNight} setCoverages={setCoverages} showToast={showToast} />}
       {page==="leaves" && <LeavesPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setLeaves={setLeaves} showToast={showToast} />}
       {page==="doctors" && <DoctorsPage doctors={doctors} leaves={leaves} today={today} fd={fd} setDoctors={setDoctors} showToast={showToast} />}
       {page==="stats" && <StatsPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} />}
+  </>;
+
+  return <div className="shell">
+    <aside className="sidebar">
+      <div className="brand">
+        <div style={{ width:40, height:40, borderRadius:12, background:"linear-gradient(135deg,#0f766e,#14b8a6)", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, fontWeight:800 }}>ط</div>
+        <div><div style={{ fontWeight:700, fontSize:15.5 }}>الجداول الطبية</div><div style={{ fontSize:11, color:C.sub }}>إدارة الدوام</div></div>
+      </div>
+      {TABS.map(([id,lbl,ic])=>(
+        <button key={id} className={"navbtn"+(page===id?" active":"")} onClick={()=>setPage(id)}><span className="ic">{ic}</span>{lbl}</button>
+      ))}
+      <div style={{ flex:1 }} />
+      <div style={{ fontSize:11, color:C.muted, textAlign:"center", padding:"10px 0" }}>{doctors.length} طبيب · {MONTHS[new Date().getMonth()]}</div>
+    </aside>
+    <div className="main">
+      <div className="topbar">
+        <h1>{cur?cur[2]+" "+cur[1]:""}</h1>
+        <p>{subt[page]}</p>
+      </div>
+      <div className="content">{pageEl}</div>
     </div>
-    {/* bottom tab bar */}
-    <div style={{ position:"fixed", bottom:0, insetInlineStart:0, insetInlineEnd:0, background:"#fff", borderTop:`1px solid ${C.line}`, display:"flex", maxWidth:680, margin:"0 auto", boxShadow:"0 -2px 12px rgba(16,40,60,.05)" }}>
+    <div className="bottomnav">
       {TABS.map(([id,lbl,ic])=>(
         <button key={id} onClick={()=>setPage(id)} style={{ flex:1, background:"none", border:"none", padding:"9px 2px 8px", display:"flex", flexDirection:"column", alignItems:"center", gap:3, color:page===id?C.primary:C.muted }}>
           <span style={{ fontSize:17 }}>{ic}</span>
