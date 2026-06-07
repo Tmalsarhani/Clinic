@@ -1422,8 +1422,7 @@ function App() {
 
   const TABS = [
     { id:"dashboard",icon:"📊", label:"لوحة التحكم" },
-    { id:"monthly",  icon:"🌙", label:"الدوام المسائي" },
-    { id:"coverages",icon:"🔄", label:"التغطيات" },
+    { id:"monthly",  icon:"🗓", label:"الدوام والتغطيات" },
     { id:"leaves",   icon:"🏖", label:"الإجازات" },
     { id:"doctors",  icon:"👨‍⚕️", label:"الأطباء" },
     { id:"stats",    icon:"📈", label:"الإحصائيات" },
@@ -1523,7 +1522,6 @@ function App() {
         <div style={{ flex:1, overflowY:"auto", padding:22 }}>
           {page==="dashboard" && <DashboardPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onGoto={goto} onLoadSeed={loadJuneSeed} onImportExcel={importExcel} onAddIndiv={addIndivCoverage} onRemoveDuties={removeAllDutiesForDay} onAddDoc={addNightDoc} onAutoFill={(y,m,mode) => { let base = nightData; if(mode==="all"){ base={}; Object.keys(nightData).forEach(d=>{const [yy,mm]=d.split("-"); if(+yy!==y||+mm!==m+1) base[d]=nightData[d];}); } const next=autoFill(y,m,doctors,leaves,base); updateNight(next); showToast(mode==="all"?"✅ تم التوزيع الكامل":"✅ تم إكمال الأيام الناقصة"); }} />}
           {page==="monthly" && <MonthlyPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd} today={today} onAutoFill={(y,m,mode) => { let base = nightData; if(mode==="all"){ base={}; Object.keys(nightData).forEach(d=>{const [yy,mm]=d.split("-"); if(+yy!==y||+mm!==m+1) base[d]=nightData[d];}); } const next=autoFill(y,m,doctors,leaves,base); updateNight(next); showToast(mode==="all"?"✅ تم التوزيع الكامل":"✅ تم إكمال الأيام الناقصة"); }} onAddDoc={addNightDoc} onRemoveDoc={removeNightDoc} onAddCov={addCoverage} onRemoveCov={removeCoverage} onClearMonth={clearMonth} onResetDay={resetDay} onCopyDay={copyDay} onSetNote={setDayNote} onEnsureDay={ensureDay} onCopyMonth={copyMonth} onSwap={swapDoctors} approvals={approvals} onApprove={setMonthApproval} onAddIndiv={addIndivCoverage} onRemoveIndiv={removeIndivCoverage} onAutoFillPending={autoFillPending} onSetSlots={setDaySlots} />}
-          {page==="coverages" && <CoveragePage doctors={doctors} leaves={leaves} coverages={coverages} nightData={nightData} fd={fd} onAdd={addIndivCoverage} onRemove={removeIndivCoverage} showToast={showToast} />}
           {page==="doctors"  && <DoctorsPage doctors={doctors} leaves={leaves} today={today} fd={fd} onUpdateDocs={updateDocs} showToast={showToast} focus={focus} onFocusDone={()=>setFocus(null)} />}
           {page==="leaves"   && <LeavesPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} onUpdate={(next) => { setLeaves(next); S.set("fin_leaves",next); }} onAddIndiv={addIndivCoverage} onRemoveIndiv={removeIndivCoverage} showToast={showToast} focus={focus} onFocusDone={()=>setFocus(null)} />}
           {page==="stats"    && <StatsPage doctors={doctors} nightData={nightData} coverages={coverages} leaves={leaves} />}
@@ -1602,7 +1600,7 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
   const extraAlerts = [];
   conflicts.forEach(c=> extraAlerts.push({ sev:"err", icon:"⛔", text:c.text, go:"monthly" }));
   doctors.forEach(d=>{ let n=0; Object.entries(nightData).forEach(([date,nd])=>{ if(thisMonth(date)&&(nd.doctors||[]).includes(d.id)) n++; }); if(n>10) extraAlerts.push({ sev:"err", icon:"📛", text:`د.${d.name} تجاوز حد المناوبات: ${n}/10 هذا الشهر`, go:"doctors", focus:{anchor:"doc-"+d.id} }); });
-  gaps.forEach(g=>{ const lv=leaves.find(L=>L.doctorId===g.ownerId && g.date>=L.start && g.date<=L.end); extraAlerts.push({ sev:"warn", icon:"🔶", text:`عيادة د.${fd(g.ownerId)?.name||""} (${slotLabel(g.period)}) ${fmtDate(g.date)} تحتاج تغطية`, go: lv?"leaves":"coverages", focus: lv?{anchor:"leave-"+lv.id, openLeave:lv.id}:null }); });
+  gaps.forEach(g=>{ const lv=leaves.find(L=>L.doctorId===g.ownerId && g.date>=L.start && g.date<=L.end); extraAlerts.push({ sev:"warn", icon:"🔶", text:`عيادة د.${fd(g.ownerId)?.name||""} (${slotLabel(g.period)}) ${fmtDate(g.date)} تحتاج تغطية`, go: lv?"leaves":"monthly", focus: lv?{anchor:"leave-"+lv.id, openLeave:lv.id}:null }); });
   const daysUntil = ds => { const a=new Date(today), b=new Date(ds); return Math.round((b-a)/86400000); };
   leaves.forEach(l=>{ const du=daysUntil(l.start); if(du>0&&du<=3){ const d=fd(l.doctorId); if(d) extraAlerts.push({ sev:"warn", icon:"🏖️", text:`إجازة د.${d.name} تبدأ بعد ${du} ${du===1?"يوم":"أيام"} — راجع التغطيات`, go:"leaves", focus:{anchor:"leave-"+l.id, openLeave:l.id} }); } });
   doctors.forEach(d=>{ const has=[0,1,2,3,4].some(di=>getSlot(d,di,"am")||getSlot(d,di,"pm")); if(!has) extraAlerts.push({ sev:"warn", icon:"👤", text:`د.${d.name} بلا جدول عيادات`, go:"doctors", focus:{anchor:"doc-"+d.id} }); });
@@ -1760,7 +1758,7 @@ function DashboardPage({ doctors, leaves, nightData, coverages, fd, today, onGot
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:18 }}>
         {[
           { icon:"🌙", title:"الدوام المسائي", metric:totalNightAssigns, sub:"مناوبة هذا الشهر", col:"#1e3a5f", bg:"#eef4fb", go:"monthly" },
-          { icon:"🔄", title:"التغطيات", metric:totalCovs, sub: pending>0?`${pending} تحتاج تغطية`:"مكتملة ✓", col:"#15803d", bg:"#eefaf3", go:"coverages" },
+          { icon:"🔄", title:"التغطيات", metric:totalCovs, sub: pending>0?`${pending} تحتاج تغطية`:"مكتملة ✓", col:"#15803d", bg:"#eefaf3", go:"monthly" },
           { icon:"🏖️", title:"الإجازات وأثرها", metric:activeLeaves, sub:"إجازة حالية", col:"#d97706", bg:"#fdf6ec", go:"leaves" },
           { icon:"🩺", title:"صحّة الجدول", metric:conflicts.length+gaps.length, sub:(conflicts.length+gaps.length)===0?"سليم ✓":"تعارضات/نواقص", col:(conflicts.length?"#dc2626":(gaps.length?"#d97706":"#15803d")), bg:(conflicts.length?"#fdeef0":(gaps.length?"#fdf6ec":"#eefaf3")), go:"monthly" },
           { icon:"⚖️", title:"العبء (CAPP)", metric:loads.length, sub:"طبيب بعبء إضافي", col:"#7c3aed", bg:"#f3effe", go:"stats" },
@@ -1973,6 +1971,13 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
     return { errors: [...errs], warnings: [...warns] };
   }, [month, nightData, coverages, doctors, leaves]);
   const [showHealth, setShowHealth] = useState(true);
+  // ── محرك الحلول: العيادات المكشوفة ──
+  const [picks, setPicks] = useState({});
+  const gapKey = g => `${g.date}|${g.period}|${g.ownerId}`;
+  const gapList = useMemo(() => analyzeMonth(month.y, month.m, doctors, leaves, nightData, coverages).gaps.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.period.localeCompare(b.period)), [month, doctors, leaves, nightData, coverages]);
+  const availForGap = g => getAvailable(doctors, [g.ownerId], g.di, g.date, g.period, leaves, nightData, {}, coverages).filter(a=>a.status!=="leave");
+  const coverGap = g => { const av=availForGap(g); const sel=picks[gapKey(g)]; const coverId=sel?+sel:(av[0]?.doc?.id); if(!coverId) return; onAddIndiv({ absentId:g.ownerId, date:g.date, period:g.period, coverDoctorId:coverId, reason:"absence" }); };
+  const coverAllGaps = () => { let n=0; gapList.forEach(g=>{ const av=availForGap(g); const sel=picks[gapKey(g)]; const coverId=sel?+sel:(av[0]?.doc?.id); if(coverId){ onAddIndiv({ absentId:g.ownerId, date:g.date, period:g.period, coverDoctorId:coverId, reason:"absence" }); n++; } }); };
 
   const printPDF = () => {
     const chip = (d) => `<span style="display:inline-block;background:${d.color}22;color:${d.color};border:1px solid ${d.color}55;border-radius:5px;padding:2px 10px;margin:2px;font-weight:700">${d.name}</span>`;
@@ -2437,15 +2442,34 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
           </div>
         </div>
 
-        {/* Pending coverages auto-fill banner */}
-        {summary.pending>0 && (
-          <div style={{ background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:12, padding:"12px 16px", marginBottom:14, display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
-            <span style={{ fontSize:20 }}>⚖️</span>
-            <div style={{ flex:1, minWidth:140 }}>
-              <div style={{ fontWeight:700, fontSize:13, color:"#c2410c" }}>يوجد {summary.pending} تغطية معلّقة</div>
-              <div style={{ fontSize:11, color:"#94a3b8" }}>توزيع تلقائي عادل — الأقل عبئاً أولاً</div>
+        {/* 🩺 القسم 1: الحلول المطلوبة (محرك التغطية) */}
+        {gapList.length>0 && (
+          <div style={{ background:"#fff", border:"1px solid #fed7aa", borderRadius:14, padding:14, marginBottom:14 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, flexWrap:"wrap" }}>
+              <span style={{ fontSize:18 }}>🩺</span>
+              <div style={{ flex:1, fontWeight:800, fontSize:14, color:"#c2410c", minWidth:140 }}>الحلول المطلوبة — {gapList.length} عيادة مكشوفة</div>
+              <button onClick={()=>onAutoFillPending(month.y,month.m)} style={{ background:"#15803d", color:"#fff", border:"none", borderRadius:8, padding:"8px 14px", fontSize:12, fontWeight:800, cursor:"pointer" }}>⚡ حلّ الكل بعدالة</button>
             </div>
-            <button onClick={()=>onAutoFillPending(month.y,month.m)} style={{ background:"#ea580c", color:"#fff", border:"none", borderRadius:8, padding:"9px 16px", fontWeight:700, fontSize:12, cursor:"pointer" }}>⚡ إكمال التغطيات المعلّقة بعدالة</button>
+            <div style={{ display:"flex", flexDirection:"column", gap:7, maxHeight:360, overflowY:"auto" }}>
+              {gapList.map(g=>{ const av=availForGap(g); const own=fd(g.ownerId); const perL=g.period==="am"?"صباح":g.period==="pm"?"ظهر":"مسائي"; return (
+                <div key={gapKey(g)} style={{ background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:10, padding:"9px 11px" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:6 }}>
+                    <span style={{ fontWeight:800, fontSize:12, color:"#9a3412" }}>{g.date.split("-")[2]}/{+g.date.split("-")[1]} {DAYS[g.di]}</span>
+                    <span style={{ fontSize:12, color:"#7c2d12" }}>— عيادة د.{own?own.name:"؟"} ({perL})</span>
+                    <span style={{ fontSize:10, color:"#c2410c", background:"#ffedd5", borderRadius:6, padding:"1px 7px" }}>{g.reason}</span>
+                  </div>
+                  {av.length===0 ? <div style={{ fontSize:11, color:"#dc2626", fontWeight:700 }}>⚠️ لا يوجد طبيب متاح</div> : (
+                    <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                      <select value={picks[gapKey(g)]||""} onChange={e=>setPicks(p=>({...p,[gapKey(g)]:e.target.value}))} style={{ flex:1, padding:"6px", borderRadius:8, border:"1px solid #fed7aa", fontSize:12, fontFamily:"inherit" }}>
+                        <option value="">الأنسب: د.{av[0].doc.name}</option>
+                        {av.map(a=><option key={a.doc.id} value={a.doc.id}>د.{a.doc.name}</option>)}
+                      </select>
+                      <button onClick={()=>coverGap(g)} style={{ background:"#15803d", color:"#fff", border:"none", borderRadius:8, padding:"6px 13px", fontSize:12, fontWeight:800, cursor:"pointer", whiteSpace:"nowrap" }}>✓ تغطية</button>
+                    </div>
+                  )}
+                </div>
+              ); })}
+            </div>
           </div>
         )}
 
@@ -2589,7 +2613,7 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
         {/* Evening schedule (single column) */}
         <div>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
-            <span style={{ fontWeight:800, fontSize:15 }}>🌙 الدوام المسائي</span>
+            <span style={{ fontWeight:800, fontSize:16, letterSpacing:".5px", background:"linear-gradient(90deg,#1e3a5f,#3a6ea5)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>🌙 الدوام المسائي</span>
             <span style={{ fontSize:12, fontWeight:400, color:"#94a3b8" }}>({filledDays.length} يوم)</span>
             <div style={{ flex:1 }} />
             <span style={{ fontSize:11, color:"#64748b" }}>طريقة العرض:</span>
@@ -2623,8 +2647,9 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
               </div>
             </div>
           ) : viewMode==="boxes" ? (
-            /* Boxes view — redesigned clean cards */
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:16 }}>
+            <div style={{ position:"relative", borderRadius:20, background:"linear-gradient(165deg,#0c1b33,#15294a 55%,#1e3a5f)", padding:16, boxShadow:"0 16px 44px rgba(12,27,51,.42)" }}>
+              <div style={{ position:"absolute", top:-44, insetInlineStart:-30, width:170, height:170, borderRadius:"50%", background:"radial-gradient(circle,rgba(245,222,160,.18),transparent 70%)", pointerEvents:"none" }} />
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:16, position:"relative" }}>
               {filledDays.map(({ date, di, day }) => {
                 const nd = nightData[date]||{}; const covs = nd.coverages||{};
                 const docs = (nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
@@ -2636,7 +2661,7 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
                 const hasIssue = r.gaps.length>0 || r.conflicts.length>0;
                 const nDi = dayIdx(nextWork(date));
                 return (
-                  <div key={date} onClick={()=>setSelDate(isSel?null:date)} style={{ background:"#fff", borderRadius:18, border: isSel?"2.5px solid #2c5282":hasIssue?"1.5px solid #fcd9b6":"1px solid #edf1f6", overflow:"hidden", cursor:"pointer", boxShadow: isSel?"0 8px 24px rgba(44,82,130,.18)":"0 3px 14px rgba(30,58,95,.07)", transition:"all .15s" }}>
+                  <div key={date} onClick={()=>setSelDate(isSel?null:date)} style={{ background:"#fff", borderRadius:18, border: isSel?"2.5px solid #f5c451":hasIssue?"1.5px solid #fcd9b6":"1px solid rgba(255,255,255,.08)", overflow:"hidden", cursor:"pointer", boxShadow: isSel?"0 16px 34px rgba(0,0,0,.45)":"0 8px 20px rgba(0,0,0,.28)", transition:"all .15s" }}>
                     {/* Header */}
                     <div style={{ background:"linear-gradient(135deg,#1e3a5f,#2c5282)", color:"#fff", padding:"11px 16px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                       <div style={{ display:"flex", alignItems:"baseline", gap:6 }}>
@@ -2719,27 +2744,38 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
                   </div>
                 );
               })}
+              </div>
             </div>
           ) : null}
           {/* Calendar view */}
           {viewMode==="calendar" && filledDays.length>0 && (
-            <div style={{ background:"#fff", borderRadius:12, overflow:"hidden", border:"1px solid #e2e8f0" }}>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", background:"#1e3a5f" }}>
-                {DAYS.map(d => <div key={d} style={{ padding:"9px", textAlign:"center", color:"#fff", fontWeight:700, fontSize:12 }}>{d}</div>)}
+            <div style={{ position:"relative", borderRadius:20, overflow:"hidden", background:"linear-gradient(165deg,#0c1b33 0%,#15294a 55%,#1e3a5f 100%)", padding:14, boxShadow:"0 16px 44px rgba(12,27,51,.42)" }}>
+              <div style={{ position:"absolute", top:-44, insetInlineStart:-30, width:170, height:170, borderRadius:"50%", background:"radial-gradient(circle,rgba(245,222,160,.20),transparent 70%)", pointerEvents:"none" }} />
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:8, marginBottom:8, position:"relative" }}>
+                {DAYS.map(d => <div key={d} style={{ textAlign:"center", color:"#cbd9ee", fontWeight:700, fontSize:11, letterSpacing:"3px", padding:"2px 0" }}>{d}</div>)}
               </div>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)" }}>
-                {Array.from({ length:firstOffset }, (_,i) => <div key={`e${i}`} style={{ minHeight:90, background:"#f8fafc", borderBottom:"1px solid #f1f5f9", borderLeft:"1px solid #f1f5f9" }} />)}
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:8, position:"relative" }}>
+                {Array.from({ length:firstOffset }, (_,i) => <div key={`e${i}`} style={{ minHeight:104, borderRadius:14, background:"rgba(255,255,255,.04)", border:"1px dashed rgba(255,255,255,.09)" }} />)}
                 {calDays.map(({ date, di, day }) => {
                   const nd = nightData[date] || {}; const covs = nd.coverages || {};
                   const docs = (nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
                   const isT = date===today; const isSel = selDate===date;
                   return (
                     <div key={date} onClick={() => setSelDate(isSel?null:date)}
-                      style={{ minHeight:90, padding:"5px 6px", cursor:"pointer", borderBottom:"1px solid #f1f5f9", borderLeft:"1px solid #f1f5f9",
-                        background: isSel?"#eff6ff":isT?"#fffbeb":"#fff", outline: isSel?"2px solid #2c5282":"none" }}>
-                      <div style={{ fontSize:10, color:isT?"#d97706":"#94a3b8", fontWeight:700, marginBottom:3 }}>{day}</div>
-                      {docs.map(d => <div key={d.id} style={{ background:d.color+"1e", border:`1px solid ${d.color}55`, borderRadius:4, padding:"2px 5px", marginBottom:2, fontSize:9, fontWeight:700, color:d.color }}>🌙 {d.name}</div>)}
-                      {!docs.length && <div style={{ fontSize:9, color:"#d1d5db", textAlign:"center", paddingTop:6 }}>—</div>}
+                      style={{ minHeight:104, padding:"9px 9px 7px", cursor:"pointer", borderRadius:14, position:"relative",
+                        background: isSel?"linear-gradient(180deg,#ffffff,#edf4ff)":"rgba(255,255,255,.97)",
+                        boxShadow: isSel?"0 12px 26px rgba(20,40,74,.5)":"0 4px 12px rgba(0,0,0,.16)",
+                        outline: isT?"2px solid #f5c451":"none", transform: isSel?"translateY(-2px)":"none", transition:"all .15s" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                        <span style={{ width:24, height:24, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:800, background:isT?"#f5c451":"#eef2f7", color:isT?"#3a2a06":"#64748b" }}>{day}</span>
+                        {isT && <span style={{ fontSize:8, fontWeight:800, color:"#caa23b", letterSpacing:"1px" }}>اليوم</span>}
+                      </div>
+                      {docs.length ? docs.map(d => (
+                        <div key={d.id} style={{ display:"flex", alignItems:"center", gap:5, background:d.color+"14", borderRadius:8, padding:"3px 6px", marginBottom:3, border:`1px solid ${d.color}30` }}>
+                          <span style={{ width:16, height:16, borderRadius:"50%", background:d.color, color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:7, fontWeight:800, flexShrink:0 }}>{sn(d.name).slice(0,2)}</span>
+                          <span style={{ fontSize:10, fontWeight:800, color:d.color, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{sn(d.name)}</span>
+                        </div>
+                      )) : <div style={{ fontSize:15, color:"#dbe3ee", textAlign:"center", paddingTop:10 }}>☾</div>}
                       {(() => {
                         const nDi = dayIdx(nextWork(date));
                         const ownerFor = (per) => docs.filter(d=>isClinic(getSlot(d, per==="nextAm"?nDi:di, per==="nextAm"?"am":per))).map(d=>d.name).join("، ");
@@ -2762,7 +2798,7 @@ function MonthlyPage({ doctors, leaves, nightData, coverages, fd, today, onAutoF
           )}
           {/* Selected day editor in boxes/calendar mode */}
           {(viewMode==="boxes"||viewMode==="calendar") && selDate && (
-            <div style={{ marginTop:14, background:"#fff", borderRadius:12, border:"2px solid #2c5282", overflow:"hidden" }}>
+            <div style={{ marginTop:14, background:"#fff", borderRadius:12, border:"2px solid #f5c451", overflow:"hidden", boxShadow:"0 10px 28px rgba(20,40,74,.18)" }}>
               <DayCard date={selDate} di={dayIdx(selDate)} day={+selDate.split("-")[2]}
                 nd={nightData[selDate]||{}} indiv={coverages.filter(c=>c.date===selDate)}
                 doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} fd={fd}
