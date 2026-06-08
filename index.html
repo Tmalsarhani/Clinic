@@ -417,7 +417,6 @@ function analyzeDay(date, doctors, leaves, nightData, coverages, loadMap) {
 
   // ---- Determine absence per doctor (individual coverage with absentId, or on-leave) ----
   const absentReason = {}; // docId -> reason string
-  dayIndiv.forEach(c=>{ if(c.absentId) absentReason[c.absentId] = "غياب/عذر"; });
   doctors.forEach(d=>{ if(onLeave(d,date,leaves)) absentReason[d.id] = clinicClosedOnLeave(d,date,leaves) ? "إجازة (عيادة مغلقة)" : "إجازة (عيادة قائمة)"; });
 
   // ---- Compute gaps & conflicts per period ----
@@ -706,6 +705,11 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto })
   doctors.forEach(d=>{ let n=0; monthDays(now.getFullYear(),now.getMonth()).forEach(({date})=>{ if(((nightData[date]||{}).doctors||[]).includes(d.id)) n++; }); if(n>CAP_EVENING) alerts.push({ sev:"err", t:`د.${d.name} تجاوز حدّ المناوبات (${n}/${CAP_EVENING})`, go:"doctors" }); });
   monthDays(now.getFullYear(),now.getMonth()).forEach(({date,di})=>{ const onLv=doctors.filter(d=>onLeave(d,date,leaves)).length; if(onLv>=CAP_LEAVE_DAY) alerts.push({ sev:"warn", t:`تواجد منخفض ${dmy(date)} ${DAYS[di]} — ${onLv} في إجازة`, go:"leaves" }); });
   alerts.sort((a,b)=>(a.sev==="err"?0:1)-(b.sev==="err"?0:1));
+  const [dvView,setDvView] = useState("day");
+  const [dvDate,setDvDate] = useState(today);
+  const shiftDay = n => { const d=new Date(dvDate); d.setDate(d.getDate()+n); setDvDate(d.toISOString().split("T")[0]); };
+  const dayInfo = date => { const nd=nightData[date]||{}; const cv=nd.coverages||{}; const evening=(nd.doctors||[]).map(id=>fd(id)?.name).filter(Boolean); const covs=[]; ["am","pm","nextAm"].forEach(slot=>{ (cv[slot]||[]).forEach(cid=>{ const c=fd(cid); if(c) covs.push(`${c.name} · ${slot==="nextAm"?"ص الغد":perAr(slot)}`); }); }); coverages.filter(c=>c.date===date).forEach(c=>{ const cd=fd(c.coverDoctorId); if(cd) covs.push(`${cd.name} · ${perAr(c.period)}`); }); const lv=doctors.filter(d=>onLeave(d,date,leaves)).map(d=>d.name); return {evening,covs,lv}; };
+  const weekDates = (()=>{ const t=new Date(today); const sun=new Date(t); sun.setDate(t.getDate()-t.getDay()); const out=[]; for(let i=0;i<5;i++){ const d=new Date(sun); d.setDate(sun.getDate()+i); out.push(d.toISOString().split("T")[0]); } return out; })();
 
   return <div className="fade">
     <div style={{ ...card(), padding:"20px 22px", marginBottom:16, background:"linear-gradient(135deg,#0f766e,#0e7490)", color:"#fff", border:"none" }}>
@@ -719,6 +723,43 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto })
           <div style={{ fontSize:11.5, color:C.sub, marginTop:5 }}>{s.k}</div>
         </div>
       ))}
+    </div>
+    {/* Daily / Weekly schedule */}
+    <div style={{ ...card(), padding:16, marginBottom:16 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
+        <div style={{ flex:1, fontSize:15, fontWeight:700 }}>🗓 الجدول</div>
+        <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden" }}>
+          {[["day","يومي"],["week","أسبوعي"]].map(([k,l])=><button key={k} onClick={()=>setDvView(k)} style={{ padding:"7px 16px", border:"none", fontSize:12.5, fontWeight:700, background:dvView===k?C.primary:"#fff", color:dvView===k?"#fff":C.sub }}>{l}</button>)}
+        </div>
+      </div>
+      {dvView==="day" ? (
+        <div>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+            <button onClick={()=>shiftDay(-1)} style={{ ...sGhost, width:34, padding:"6px 0" }}>‹</button>
+            <div style={{ flex:1, textAlign:"center", fontWeight:700, fontSize:14 }}>{DAYS[new Date(dvDate).getDay()]||"عطلة"} {dvDate.split("-")[2]}/{+dvDate.split("-")[1]}</div>
+            <button onClick={()=>shiftDay(1)} style={{ ...sGhost, width:34, padding:"6px 0" }}>›</button>
+          </div>
+          {(()=>{ const info=dayInfo(dvDate); return <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {[["🌙","الدوام المسائي",info.evening,"#7c3aed","لا دوام"],["🔄","التغطيات",info.covs,C.primaryD,"لا تغطيات"],["🏖","في إجازة",info.lv,C.warn,"لا إجازات"]].map(([ic,lb,items,col,emp])=>(
+              <div key={lb} style={{ background:"#f8fafc", borderRadius:10, padding:"10px 12px" }}>
+                <div style={{ fontSize:12, fontWeight:700, color:col, marginBottom:6 }}>{ic} {lb} ({items.length})</div>
+                {items.length? <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>{items.map((t,i)=><span key={i} style={{ background:"#fff", border:`1px solid ${C.line}`, borderRadius:16, padding:"3px 10px", fontSize:11.5 }}>د.{t}</span>)}</div> : <div style={{ fontSize:11.5, color:C.muted }}>{emp}</div>}
+              </div>
+            ))}
+          </div>; })()}
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          {weekDates.map(dt=>{ const info=dayInfo(dt); const wd=new Date(dt); return (
+            <div key={dt} style={{ border:`1px solid ${dt===today?C.accent:C.line2}`, borderRadius:10, padding:"9px 11px" }}>
+              <div style={{ fontSize:12, fontWeight:800, color:C.primary, marginBottom:4 }}>{DAYS[wd.getDay()]} {dt.split("-")[2]}/{+dt.split("-")[1]}</div>
+              <div style={{ fontSize:11.5, color:C.text }}>🌙 {info.evening.length?info.evening.map(n=>"د."+n).join("، "):"—"}</div>
+              {info.covs.length>0 && <div style={{ fontSize:11, color:C.primaryD, marginTop:2 }}>🔄 {info.covs.map(n=>"د."+n).join("، ")}</div>}
+              {info.lv.length>0 && <div style={{ fontSize:11, color:C.warn, marginTop:2 }}>🏖 {info.lv.map(n=>"د."+n).join("، ")}</div>}
+            </div>
+          ); })}
+        </div>
+      )}
     </div>
     <div style={{ ...card(), padding:16 }}>
       <div style={{ fontSize:14, fontWeight:700, marginBottom:4 }}>التنبيهات</div>
@@ -764,6 +805,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const clearCov = (date,slot) => setNight(nd=>{ const d={...(nd[date]||{})}; const cv={...(d.coverages||{})}; cv[slot]=[]; d.coverages=cv; return {...nd,[date]:d}; });
 
   const autoEvening = () => { const next=autoFill(mo.y,mo.m,doctors,leaves,nightData); setNight(()=>next); showToast("تم التوزيع التلقائي للمسائي"); };
+  const [reqPerDay, setReqPerDay] = useState(2);
+  const autoFillCount = () => { setNight(nd=>{ const n={...nd}; const usage={}; doctors.forEach(d=>usage[d.id]=0); monthDates.forEach(dt=>((n[dt]||{}).doctors||[]).forEach(id=>{ usage[id]=(usage[id]||0)+1; })); days.forEach(({date,di})=>{ const cur=(n[date]||{}).doctors?[...n[date].doctors]:[]; const avail=doctors.filter(d=>!cur.includes(d.id)&&!onLeave(d,date,leaves)); avail.sort((a,b)=> (((b.nightDays||[]).includes(di)?1:0)-((a.nightDays||[]).includes(di)?1:0)) || (usage[a.id]-usage[b.id]) || ((loadMap[a.id]||0)-(loadMap[b.id]||0)) ); while(cur.length<reqPerDay && avail.length){ const pk=avail.shift(); cur.push(pk.id); usage[pk.id]++; } n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur }; }); return n; }); showToast(`تم إنشاء جدول ${reqPerDay} عيادة مسائية/يوم`); };
 
   // individual coverage form
   const [cf, setCf] = useState({ absentId:"", date:"", period:"am", coverId:"" });
@@ -787,6 +830,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const statusOf = date => { const r=analyzeDay(date,doctors,leaves,nightData,coverages,null); const nd=nightData[date]||{}; return ((nd.doctors||[]).length && r.gaps.length===0 && r.conflicts.length===0) ? "done":"pending"; };
   const listDays = filled.filter(d=>{ if(sFilter!=="all" && statusOf(d.date)!==sFilter) return false; if(search){ const q=search.trim(); const nd=nightData[d.date]||{}; const names=(nd.doctors||[]).map(id=>fd(id)?.name||"").join(" ")+" "+coverages.filter(c=>c.date===d.date).map(c=>fd(c.coverDoctorId)?.name||"").join(" "); if(!names.includes(q)&&!d.date.includes(q)) return false; } return true; });
   const offset = days.length?days[0].di:0;
+  const covLines = date => { const nd=nightData[date]||{}; const cv=nd.coverages||{}; const out=[]; const di0=dayIdx(date); const ndi=dayIdx(nextWork(date)); ["am","pm","nextAm"].forEach(slot=>{ (cv[slot]||[]).forEach(cid=>{ const cdr=fd(cid); if(!cdr) return; const sl=slot==="nextAm"?"am":slot; const sdi=slot==="nextAm"?ndi:di0; const owner=(nd.doctors||[]).map(id=>fd(id)).find(o=>o&&isClinic(getSlot(o,sdi,sl))); out.push(`د.${cdr.name} يغطّي عيادة${owner?` د.${owner.name}`:""} ${slot==="nextAm"?"صباح اليوم التالي":perAr(slot)}`); }); }); coverages.filter(c=>c.date===date).forEach(c=>{ const cdr=fd(c.coverDoctorId); const ad=c.absentId?fd(c.absentId):null; if(cdr) out.push(`د.${cdr.name} يغطّي عيادة${ad?` د.${ad.name}`:""} ${perAr(c.period)}`); }); return out; };
 
   return <div className="fade">
     {/* month nav */}
@@ -800,7 +844,9 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     <div style={{ ...card(), padding:14, marginBottom:14 }}>
       <div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:7 }}>أدوات الجدول</div>
       <div style={{ display:"flex", flexWrap:"wrap", gap:7, marginBottom:10 }}>
-        <button onClick={autoEvening} style={sBtn(C.primary)}>⚡ توزيع تلقائي للمسائي</button>
+        <label style={{ ...sGhost, display:"inline-flex", alignItems:"center", gap:6, cursor:"default" }}>عيادات/يوم<input type="number" min="1" max="10" value={reqPerDay} onChange={e=>setReqPerDay(Math.max(1,+e.target.value||1))} style={{ width:42, border:`1px solid ${C.line}`, borderRadius:7, padding:"4px 6px", textAlign:"center", fontSize:13 }} /></label>
+        <button onClick={autoFillCount} style={sBtn(C.primary)}>🗓 إنشاء جدول الشهر ({reqPerDay}/يوم)</button>
+        <button onClick={autoEvening} style={sGhost}>⚡ توزيع حسب الأيام الثابتة</button>
         <button onClick={coverAll} style={sBtn("#0e7490")}>✓ إكمال الناقص (التغطيات)</button>
         <button onClick={copyPrev} style={sGhost}>📋 نسخ الشهر السابق</button>
         <label style={{ ...sGhost, display:"inline-flex", alignItems:"center", gap:6, cursor:"pointer" }}>➕ إضافة يوم<input type="date" onChange={e=>{ if(e.target.value&&dayIdx(e.target.value)>=0){ ensureDay(e.target.value); setSel(e.target.value); setMo({y:+e.target.value.split("-")[0],m:+e.target.value.split("-")[1]-1}); setView("list"); } }} style={{ border:"none", background:"none", width:18, padding:0 }} value="" /></label>
@@ -882,24 +928,29 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
             const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
             const open=sel===date; const nDi=dayIdx(nextWork(date)); const cv=nd.coverages||{};
             return <div key={date} style={{ border:`1px solid ${open?C.accent:C.line}`, borderRadius:12, overflow:"hidden" }}>
-              <div onClick={()=>setSel(open?null:date)} style={{ display:"flex", alignItems:"center", gap:10, padding:"11px 13px", cursor:"pointer", background: open?"#f0fdfa":"#fff" }}>
-                <div style={{ minWidth:42, textAlign:"center" }}><div style={{ fontSize:16, fontWeight:800, color:C.primary }}>{date.split("-")[2]}</div><div style={{ fontSize:9.5, color:C.muted }}>{DAYS[di]}</div></div>
-                <div style={{ flex:1, display:"flex", flexWrap:"wrap", gap:5 }}>
-                  {docs.length?docs.map(d=><span key={d.id} style={{ display:"inline-flex", alignItems:"center", gap:5, background:d.color+"14", color:d.color, border:`1px solid ${d.color}30`, borderRadius:20, padding:"3px 10px 3px 4px", fontSize:12.5, fontWeight:700 }}><Avatar doc={d} size={20}/>{sn(d.name)}</span>):<span style={{ fontSize:12.5, color:C.muted }}>— لا دوام</span>}
+              <div onClick={()=>setSel(open?null:date)} style={{ padding:"11px 13px", cursor:"pointer", background: open?"#f0fdfa":"#fff" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                  <div style={{ minWidth:42, textAlign:"center" }}><div style={{ fontSize:16, fontWeight:800, color:C.primary }}>{date.split("-")[2]}</div><div style={{ fontSize:9.5, color:C.muted }}>{DAYS[di]}</div></div>
+                  <div style={{ flex:1, display:"flex", flexWrap:"wrap", gap:5 }}>
+                    {docs.length?docs.map(d=><span key={d.id} style={{ display:"inline-flex", alignItems:"center", gap:5, background:d.color+"14", color:d.color, border:`1px solid ${d.color}30`, borderRadius:20, padding:"3px 11px 3px 4px", fontSize:12.5, fontWeight:700 }}><Avatar doc={d} size={20}/>د.{d.name}</span>):<span style={{ fontSize:12.5, color:C.muted }}>— لا دوام مسائي</span>}
+                  </div>
+                  <span style={{ color:C.muted, fontSize:12 }}>{open?"▲":"▼"}</span>
                 </div>
-                <span style={{ color:C.muted, fontSize:12 }}>{open?"▲":"▼"}</span>
+                {covLines(date).length>0 && <div style={{ marginTop:8, paddingTop:8, borderTop:`1px dashed ${C.line2}`, display:"flex", flexDirection:"column", gap:4 }}>
+                  {covLines(date).map((t,i)=><div key={i} style={{ fontSize:12, color:C.primaryD, fontWeight:600 }}>🔄 {t}</div>)}
+                </div>}
               </div>
               {open && <div style={{ padding:"4px 13px 13px", borderTop:`1px solid ${C.line2}` }}>
                 <div style={label}>الطبيب المسائي</div>
                 <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:10 }}>
                   {doctors.map(d=>{ const on=(nd.doctors||[]).includes(d.id); const lv=onLeave(d,date,leaves); return (
-                    <button key={d.id} onClick={()=>toggleEvening(date,d.id)} disabled={lv&&!on} style={{ border:`1px solid ${on?d.color:C.line}`, background:on?d.color:"#fff", color:on?"#fff":(lv?C.muted:C.text), borderRadius:18, padding:"5px 12px", fontSize:12, fontWeight:600, opacity:lv&&!on?.5:1 }}>{sn(d.name)}{lv?" (إجازة)":""}</button>
+                    <button key={d.id} onClick={()=>toggleEvening(date,d.id)} disabled={lv&&!on} style={{ border:`1px solid ${on?d.color:C.line}`, background:on?d.color:"#fff", color:on?"#fff":(lv?C.muted:C.text), borderRadius:18, padding:"5px 12px", fontSize:12, fontWeight:600, opacity:lv&&!on?.5:1 }}>د.{d.name}{lv?" (إجازة)":""}</button>
                   ); })}
                 </div>
                 {docs.map(d=>{ const needs=[]; if(isClinic(getSlot(d,di,"am")))needs.push(["am","صباح",di]); if(isClinic(getSlot(d,di,"pm")))needs.push(["pm","ظهر",di]); if(isClinic(getSlot(d,nDi,"am")))needs.push(["nextAm","صباح الغد",nDi]);
                   if(clinicClosedOnLeave(d,date,leaves)||!needs.length) return null;
                   return <div key={d.id} style={{ background:"#f8fafc", borderRadius:10, padding:"9px 11px", marginBottom:6 }}>
-                    <div style={{ fontSize:11.5, color:C.sub, marginBottom:6 }}>تغطية عيادة د.{sn(d.name)}</div>
+                    <div style={{ fontSize:11.5, color:C.sub, marginBottom:6 }}>تغطية عيادة د.{d.name}</div>
                     {needs.map(([slot,lbl,sdi])=>{ const cur=(cv[slot]||[])[0]; const av=rankAvail(getAvailable(doctors,[d.id],sdi,slot==="nextAm"?nextWork(date):date,slot==="nextAm"?"am":slot,leaves,nightData,{},coverages)); return (
                       <div key={slot} style={{ display:"flex", gap:6, alignItems:"center", marginBottom:5 }}>
                         <span style={{ fontSize:11, color:C.muted, minWidth:64 }}>{lbl}</span>
@@ -914,7 +965,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                 {coverages.filter(c=>c.date===date).length>0 && <div style={{ marginTop:6 }}>
                   {coverages.filter(c=>c.date===date).map(c=>{ const cd=fd(c.coverDoctorId); const ad=c.absentId?fd(c.absentId):null; return cd&&(
                     <div key={c.id} style={{ display:"flex", alignItems:"center", gap:7, fontSize:12, background:"#f0fdfa", borderRadius:8, padding:"5px 9px", marginBottom:4 }}>
-                      <span style={{ color:C.primary, fontWeight:700 }}>🔄 {perAr(c.period)}: {cd.name}</span>{ad&&<span style={{ color:C.muted }}>بدل {ad.name}</span>}
+                      <span style={{ color:C.primary, fontWeight:700 }}>🔄 د.{cd.name} يغطّي عيادة{ad?` د.${ad.name}`:""} {perAr(c.period)}</span>
                       <span style={{ flex:1 }}/><button onClick={()=>removeCovIndiv(c.id)} style={{ ...sGhost, color:C.err, padding:"3px 9px" }}>حذف</button>
                     </div>
                   ); })}
@@ -1060,16 +1111,18 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
     const expectDirect = Math.round(directTarget(d) * (dates.length/5));
     return { d, sess, expectDirect };
   }).sort((a,b)=>(b.sess.direct+b.sess.supportive)-(a.sess.direct+a.sess.supportive));
+  const [sel,setSel] = useState(null);
+  const md = monthDays(now.getFullYear(), now.getMonth()).map(x=>x.date);
 
   return <div className="fade">
     <div style={{ ...card(), padding:"16px 18px", marginBottom:16 }}>
       <div style={{ fontSize:15, fontWeight:700 }}>📈 العبء الوظيفي — {MONTHS[now.getMonth()]} {now.getFullYear()}</div>
-      <div style={{ fontSize:11.5, color:C.sub, marginTop:3 }}>Direct (رعاية) مقابل المتوقّع · حسب سياسة CAPP 001</div>
+      <div style={{ fontSize:11.5, color:C.sub, marginTop:3 }}>اضغط أي طبيب لفتح ملفه الكامل · حسب سياسة CAPP 001</div>
     </div>
     {doctors.length===0 ? <Empty icon="📈" title="لا بيانات بعد" /> :
       <div className="grid-cards">{overview.map(({d,sess,expectDirect})=>{
         const pct = expectDirect?Math.min(100,Math.round(sess.direct/expectDirect*100)):0;
-        return <div key={d.id} style={{ ...card(), padding:14 }}>
+        return <div key={d.id} onClick={()=>setSel(d.id)} style={{ ...card(), padding:14, cursor:"pointer" }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
             <Avatar doc={d} size={32}/>
             <div style={{ flex:1 }}><div style={{ fontWeight:700, fontSize:13.5 }}>{d.name}</div><div style={{ fontSize:11, color:C.sub }}>{rankLabel(rankOf(d))}</div></div>
@@ -1082,6 +1135,36 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
           </div>
         </div>;
       })}</div>}
+    {sel!=null && (()=>{ const sd=fd(sel); if(!sd) return null;
+      const ev=md.filter(dt=>((nightData[dt]||{}).doctors||[]).includes(sd.id));
+      const cov=coverages.filter(c=>c.coverDoctorId===sd.id);
+      const myLeaves=leaves.filter(l=>l.doctorId===sd.id).sort((a,b)=>b.start.localeCompare(a.start));
+      const sess=doctorSessions(sd, md, nightData, coverages, leaves);
+      const LT={annual:"سنوية",sick:"مرضية",emergency:"طارئة",other:"أخرى"};
+      const stat=(lbl,val,col)=><div style={{ flex:"1 1 70px", background:"#f8fafc", borderRadius:10, padding:"10px", textAlign:"center" }}><div style={{ fontSize:20, fontWeight:800, color:col }}>{val}</div><div style={{ fontSize:10.5, color:C.sub, marginTop:3 }}>{lbl}</div></div>;
+      return <div onClick={()=>setSel(null)} style={{ position:"fixed", inset:0, background:"rgba(20,30,40,.5)", zIndex:100, display:"flex", alignItems:"flex-start", justifyContent:"center", padding:"20px 14px", overflowY:"auto" }}>
+        <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:18, maxWidth:560, width:"100%", padding:18, boxShadow:"0 20px 60px rgba(0,0,0,.3)" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:14 }}>
+            <Avatar doc={sd} size={48}/>
+            <div style={{ flex:1 }}><div style={{ fontSize:17, fontWeight:700 }}>د.{sd.name}</div><div style={{ fontSize:12, color:C.sub }}>{rankLabel(rankOf(sd))} · {POS_LABEL[sd.adminPosition||"none"]}</div></div>
+            <button onClick={()=>setSel(null)} style={{ ...sGhost, padding:"6px 12px" }}>✕</button>
+          </div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:16 }}>
+            {stat("رعاية",sess.direct,C.primary)}{stat("دعم",sess.supportive,C.sub)}{stat("مسائي",ev.length,"#7c3aed")}{stat("تغطيات",cov.length,"#0e7490")}{stat("إجازات",myLeaves.length,C.warn)}
+          </div>
+          <div style={{ fontSize:12.5, fontWeight:700, marginBottom:6 }}>🏥 جدول العيادات</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:4, marginBottom:16 }}>
+            {[0,1,2,3,4].map(di=><div key={di} style={{ border:`1px solid ${C.line2}`, borderRadius:8, overflow:"hidden", textAlign:"center" }}><div style={{ background:"#f8fafc", fontSize:9, fontWeight:700, color:C.sub, padding:"3px 0" }}>{DAYS[di]}</div>{["am","pm"].map(p=>{ const sl=getSlot(sd,di,p); const dir=DIRECT_SLOTS.includes(sl); return <div key={p} style={{ fontSize:9, padding:"4px 1px", color:dir?C.primary:C.muted, background:dir?"#f0fdfa":"#fff", fontWeight:dir?700:400 }}>{SLOT_AR[sl]||"—"}</div>; })}</div>)}
+          </div>
+          <div style={{ fontSize:12.5, fontWeight:700, marginBottom:4 }}>🌙 الدوام المسائي ({ev.length})</div>
+          <div style={{ fontSize:12, color:C.sub, marginBottom:16 }}>{ev.length?ev.map(dmy).join("، "):"—"}</div>
+          <div style={{ fontSize:12.5, fontWeight:700, marginBottom:4 }}>🔄 التغطيات المؤدّاة ({cov.length})</div>
+          <div style={{ marginBottom:16 }}>{cov.length?cov.map(c=>{ const ad=c.absentId?fd(c.absentId):null; return <div key={c.id} style={{ fontSize:11.5, color:C.sub, padding:"2px 0" }}>• {dmy(c.date)} {perAr(c.period)}{ad?` — عيادة د.${ad.name}`:""}</div>; }):<div style={{ fontSize:12, color:C.muted }}>—</div>}</div>
+          <div style={{ fontSize:12.5, fontWeight:700, marginBottom:4 }}>🏖 الإجازات ({myLeaves.length})</div>
+          <div>{myLeaves.length?myLeaves.map(l=><div key={l.id} style={{ fontSize:11.5, color:C.sub, padding:"2px 0" }}>• {LT[l.type]} · {dmy(l.start)} ← {dmy(l.end)}</div>):<div style={{ fontSize:12, color:C.muted }}>—</div>}</div>
+        </div>
+      </div>;
+    })()}
   </div>;
 }
 
