@@ -685,6 +685,20 @@ function Avatar({ doc, size=30 }) {
   return <span style={{ width:size, height:size, borderRadius:"50%", background:doc.color, color:"#fff", display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:size*0.34, fontWeight:700, flexShrink:0 }}>{sn(doc.name).slice(0,2)}</span>;
 }
 
+// ════════ Color-coded coverage picker ════════
+const ST_COLOR = s => s==="free" ? {bg:"#ecfdf5",bd:"#10b981",fg:"#047857",t:"متفرّغ"} : s==="warn" ? {bg:"#fffbeb",bd:"#f59e0b",fg:"#b45309",t:"التزام"} : {bg:"#fef2f2",bd:"#ef4444",fg:"#b91c1c",t:"إجازة"};
+function CoverPicker({ list, cur, onPick }) {
+  if(!list.length) return <div style={{ fontSize:11.5, color:"#be123c", fontWeight:600 }}>لا يوجد طبيب متاح</div>;
+  return <div style={{ display:"flex", gap:6, overflowX:"auto", paddingBottom:4 }}>
+    {list.map(a=>{ const c=ST_COLOR(a.status); const on=cur===a.doc.id; const dis=a.status==="leave"; return (
+      <button key={a.doc.id} disabled={dis} onClick={()=>!dis&&onPick(a.doc.id)} style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", gap:2, background:on?c.bd:c.bg, color:on?"#fff":c.fg, border:`1.5px solid ${c.bd}`, borderRadius:12, padding:"7px 12px", fontSize:11.5, fontWeight:700, opacity:dis?.6:1, cursor:dis?"not-allowed":"pointer", minWidth:78 }}>
+        <span style={{ whiteSpace:"nowrap" }}>د.{sn(a.doc.name)}</span>
+        <span style={{ fontSize:9, fontWeight:600 }}>{c.t} · عبء {a.load}</span>
+      </button>
+    ); })}
+  </div>;
+}
+
 // ════════════════════════════════ DASHBOARD ════════════════════════════════
 function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto }) {
   const now = new Date();
@@ -705,7 +719,7 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto })
   doctors.forEach(d=>{ let n=0; monthDays(now.getFullYear(),now.getMonth()).forEach(({date})=>{ if(((nightData[date]||{}).doctors||[]).includes(d.id)) n++; }); if(n>CAP_EVENING) alerts.push({ sev:"err", t:`د.${d.name} تجاوز حدّ المناوبات (${n}/${CAP_EVENING})`, go:"doctors" }); });
   monthDays(now.getFullYear(),now.getMonth()).forEach(({date,di})=>{ const onLv=doctors.filter(d=>onLeave(d,date,leaves)).length; if(onLv>=CAP_LEAVE_DAY) alerts.push({ sev:"warn", t:`تواجد منخفض ${dmy(date)} ${DAYS[di]} — ${onLv} في إجازة`, go:"leaves" }); });
   alerts.sort((a,b)=>(a.sev==="err"?0:1)-(b.sev==="err"?0:1));
-  const [dvView,setDvView] = useState("day");
+  const [dvView,setDvView] = useState("month");
   const [dvDate,setDvDate] = useState(today);
   const shiftDay = n => { const d=new Date(dvDate); d.setDate(d.getDate()+n); setDvDate(d.toISOString().split("T")[0]); };
   const dayInfo = date => { const nd=nightData[date]||{}; const cv=nd.coverages||{}; const evening=(nd.doctors||[]).map(id=>fd(id)?.name).filter(Boolean); const covs=[]; ["am","pm","nextAm"].forEach(slot=>{ (cv[slot]||[]).forEach(cid=>{ const c=fd(cid); if(c) covs.push(`${c.name} · ${slot==="nextAm"?"ص الغد":perAr(slot)}`); }); }); coverages.filter(c=>c.date===date).forEach(c=>{ const cd=fd(c.coverDoctorId); if(cd) covs.push(`${cd.name} · ${perAr(c.period)}`); }); const lv=doctors.filter(d=>onLeave(d,date,leaves)).map(d=>d.name); return {evening,covs,lv}; };
@@ -729,10 +743,31 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto })
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
         <div style={{ flex:1, fontSize:15, fontWeight:700 }}>🗓 الجدول</div>
         <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden" }}>
-          {[["day","يومي"],["week","أسبوعي"]].map(([k,l])=><button key={k} onClick={()=>setDvView(k)} style={{ padding:"7px 16px", border:"none", fontSize:12.5, fontWeight:700, background:dvView===k?C.primary:"#fff", color:dvView===k?"#fff":C.sub }}>{l}</button>)}
+          {[["month","شهري"],["day","يومي"],["week","أسبوعي"]].map(([k,l])=><button key={k} onClick={()=>setDvView(k)} style={{ padding:"7px 16px", border:"none", fontSize:12.5, fontWeight:700, background:dvView===k?C.primary:"#fff", color:dvView===k?"#fff":C.sub }}>{l}</button>)}
         </div>
       </div>
-      {dvView==="day" ? (
+      {dvView==="month" ? (()=>{ const mds=monthDays(now.getFullYear(),now.getMonth()); const off=mds.length?mds[0].di:0; return (
+        <div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:5, marginBottom:5 }}>
+            {DAYS.map(d=><div key={d} style={{ textAlign:"center", fontSize:10.5, fontWeight:700, color:C.sub }}>{d}</div>)}
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:5 }}>
+            {Array.from({length:off},(_,i)=><div key={"e"+i} />)}
+            {mds.map(({date,di,day})=>{ const info=dayInfo(date); const isT=date===today; return (
+              <div key={date} onClick={()=>{ setDvDate(date); setDvView("day"); }} style={{ minHeight:80, border:`1px solid ${isT?C.accent:C.line2}`, borderRadius:9, padding:"5px 6px", cursor:"pointer", background:isT?"#f0fdfa":"#fff" }}>
+                <div style={{ fontSize:11, fontWeight:800, color:isT?C.primary:C.sub, marginBottom:3 }}>{day}</div>
+                {info.evening.slice(0,2).map((n,i)=><div key={i} style={{ fontSize:8.5, color:"#7c3aed", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>🌙 {sn(n)}</div>)}
+                {info.evening.length>2 && <div style={{ fontSize:8, color:C.muted }}>+{info.evening.length-2}</div>}
+                <div style={{ display:"flex", gap:5, marginTop:2 }}>
+                  {info.covs.length>0 && <span style={{ fontSize:8, color:C.primaryD }}>🔄{info.covs.length}</span>}
+                  {info.lv.length>0 && <span style={{ fontSize:8, color:C.warn }}>🏖{info.lv.length}</span>}
+                </div>
+              </div>
+            ); })}
+          </div>
+          <div style={{ fontSize:10.5, color:C.muted, marginTop:8, textAlign:"center" }}>اضغط أي يوم لتفاصيله</div>
+        </div>
+      ); })() : dvView==="day" ? (
         <div>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
             <button onClick={()=>shiftDay(-1)} style={{ ...sGhost, width:34, padding:"6px 0" }}>‹</button>
@@ -789,6 +824,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const loadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>{ m[d.id]=doctorSessions(d, monthDates, nightData, coverages, leaves).direct; }); return m; }, [mo,doctors,nightData,coverages,leaves]);
   const rankAvail = arr => arr.filter(a=>a.status!=="leave").map(a=>({ ...a, load:loadMap[a.doc.id]||0 })).sort((a,b)=> (a.status==="free"?0:1)-(b.status==="free"?0:1) || a.load-b.load);
   const availForGap = g => rankAvail(getAvailable(doctors,[g.ownerId],g.di,g.date,g.period,leaves,nightData,{},coverages));
+  const pickList = (excludeId,di,date,period) => getAvailable(doctors,[excludeId],di,date,period,leaves,nightData,{},coverages).map(a=>({ ...a, load:loadMap[a.doc.id]||0 })).sort((a,b)=> (({free:0,warn:1,leave:2}[a.status])-({free:0,warn:1,leave:2}[b.status])) || (a.load-b.load));
 
   const ensureDay = date => setNight(nd=>nd[date]?nd:{...nd,[date]:{doctors:[],coverages:{am:[],pm:[],nextAm:[]},note:""}});
   const pushCov = cov => setCoverages(cs=>[...cs,{id:uid(),...cov}]);
@@ -806,7 +842,11 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
 
   const autoEvening = () => { const next=autoFill(mo.y,mo.m,doctors,leaves,nightData); setNight(()=>next); showToast("تم التوزيع التلقائي للمسائي"); };
   const [reqPerDay, setReqPerDay] = useState(2);
-  const autoFillCount = () => { setNight(nd=>{ const n={...nd}; const usage={}; doctors.forEach(d=>usage[d.id]=0); monthDates.forEach(dt=>((n[dt]||{}).doctors||[]).forEach(id=>{ usage[id]=(usage[id]||0)+1; })); days.forEach(({date,di})=>{ const cur=(n[date]||{}).doctors?[...n[date].doctors]:[]; const avail=doctors.filter(d=>!cur.includes(d.id)&&!onLeave(d,date,leaves)); avail.sort((a,b)=> (((b.nightDays||[]).includes(di)?1:0)-((a.nightDays||[]).includes(di)?1:0)) || (usage[a.id]-usage[b.id]) || ((loadMap[a.id]||0)-(loadMap[b.id]||0)) ); while(cur.length<reqPerDay && avail.length){ const pk=avail.shift(); cur.push(pk.id); usage[pk.id]++; } n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur }; }); return n; }); showToast(`تم إنشاء جدول ${reqPerDay} عيادة مسائية/يوم`); };
+  const [dayReq, setDayReq] = useState(()=>S.get("v2_dayreq")||{});
+  useEffect(()=>S.set("v2_dayreq",dayReq),[dayReq]);
+  const [showSetup, setShowSetup] = useState(false);
+  const setReq = (date,n) => setDayReq(r=>({ ...r, [date]:Math.max(0,n) }));
+  const autoFillCount = () => { setNight(nd=>{ const n={...nd}; const usage={}; doctors.forEach(d=>usage[d.id]=0); monthDates.forEach(dt=>((n[dt]||{}).doctors||[]).forEach(id=>{ usage[id]=(usage[id]||0)+1; })); days.forEach(({date,di})=>{ const req = (dayReq[date]!=null?dayReq[date]:reqPerDay); const cur=(n[date]||{}).doctors?[...n[date].doctors]:[]; const avail=doctors.filter(d=>!cur.includes(d.id)&&!onLeave(d,date,leaves)); avail.sort((a,b)=> (((b.nightDays||[]).includes(di)?1:0)-((a.nightDays||[]).includes(di)?1:0)) || (usage[a.id]-usage[b.id]) || ((loadMap[a.id]||0)-(loadMap[b.id]||0)) ); while(cur.length<req && avail.length){ const pk=avail.shift(); cur.push(pk.id); usage[pk.id]++; } n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur }; }); return n; }); showToast("تم إنشاء الجدول حسب إعداد الأيام"); };
 
   // individual coverage form
   const [cf, setCf] = useState({ absentId:"", date:"", period:"am", coverId:"" });
@@ -844,8 +884,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     <div style={{ ...card(), padding:14, marginBottom:14 }}>
       <div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:7 }}>أدوات الجدول</div>
       <div style={{ display:"flex", flexWrap:"wrap", gap:7, marginBottom:10 }}>
-        <label style={{ ...sGhost, display:"inline-flex", alignItems:"center", gap:6, cursor:"default" }}>عيادات/يوم<input type="number" min="1" max="10" value={reqPerDay} onChange={e=>setReqPerDay(Math.max(1,+e.target.value||1))} style={{ width:42, border:`1px solid ${C.line}`, borderRadius:7, padding:"4px 6px", textAlign:"center", fontSize:13 }} /></label>
-        <button onClick={autoFillCount} style={sBtn(C.primary)}>🗓 إنشاء جدول الشهر ({reqPerDay}/يوم)</button>
+        <button onClick={()=>setShowSetup(s=>!s)} style={sBtn(C.primary)}>🗓 إنشاء جدول مسائي</button>
         <button onClick={autoEvening} style={sGhost}>⚡ توزيع حسب الأيام الثابتة</button>
         <button onClick={coverAll} style={sBtn("#0e7490")}>✓ إكمال الناقص (التغطيات)</button>
         <button onClick={copyPrev} style={sGhost}>📋 نسخ الشهر السابق</button>
@@ -873,6 +912,27 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
       </div>
     </div>
 
+    {showSetup && (
+      <div style={{ ...card(), padding:16, marginBottom:14 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6, flexWrap:"wrap" }}>
+          <div style={{ flex:1, fontSize:14, fontWeight:700 }}>🗓 عدد العيادات المسائية لكل يوم</div>
+          <label style={{ fontSize:11.5, color:C.sub, display:"inline-flex", alignItems:"center", gap:6 }}>الافتراضي<input type="number" min="0" max="10" value={reqPerDay} onChange={e=>setReqPerDay(Math.max(0,+e.target.value||0))} style={{ width:44, border:`1px solid ${C.line}`, borderRadius:7, padding:"4px", textAlign:"center" }} /></label>
+        </div>
+        <div style={{ fontSize:11, color:C.muted, marginBottom:10 }}>حدّد لكل يوم العدد المطلوب ثم اضغط «إنشاء الجدول».</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:5, maxHeight:360, overflowY:"auto" }}>
+          {days.map(({date,di,day})=>{ const v=dayReq[date]!=null?dayReq[date]:reqPerDay; return (
+            <div key={date} style={{ display:"flex", alignItems:"center", gap:10, background:"#f8fafc", borderRadius:9, padding:"7px 11px" }}>
+              <span style={{ flex:1, fontSize:12.5, fontWeight:600 }}>{DAYS[di]} {day}/{mo.m+1}</span>
+              <button onClick={()=>setReq(date,v-1)} style={{ ...sGhost, width:32, padding:"4px 0" }}>−</button>
+              <span style={{ minWidth:26, textAlign:"center", fontWeight:800, color:C.primary }}>{v}</span>
+              <button onClick={()=>setReq(date,v+1)} style={{ ...sGhost, width:32, padding:"4px 0" }}>+</button>
+            </div>
+          ); })}
+        </div>
+        <button onClick={()=>{ autoFillCount(); setShowSetup(false); }} style={{ ...sBtn(C.primary), width:"100%", marginTop:12 }}>⚡ إنشاء الجدول حسب الإعداد</button>
+      </div>
+    )}
+
     {/* Section 1: resolution */}
     <div style={{ ...card(), padding:16, marginBottom:14 }}>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:gaps.length?12:0, flexWrap:"wrap" }}>
@@ -883,17 +943,13 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
         <div key={"c"+i} style={{ background:"#fff1f2", border:`1px solid #fecdd3`, borderRadius:10, padding:"9px 11px", marginBottom:7, fontSize:12.5, color:C.err, fontWeight:600 }}>⛔ {c.text}</div>
       ))}
       {gaps.length===0 && ana.conflicts.length===0 ? <div style={{ background:"#ecfdf5", color:C.ok, borderRadius:10, padding:"12px", textAlign:"center", fontWeight:700, fontSize:13 }}>✓ لا عيادات مكشوفة هذا الشهر</div> :
-        gaps.map(g=>{ const av=availForGap(g); const own=fd(g.ownerId); return (
+        gaps.map(g=>{ const av=availForGap(g); const pl=pickList(g.ownerId,g.di,g.date,g.period); const own=fd(g.ownerId); return (
           <div key={gapKey(g)} style={{ background:"#fffbf3", border:"1px solid #fde9c8", borderRadius:10, padding:"10px 11px", marginBottom:7 }}>
-            <div style={{ fontSize:12.5, marginBottom:7, color:"#7c5410" }}><b>{dmy(g.date)} {DAYS[g.di]}</b> — عيادة د.{own?own.name:"؟"} ({perAr(g.period)}) <span style={{ fontSize:10.5, color:C.muted }}>· {g.reason}</span></div>
-            {av.length===0 ? <div style={{ fontSize:12, color:C.err, fontWeight:600 }}>لا يوجد طبيب متاح</div> :
-              <div style={{ display:"flex", gap:6 }}>
-                <select value={picks[gapKey(g)]||""} onChange={e=>setPicks(p=>({...p,[gapKey(g)]:e.target.value}))} style={{ ...sIn, flex:1, padding:"8px 10px" }}>
-                  <option value="">⭐ الأنسب: د.{av[0].doc.name} · عبء {av[0].load}{av[0].status==="free"?" · متفرّغ":""}</option>
-                  {av.map(a=><option key={a.doc.id} value={a.doc.id}>د.{a.doc.name} — {a.status==="free"?"متفرّغ":"لديه التزام"} · عبء {a.load}</option>)}
-                </select>
-                <button onClick={()=>coverGap(g)} style={sBtn(C.primary)}>تغطية</button>
-              </div>}
+            <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:8 }}>
+              <div style={{ flex:1, fontSize:12.5, color:"#7c5410", minWidth:140 }}><b>{dmy(g.date)} {DAYS[g.di]}</b> — عيادة د.{own?own.name:"؟"} ({perAr(g.period)}) <span style={{ fontSize:10.5, color:C.muted }}>· {g.reason}</span></div>
+              {av.length>0 && <button onClick={()=>coverGap(g)} style={{ ...sBtn(C.primary), padding:"6px 12px", fontSize:11.5 }}>⭐ الأنسب: د.{sn(av[0].doc.name)}</button>}
+            </div>
+            <CoverPicker list={pl} cur={null} onPick={cid=>placeCover(g,cid)} />
           </div>
         ); })}
     </div>
@@ -951,13 +1007,14 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                   if(clinicClosedOnLeave(d,date,leaves)||!needs.length) return null;
                   return <div key={d.id} style={{ background:"#f8fafc", borderRadius:10, padding:"9px 11px", marginBottom:6 }}>
                     <div style={{ fontSize:11.5, color:C.sub, marginBottom:6 }}>تغطية عيادة د.{d.name}</div>
-                    {needs.map(([slot,lbl,sdi])=>{ const cur=(cv[slot]||[])[0]; const av=rankAvail(getAvailable(doctors,[d.id],sdi,slot==="nextAm"?nextWork(date):date,slot==="nextAm"?"am":slot,leaves,nightData,{},coverages)); return (
-                      <div key={slot} style={{ display:"flex", gap:6, alignItems:"center", marginBottom:5 }}>
-                        <span style={{ fontSize:11, color:C.muted, minWidth:64 }}>{lbl}</span>
-                        <select value={cur||""} onChange={e=>e.target.value?setCov(date,slot,e.target.value):clearCov(date,slot)} style={{ ...sIn, flex:1, padding:"7px 9px", fontSize:12.5 }}>
-                          <option value="">{av.length?`⭐ الأنسب: د.${av[0].doc.name} (عبء ${av[0].load})`:"— لا متاح —"}</option>
-                          {av.map(a=><option key={a.doc.id} value={a.doc.id}>د.{a.doc.name} — {a.status==="free"?"متفرّغ":"التزام"} · عبء {a.load}</option>)}
-                        </select>
+                    {needs.map(([slot,lbl,sdi])=>{ const cur=(cv[slot]||[])[0]; const pl=pickList(d.id, sdi, slot==="nextAm"?nextWork(date):date, slot==="nextAm"?"am":slot); return (
+                      <div key={slot} style={{ marginBottom:8 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
+                          <span style={{ fontSize:11, color:C.muted, minWidth:64 }}>{lbl}</span>
+                          {cur && <span style={{ fontSize:11.5, color:C.primaryD, fontWeight:700 }}>✓ د.{fd(cur)?.name}</span>}
+                          {cur && <button onClick={()=>clearCov(date,slot)} style={{ ...sGhost, color:C.err, padding:"2px 8px", fontSize:11 }}>إزالة</button>}
+                        </div>
+                        <CoverPicker list={pl} cur={cur} onPick={cid=>setCov(date,slot,cid)} />
                       </div>
                     ); })}
                   </div>;
