@@ -714,6 +714,24 @@ function Avatar({ doc, size=30 }) {
   return <span style={{ width:size, height:size, borderRadius:"50%", background:doc.color, color:"#fff", display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:size*0.34, fontWeight:700, flexShrink:0 }}>{sn(doc.name).slice(0,2)}</span>;
 }
 
+// ════════ Kebab menu (⋮ options) ════════
+function Kebab({ items }) {
+  const [open,setOpen] = useState(false);
+  return <span style={{ position:"relative", display:"inline-block" }}>
+    <button onClick={e=>{ e.stopPropagation(); setOpen(o=>!o); }} style={{ background:"none", border:"none", padding:"4px 9px", fontSize:19, color:C.muted, cursor:"pointer", lineHeight:1, borderRadius:8 }}>⋮</button>
+    {open && <>
+      <div onClick={e=>{ e.stopPropagation(); setOpen(false); }} style={{ position:"fixed", inset:0, zIndex:60 }} />
+      <div onClick={e=>e.stopPropagation()} style={{ position:"absolute", insetInlineEnd:0, top:"100%", marginTop:4, background:"#fff", border:`1px solid ${C.line}`, borderRadius:12, boxShadow:"0 10px 30px rgba(16,40,60,.15)", zIndex:61, minWidth:160, overflow:"hidden" }}>
+        {items.filter(Boolean).map((it,i,arr)=>(
+          <button key={i} onClick={e=>{ e.stopPropagation(); setOpen(false); it.onClick(); }} style={{ display:"flex", alignItems:"center", gap:9, width:"100%", textAlign:"start", background:"none", border:"none", borderBottom: i<arr.length-1?`1px solid ${C.line2}`:"none", padding:"11px 14px", fontSize:13, fontWeight:600, color:it.danger?C.err:C.text, cursor:"pointer" }}>
+            <span style={{ fontSize:14 }}>{it.icon}</span>{it.label}
+          </button>
+        ))}
+      </div>
+    </>}
+  </span>;
+}
+
 // ════════ Color-coded coverage picker ════════
 const ST_COLOR = s => s==="free" ? {bg:"#ecfdf5",bd:"#10b981",fg:"#047857",t:"متفرّغ"} : s==="warn" ? {bg:"#fffbeb",bd:"#f59e0b",fg:"#b45309",t:"التزام"} : {bg:"#fef2f2",bd:"#ef4444",fg:"#b91c1c",t:"إجازة"};
 const SLOT_COMMIT = { clinic:"عيادة", clinic_am:"عيادة", clinic_pm:"عيادة", virtual:"افتراضي", audit:"تدقيق", training:"تدريب", admin:"إداري" };
@@ -862,7 +880,10 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const removeCovIndiv = id => setCoverages(cs=>cs.filter(c=>c.id!==id));
   const eveningOwner = g => ((nightData[g.date]||{}).doctors||[]).includes(g.ownerId);
   const addNightCov = (date,slot,cid) => setNight(nd=>{ const d={...(nd[date]||{doctors:[],coverages:{}})}; const cv={am:[],pm:[],nextAm:[],...(d.coverages||{})}; if(!(cv[slot]||[]).includes(cid)) cv[slot]=[...(cv[slot]||[]),cid]; d.coverages=cv; return {...nd,[date]:d}; });
-  const placeCover = (g,cid) => { if(eveningOwner(g)&&(g.period==="am"||g.period==="pm")) addNightCov(g.date,g.period,cid); else pushCov({absentId:g.ownerId,date:g.date,period:g.period,coverDoctorId:cid,reason:"absence"}); logAudit&&logAudit(`تغطية عيادة د.${fd(g.ownerId)?.name||"؟"} — بـ د.${fd(cid)?.name||"؟"} (${perAr(g.period)} ${dmy(g.date)})`); };
+  const ownerCover = (date,ownerId,period) => { const c=coverages.find(x=>x.date===date&&x.absentId===ownerId&&x.period===period&&x.reason==="evening"); return c?c.coverDoctorId:undefined; };
+  const setOwnerCover = (date,ownerId,period,cid) => setCoverages(cs=>[...cs.filter(c=>!(c.date===date&&c.absentId===ownerId&&c.period===period&&c.reason==="evening")), {id:uid(),absentId:ownerId,date,period,coverDoctorId:cid,reason:"evening"}]);
+  const clearOwnerCover = (date,ownerId,period) => setCoverages(cs=>cs.filter(c=>!(c.date===date&&c.absentId===ownerId&&c.period===period&&c.reason==="evening")));
+  const placeCover = (g,cid) => { if(eveningOwner(g)&&(g.period==="am"||g.period==="pm")) setOwnerCover(g.date,g.ownerId,g.period,cid); else pushCov({absentId:g.ownerId,date:g.date,period:g.period,coverDoctorId:cid,reason:"absence"}); logAudit&&logAudit(`تغطية عيادة د.${fd(g.ownerId)?.name||"؟"} — بـ د.${fd(cid)?.name||"؟"} (${perAr(g.period)} ${dmy(g.date)})`); };
   const coverGap = g => { const av=availForGap(g); const s=picks[gapKey(g)]; const cid=s?+s:(av[0]?.doc?.id); if(!cid){showToast("لا يوجد متاح","warn");return;} placeCover(g,cid); showToast("تمت التغطية"); };
   const coverAll = () => { let n=0; const used={}; gaps.forEach(g=>{ const av=availForGap(g); const s=picks[gapKey(g)]; const key=g.date+"|"+g.period; const taken=used[key]||[]; const pick = s?+s : (av.find(a=>!taken.includes(a.doc.id))?.doc?.id); if(pick){ placeCover(g,pick); (used[key]=used[key]||[]).push(pick); n++; } }); showToast(n?`غُطّيت ${n} عيادة بالأنسب`:"لا يوجد متاح"); };
 
@@ -1040,14 +1061,14 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                   if(clinicClosedOnLeave(d,date,leaves)||!needs.length) return null;
                   return <div key={d.id} style={{ background:"#f8fafc", borderRadius:10, padding:"9px 11px", marginBottom:6 }}>
                     <div style={{ fontSize:11.5, color:C.sub, marginBottom:6 }}>تغطية عيادة د.{d.name}</div>
-                    {needs.map(([slot,lbl,sdi])=>{ const cur=(cv[slot]||[])[0]; const pl=pickList(d.id, sdi, slot==="nextAm"?nextWork(date):date, slot==="nextAm"?"am":slot); return (
+                    {needs.map(([slot,lbl,sdi])=>{ const isNext=slot==="nextAm"; const cur=isNext?((cv[slot]||[])[0]):ownerCover(date,d.id,slot); const pl=pickList(d.id, sdi, isNext?nextWork(date):date, isNext?"am":slot); return (
                       <div key={slot} style={{ marginBottom:8 }}>
                         <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
                           <span style={{ fontSize:11, color:C.muted, minWidth:64 }}>{lbl}</span>
                           {cur && <span style={{ fontSize:11.5, color:C.primaryD, fontWeight:700 }}>✓ د.{fd(cur)?.name}</span>}
-                          {cur && <button onClick={()=>clearCov(date,slot)} style={{ ...sGhost, color:C.err, padding:"2px 8px", fontSize:11 }}>إزالة</button>}
+                          {cur && <button onClick={()=>isNext?clearCov(date,slot):clearOwnerCover(date,d.id,slot)} style={{ ...sGhost, color:C.err, padding:"2px 8px", fontSize:11 }}>إزالة</button>}
                         </div>
-                        <CoverPicker list={pl} cur={cur} onPick={cid=>setCov(date,slot,cid)} />
+                        <CoverPicker list={pl} cur={cur} onPick={cid=>isNext?setCov(date,slot,cid):setOwnerCover(date,d.id,slot,cid)} />
                       </div>
                     ); })}
                   </div>;
@@ -1124,7 +1145,10 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
               <div style={{ fontWeight:700, fontSize:14 }}>{d.name}</div>
               <div style={{ fontSize:11.5, color:C.sub }}>{TYPES[l.type]} · {dmy(l.start)} ← {dmy(l.end)}</div>
             </div>
-            <button onClick={()=>del(l.id)} style={{ ...sGhost, color:C.err, padding:"6px 11px" }}>حذف</button>
+            <Kebab items={[
+              (l.clinicClosed===false) && { icon:"⚡", label:"تغطية تلقائية", onClick:()=>autoCoverLeave(l) },
+              { icon:"🗑", label:"حذف الإجازة", danger:true, onClick:()=>{ if(confirm("حذف هذه الإجازة؟")) del(l.id); } },
+            ]} />
           </div>
           {/* weekly schedule */}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:4, marginBottom:10 }}>
@@ -1166,6 +1190,10 @@ function DoctorsPage({ doctors, leaves, today, fd, setDoctors, showToast, logAud
           <div onClick={()=>setOpen(isOpen?null:d.id)} style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px", cursor:"pointer" }}>
             <Avatar doc={d} size={34}/>
             <div style={{ flex:1 }}><div style={{ fontWeight:700, fontSize:14 }}>{d.name}</div><div style={{ fontSize:11, color:C.sub }}>{rankLabel(rankOf(d))} · هدف الرعاية {directTarget(d)}</div></div>
+            <Kebab items={[
+              { icon:"✏️", label:isOpen?"إغلاق التعديل":"تعديل", onClick:()=>setOpen(isOpen?null:d.id) },
+              { icon:"🗑", label:"حذف الطبيب", danger:true, onClick:()=>{ if(confirm(`حذف د.${d.name}؟`)) del(d.id); } },
+            ]} />
             <span style={{ color:C.muted }}>{isOpen?"▲":"▼"}</span>
           </div>
           {isOpen && <div style={{ padding:"4px 14px 14px", borderTop:`1px solid ${C.line2}` }}>
@@ -1480,6 +1508,122 @@ function AuditPage({ audit }) {
   </div>;
 }
 
+// ════════════════════════════════ USERS / RBAC ════════════════════════════════
+const ROLE_AR = { head:"رئيس القسم", deputy:"نائب رئيس القسم", doctor:"طبيب" };
+
+function LoginScreen({ users, onLogin }) {
+  const [u,setU] = useState("");
+  const [p,setP] = useState("");
+  const [err,setErr] = useState("");
+  const go = () => { const f=users.find(x=>x.username.trim().toLowerCase()===u.trim().toLowerCase() && String(x.pin)===String(p)); if(f){ setErr(""); onLogin(f); } else setErr("اسم المستخدم أو الرمز غير صحيح"); };
+  return <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:`linear-gradient(135deg,${C.primaryD},${C.primary})`, padding:20 }}>
+    <div style={{ background:"#fff", borderRadius:20, padding:"30px 26px", width:"100%", maxWidth:360, boxShadow:"0 20px 60px rgba(0,0,0,.25)" }}>
+      <div style={{ textAlign:"center", marginBottom:22 }}>
+        <div style={{ width:58, height:58, borderRadius:16, background:`linear-gradient(135deg,${C.primary},${C.accent})`, color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, fontWeight:800, margin:"0 auto 12px" }}>ط</div>
+        <div style={{ fontSize:18, fontWeight:800, color:C.text }}>نظام إدارة التغطيات</div>
+        <div style={{ fontSize:12, color:C.sub, marginTop:3 }}>تسجيل الدخول</div>
+      </div>
+      <label style={label}>اسم المستخدم</label>
+      <input value={u} onChange={e=>setU(e.target.value)} style={{ ...sIn, marginBottom:12 }} placeholder="اسم المستخدم" />
+      <label style={label}>الرمز السري</label>
+      <input value={p} onChange={e=>setP(e.target.value)} type="password" inputMode="numeric" style={{ ...sIn, marginBottom:6 }} placeholder="••••" onKeyDown={e=>e.key==="Enter"&&go()} />
+      {err && <div style={{ color:C.err, fontSize:12, margin:"4px 0 8px" }}>{err}</div>}
+      <button onClick={go} style={{ ...sBtn(C.primary), width:"100%", marginTop:10, padding:"12px" }}>دخول</button>
+    </div>
+  </div>;
+}
+
+function UsersPage({ users, setUsers, doctors, currentUser, showToast }) {
+  const [nf,setNf] = useState({ username:"", pin:"", role:"doctor", doctorId:"" });
+  const set=(k,v)=>setNf(p=>({ ...p, [k]:v }));
+  const add = () => {
+    if(!nf.username.trim()||!nf.pin.trim()){ showToast("أكمل الحقول","warn"); return; }
+    if(users.some(u=>u.username.trim().toLowerCase()===nf.username.trim().toLowerCase())){ showToast("اسم المستخدم موجود","err"); return; }
+    if(nf.role==="doctor"&&!nf.doctorId){ showToast("اختر الطبيب المرتبط","warn"); return; }
+    setUsers(us=>[...us,{ id:uid(), username:nf.username.trim(), pin:String(nf.pin).trim(), role:nf.role, doctorId:nf.role==="doctor"?+nf.doctorId:null }]);
+    setNf({ username:"", pin:"", role:"doctor", doctorId:"" }); showToast("تم إنشاء المستخدم");
+  };
+  const del = id => { if(id===currentUser.id){ showToast("لا يمكن حذف حسابك الحالي","err"); return; } if(confirm("حذف هذا المستخدم؟")) setUsers(us=>us.filter(u=>u.id!==id)); };
+  const linked = id => { const d=doctors.find(x=>x.id===id); return d?("د."+d.name):"—"; };
+  return <div className="fade">
+    <div style={{ ...card(), padding:16, marginBottom:14 }}>
+      <div style={{ fontSize:15, fontWeight:700 }}>👥 المستخدمون والصلاحيات</div>
+      <div style={{ fontSize:11.5, color:C.sub, marginTop:3 }}>رئيس القسم ونائبه: وصول كامل وتعديل · الطبيب: حسابه فقط (عرض)</div>
+    </div>
+    <div style={{ ...card(), padding:16, marginBottom:14 }}>
+      <div style={{ fontWeight:700, fontSize:13, marginBottom:10 }}>➕ إنشاء مستخدم</div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+        <div><label style={label}>اسم المستخدم</label><input value={nf.username} onChange={e=>set("username",e.target.value)} style={sIn} /></div>
+        <div><label style={label}>الرمز السري</label><input value={nf.pin} onChange={e=>set("pin",e.target.value)} style={sIn} /></div>
+        <div><label style={label}>الصلاحية</label><select value={nf.role} onChange={e=>set("role",e.target.value)} style={sIn}><option value="doctor">طبيب (حسابه فقط)</option><option value="deputy">نائب رئيس القسم</option><option value="head">رئيس القسم</option></select></div>
+        {nf.role==="doctor" && <div><label style={label}>الطبيب المرتبط</label><select value={nf.doctorId} onChange={e=>set("doctorId",e.target.value)} style={sIn}><option value="">— اختر —</option>{doctors.map(d=><option key={d.id} value={d.id}>د.{d.name}</option>)}</select></div>}
+      </div>
+      <button onClick={add} style={{ ...sBtn(C.primary), width:"100%" }}>إنشاء</button>
+    </div>
+    <div style={{ ...card(), padding:14 }}>
+      {users.map(u=>(
+        <div key={u.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 2px", borderBottom:`1px solid ${C.line2}` }}>
+          <div style={{ width:34, height:34, borderRadius:10, background:u.role==="doctor"?"#e0f2fe":"#dcfce7", color:u.role==="doctor"?"#0369a1":"#15803d", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>{u.role==="doctor"?"🩺":"🛡"}</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontWeight:700, fontSize:13.5 }}>{u.username} {u.id===currentUser.id && <span style={{ fontSize:10, color:C.primary }}>(أنت)</span>}</div>
+            <div style={{ fontSize:11, color:C.sub }}>{ROLE_AR[u.role]}{u.role==="doctor"?(" · "+linked(u.doctorId)):""}</div>
+          </div>
+          <Kebab items={[ { icon:"🗑", label:"حذف المستخدم", danger:true, onClick:()=>del(u.id) } ]} />
+        </div>
+      ))}
+    </div>
+  </div>;
+}
+
+function DoctorPortal({ doctor, doctors, leaves, nightData, coverages, today, fd }) {
+  const now = new Date(today);
+  const md = monthDays(now.getFullYear(), now.getMonth()).map(x=>x.date);
+  const s = doctorSessions(doctor, md, nightData, coverages, leaves);
+  const myLeaves = leaves.filter(l=>l.doctorId===doctor.id);
+  const evDates = Object.entries(nightData).filter(([dt,nd])=>(nd.doctors||[]).includes(doctor.id) && dt.slice(0,7)===`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`).map(([dt])=>dt).sort();
+  const myCovs = [];
+  coverages.filter(c=>c.coverDoctorId===doctor.id).forEach(c=>myCovs.push({ date:c.date, period:c.period, ownerId:c.absentId }));
+  Object.entries(nightData).forEach(([dt,nd])=>{ const cv=nd.coverages||{}; ["am","pm","nextAm"].forEach(sl=>{ (cv[sl]||[]).forEach(id=>{ if(id===doctor.id) myCovs.push({ date:dt, period:sl, ownerId:null }); }); }); });
+  myCovs.sort((a,b)=>a.date.localeCompare(b.date));
+  const perTxt = p => p==="am"?"صباحاً":p==="pm"?"ظهراً":p==="nextAm"?"صباح الغد":"مساءً";
+  const tiles = [["رعاية",s.care,C.primary],["مسائي",s.evening,"#7c3aed"],["تغطيات",s.covers,"#0e7490"],["إجازات",myLeaves.length,C.warn]];
+  return <div className="fade">
+    <div style={{ ...card(), padding:"18px 18px", marginBottom:14, display:"flex", alignItems:"center", gap:12 }}>
+      <Avatar doc={doctor} size={48}/>
+      <div><div style={{ fontSize:17, fontWeight:800 }}>د.{doctor.name}</div><div style={{ fontSize:12, color:C.sub }}>{rankLabel(rankOf(doctor))} · هدف الرعاية {directTarget(doctor)} · {MONTHS[now.getMonth()]}</div></div>
+    </div>
+    <div style={{ display:"flex", flexWrap:"wrap", gap:10, marginBottom:14 }}>
+      {tiles.map(([l,v,col])=><div key={l} style={{ ...card(), flex:"1 1 70px", padding:"14px 8px", textAlign:"center" }}><div style={{ fontSize:24, fontWeight:800, color:col }}>{v}</div><div style={{ fontSize:11, color:C.sub, marginTop:3 }}>{l}</div></div>)}
+    </div>
+    <div style={{ ...card(), padding:16, marginBottom:14 }}>
+      <div style={{ fontWeight:700, fontSize:13.5, marginBottom:10 }}>🏥 جدول العيادات</div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:5 }}>
+        {DAYS.map((dn,di)=>(<div key={di} style={{ textAlign:"center" }}>
+          <div style={{ fontSize:10.5, color:C.sub, fontWeight:700, marginBottom:4 }}>{dn}</div>
+          {["am","pm"].map(p=>{ const sl=(doctor.sched?.[di]?.[p])||""; const st=slotStyle(sl); return <div key={p} style={{ background:st.bg, color:st.fg, fontSize:10.5, fontWeight:700, borderRadius:7, padding:"6px 2px", marginBottom:3 }}>{sl?st.t:"—"}</div>; })}
+        </div>))}
+      </div>
+    </div>
+    <div style={{ ...card(), padding:16, marginBottom:14 }}>
+      <div style={{ fontWeight:700, fontSize:13.5, marginBottom:8 }}>🌙 الدوام المسائي ({evDates.length})</div>
+      {evDates.length? <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>{evDates.map(dt=><span key={dt} style={{ background:"#ede9fe", color:"#6d28d9", fontSize:11.5, fontWeight:700, borderRadius:8, padding:"5px 10px" }}>{dmy(dt)}</span>)}</div> : <div style={{ fontSize:12, color:C.muted }}>—</div>}
+    </div>
+    <div style={{ ...card(), padding:16, marginBottom:14 }}>
+      <div style={{ fontWeight:700, fontSize:13.5, marginBottom:8 }}>🔄 التغطيات المؤدّاة ({myCovs.length})</div>
+      {myCovs.length? myCovs.map((c,i)=>(<div key={i} style={{ display:"flex", gap:8, padding:"6px 0", borderBottom:`1px solid ${C.line2}`, fontSize:12.5 }}>
+        <span style={{ color:C.muted, minWidth:78 }}>{dmy(c.date)}</span>
+        <span style={{ flex:1 }}>{c.ownerId?`عيادة د.${fd(c.ownerId)?.name||""}`:"تغطية عيادة"} · {perTxt(c.period)}</span>
+      </div>)) : <div style={{ fontSize:12, color:C.muted }}>—</div>}
+    </div>
+    <div style={{ ...card(), padding:16 }}>
+      <div style={{ fontWeight:700, fontSize:13.5, marginBottom:8 }}>🏖 الإجازات ({myLeaves.length})</div>
+      {myLeaves.length? myLeaves.map(l=>(<div key={l.id} style={{ display:"flex", gap:8, padding:"6px 0", borderBottom:`1px solid ${C.line2}`, fontSize:12.5 }}>
+        <span style={{ flex:1 }}>{dmy(l.start)} ← {dmy(l.end)}</span>
+      </div>)) : <div style={{ fontSize:12, color:C.muted }}>—</div>}
+    </div>
+  </div>;
+}
+
 // ════════════════════════════════ APP ════════════════════════════════
 function App() {
   const [doctors, setDoctors]     = useState(()=>{ const st=S.get("v2_docs"); return (st&&st.length)?st:SEED_DOCTORS; });
@@ -1488,6 +1632,8 @@ function App() {
   const [coverages, setCoverages] = useState(()=>S.get("v2_cov")||[]);
   const [settings, setSettings]   = useState(()=>S.get("v2_settings")||{});
   const [audit, setAudit]         = useState(()=>S.get("v2_audit")||[]);
+  const [users, setUsers]         = useState(()=>{ const u=S.get("v2_users"); return (u&&u.length)?u:[{ id:uid(), username:"admin", pin:"0000", role:"head", doctorId:null }]; });
+  const [session, setSession]     = useState(()=>S.get("v2_session")||null);
   const [page, setPage]           = useState("dashboard");
   const [toast, setToast]         = useState(null);
   useEffect(()=>S.set("v2_docs",doctors),[doctors]);
@@ -1496,23 +1642,19 @@ function App() {
   useEffect(()=>S.set("v2_cov",coverages),[coverages]);
   useEffect(()=>S.set("v2_settings",settings),[settings]);
   useEffect(()=>S.set("v2_audit",audit),[audit]);
+  useEffect(()=>S.set("v2_users",users),[users]);
+  useEffect(()=>S.set("v2_session",session),[session]);
   const logAudit = action => setAudit(a=>[{ id:uid(), at:Date.now(), action },...a].slice(0,500));
-  useEffect(()=>{
-    let changed=false; const nn={...nightData}; const keep=[];
-    coverages.forEach(c=>{
-      const evOwner = c.absentId && (nn[c.date]?.doctors||[]).includes(c.absentId) && (c.period==="am"||c.period==="pm");
-      if(evOwner){ const d={...(nn[c.date]||{doctors:[],coverages:{}})}; const cv={am:[],pm:[],nextAm:[],...(d.coverages||{})}; if(!(cv[c.period]||[]).includes(c.coverDoctorId)) cv[c.period]=[...(cv[c.period]||[]),c.coverDoctorId]; d.coverages=cv; nn[c.date]=d; changed=true; }
-      else keep.push(c);
-    });
-    if(changed){ setNight(()=>nn); setCoverages(()=>keep); }
-  }, []);
   const today = new Date().toISOString().split("T")[0];
   const fd = id => doctors.find(d=>d.id===id);
   const showToast = (msg,kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null),2200); };
+  const currentUser = users.find(u=>u.id===(session&&session.userId)) || null;
+  const role = currentUser && currentUser.role;
+  const logout = () => { setSession(null); setPage("dashboard"); };
 
-  const TABS = [["dashboard","الرئيسية","◧"],["engine","الدوام والتغطيات","🌙"],["leaves","الإجازات","🏖"],["doctors","الأطباء","👨‍⚕️"],["stats","الإحصائيات","📈"],["fairness","مؤشر مساهمة الأطباء","⚖️"],["reports","التقارير","📊"],["alerts","التنبيهات","🔔"],["audit","سجل النشاط","📜"],["settings","الإعدادات","⚙️"]];
+  const TABS = [["dashboard","الرئيسية","◧"],["engine","الدوام والتغطيات","🌙"],["leaves","الإجازات","🏖"],["doctors","الأطباء","👨‍⚕️"],["stats","الإحصائيات","📈"],["fairness","مؤشر مساهمة الأطباء","⚖️"],["reports","التقارير","📊"],["alerts","التنبيهات","🔔"],["audit","سجل النشاط","📜"],["settings","الإعدادات","⚙️"], ...(role==="head"?[["users","المستخدمون","👥"]]:[])];
   const cur = TABS.find(t=>t[0]===page);
-  const subt = { dashboard:"نظرة عامة وتنبيهات", engine:"المحرك — حلول · مسائي · تغطيات", leaves:"تسجيل الإجازات وأثرها", doctors:"بيانات الأطباء وجداولهم", stats:"العبء الوظيفي", fairness:"ترتيب الأطباء حسب المساهمة", reports:"تقارير شهرية قابلة للطباعة", alerts:"تعارضات وحدود وإجازات", audit:"توثيق العمليات", settings:"الحدود والقواعد" };
+  const subt = { dashboard:"نظرة عامة وتنبيهات", engine:"المحرك — حلول · مسائي · تغطيات", leaves:"تسجيل الإجازات وأثرها", doctors:"بيانات الأطباء وجداولهم", stats:"العبء الوظيفي", fairness:"ترتيب الأطباء حسب المساهمة", reports:"تقارير شهرية قابلة للطباعة", alerts:"تعارضات وحدود وإجازات", audit:"توثيق العمليات", settings:"الحدود والقواعد", users:"حسابات المستخدمين والصلاحيات" };
   const pageEl = <>
       {page==="dashboard" && <Dashboard doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} onGoto={setPage} />}
       {page==="engine" && <EnginePage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setNight={setNight} setCoverages={setCoverages} showToast={showToast} logAudit={logAudit} />}
@@ -1524,7 +1666,21 @@ function App() {
       {page==="alerts" && <AlertsPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} settings={settings} onGoto={setPage} />}
       {page==="audit" && <AuditPage audit={audit} />}
       {page==="settings" && <SettingsPage settings={settings} setSettings={setSettings} showToast={showToast} />}
+      {page==="users" && role==="head" && <UsersPage users={users} setUsers={setUsers} doctors={doctors} currentUser={currentUser} showToast={showToast} />}
   </>;
+
+  // ---- Auth gating ----
+  if(!currentUser) return <LoginScreen users={users} onLogin={u=>{ setSession({userId:u.id}); setPage("dashboard"); }} />;
+  if(role==="doctor"){ const myDoc=doctors.find(d=>d.id===currentUser.doctorId); return (
+    <div style={{ maxWidth:780, margin:"0 auto", minHeight:"100vh", background:C.bg }}>
+      <div style={{ background:`linear-gradient(135deg,${C.primaryD},${C.primary})`, color:"#fff", padding:"15px 18px", display:"flex", alignItems:"center", gap:10 }}>
+        <div style={{ flex:1 }}><div style={{ fontSize:16, fontWeight:800 }}>حسابي</div><div style={{ fontSize:11.5, opacity:.85 }}>جدولك · تغطياتك · إحصائياتك</div></div>
+        <button onClick={logout} style={{ background:"rgba(255,255,255,.2)", color:"#fff", border:"none", borderRadius:9, padding:"7px 15px", fontWeight:700, fontSize:12.5, cursor:"pointer" }}>خروج</button>
+      </div>
+      <div style={{ padding:"16px 14px 40px" }}>{ myDoc ? <DoctorPortal doctor={myDoc} doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} /> : <Empty icon="⚠️" title="لا يوجد طبيب مرتبط بحسابك" hint="تواصل مع رئيس القسم" /> }</div>
+      <Toast toast={toast} />
+    </div>
+  ); }
 
   return <div className="shell">
     <aside className="sidebar">
@@ -1536,12 +1692,20 @@ function App() {
         <button key={id} className={"navbtn"+(page===id?" active":"")} onClick={()=>setPage(id)}><span className="ic">{ic}</span>{lbl}</button>
       ))}
       <div style={{ flex:1 }} />
-      <div style={{ fontSize:11, color:C.muted, textAlign:"center", padding:"10px 0" }}>{doctors.length} طبيب · {MONTHS[new Date().getMonth()]}</div>
+      <div style={{ padding:"10px 6px", borderTop:`1px solid ${C.line2}` }}>
+        <div style={{ fontSize:12.5, fontWeight:700 }}>{currentUser.username}</div>
+        <div style={{ fontSize:10.5, color:C.sub, marginBottom:7 }}>{ROLE_AR[role]}</div>
+        <button onClick={logout} style={{ ...sGhost, width:"100%", padding:"7px", fontSize:12 }}>تسجيل الخروج</button>
+      </div>
+      <div style={{ fontSize:11, color:C.muted, textAlign:"center", padding:"6px 0" }}>{doctors.length} طبيب · {MONTHS[new Date().getMonth()]}</div>
     </aside>
     <div className="main">
-      <div className="topbar">
-        <h1>{cur?cur[2]+" "+cur[1]:""}</h1>
-        <p>{subt[page]}</p>
+      <div className="topbar" style={{ display:"flex", alignItems:"center", gap:10 }}>
+        <div style={{ flex:1 }}>
+          <h1>{cur?cur[2]+" "+cur[1]:""}</h1>
+          <p>{subt[page]}</p>
+        </div>
+        <button onClick={logout} style={{ ...sGhost, padding:"7px 13px", fontSize:12.5, whiteSpace:"nowrap" }}>خروج</button>
       </div>
       <div className="content">{pageEl}</div>
     </div>
