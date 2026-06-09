@@ -752,9 +752,9 @@ const SLOT_COMMIT = { clinic:"عيادة", clinic_am:"عيادة", clinic_pm:"ع
 function CoverPicker({ list, cur, onPick }) {
   if(!list.length) return <div style={{ fontSize:11.5, color:"#be123c", fontWeight:600 }}>لا يوجد طبيب متاح</div>;
   return <div style={{ display:"flex", gap:6, overflowX:"auto", paddingBottom:4 }}>
-    {list.map(a=>{ const c=ST_COLOR(a.status); const on=cur===a.doc.id; const dis=a.status==="leave"; const lbl=a.status==="warn"&&a.commit?`التزام (${a.commit})`:c.t; return (
-      <button key={a.doc.id} disabled={dis} onClick={()=>!dis&&onPick(a.doc.id)} style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", gap:2, background:on?c.bd:c.bg, color:on?"#fff":c.fg, border:`1.5px solid ${c.bd}`, borderRadius:12, padding:"7px 12px", fontSize:11.5, fontWeight:700, opacity:dis?.6:1, cursor:dis?"not-allowed":"pointer", minWidth:84 }}>
-        <span style={{ whiteSpace:"nowrap" }}>د.{sn(a.doc.name)}</span>
+    {list.map(a=>{ const c=ST_COLOR(a.status); const on=cur===a.doc.id; const lbl=a.status==="warn"&&a.commit?`التزام (${a.commit})`:c.t; return (
+      <button key={a.doc.id} onClick={()=>onPick(a.doc.id)} title={"د."+a.doc.name} style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", gap:2, background:on?c.bd:c.bg, color:on?"#fff":c.fg, border:`1.5px solid ${c.bd}`, borderRadius:12, padding:"7px 13px", fontSize:11.5, fontWeight:700, cursor:"pointer", minWidth:96 }}>
+        <span style={{ whiteSpace:"nowrap" }}>د. {a.doc.name}</span>
         <span style={{ fontSize:9, fontWeight:600, whiteSpace:"nowrap" }}>{lbl} · عبء {a.load}</span>
       </button>
     ); })}
@@ -856,7 +856,7 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto })
             {mds.map(({date,di,day})=>{ const info=dayInfo(date); const isT=date===today; return (
               <div key={date} onClick={()=>{ setDvDate(date); setDvView("day"); }} style={{ minHeight:80, border:`1px solid ${isT?C.accent:C.line2}`, borderRadius:9, padding:"5px 6px", cursor:"pointer", background:isT?"#f0fdfa":"#fff" }}>
                 <div style={{ fontSize:11, fontWeight:800, color:isT?C.primary:C.sub, marginBottom:3 }}>{day}</div>
-                {info.evening.slice(0,2).map((n,i)=><div key={i} style={{ fontSize:8.5, color:"#7c3aed", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>🌙 {sn(n)}</div>)}
+                {info.evening.slice(0,2).map((n,i)=><div key={i} style={{ fontSize:8.5, color:"#7c3aed", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>🌙 {n}</div>)}
                 {info.evening.length>2 && <div style={{ fontSize:8, color:C.muted }}>+{info.evening.length-2}</div>}
                 <div style={{ display:"flex", gap:5, marginTop:2 }}>
                   {info.covs.length>0 && <span style={{ fontSize:8, color:C.primaryD }}>🔄{info.covs.length}</span>}
@@ -1053,7 +1053,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           <div key={gapKey(g)} style={{ background:"#fffbf3", border:"1px solid #fde9c8", borderRadius:10, padding:"10px 11px", marginBottom:7 }}>
             <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:8 }}>
               <div style={{ flex:1, fontSize:12.5, color:"#7c5410", minWidth:140 }}><b>{dmy(g.date)} {DAYS[g.di]}</b> — عيادة د.{own?own.name:"؟"} ({perAr(g.period)}) <span style={{ fontSize:10.5, color:C.muted }}>· {g.reason}</span></div>
-              {av.length>0 && <button onClick={()=>coverGap(g)} style={{ ...sBtn(C.primary), padding:"6px 12px", fontSize:11.5 }}>⭐ الأنسب: د.{sn(av[0].doc.name)}</button>}
+              {av.length>0 && <button onClick={()=>coverGap(g)} style={{ ...sBtn(C.primary), padding:"6px 12px", fontSize:11.5 }}>⭐ الأنسب: د. {av[0].doc.name}</button>}
             </div>
             <CoverPicker list={pl} cur={null} onPick={cid=>placeCover(g,cid)} />
           </div>
@@ -1078,7 +1078,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                   <span style={{ fontSize:11, fontWeight:800, color:isT?C.primary:C.sub }}>{day}</span>
                   {bad && <span style={{ width:7, height:7, borderRadius:"50%", background:r.conflicts.length?C.err:C.warn }} />}
                 </div>
-                {docs.length?docs.map(d=><div key={d.id} style={{ display:"flex", alignItems:"center", gap:4, background:d.color+"14", borderRadius:7, padding:"2px 5px", marginBottom:3 }}><span style={{ width:13, height:13, borderRadius:"50%", background:d.color, color:"#fff", fontSize:6.5, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center" }}>{sn(d.name).slice(0,2)}</span><span style={{ fontSize:9, fontWeight:700, color:d.color, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{sn(d.name)}</span></div>):<div style={{ fontSize:13, color:"#dbe3ee", textAlign:"center", paddingTop:6 }}>·</div>}
+                {docs.length?docs.map(d=><div key={d.id} style={{ display:"flex", alignItems:"center", gap:4, background:d.color+"14", borderRadius:7, padding:"2px 5px", marginBottom:3 }}><span style={{ width:13, height:13, borderRadius:"50%", background:d.color, color:"#fff", fontSize:6.5, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center" }}>{sn(d.name).slice(0,2)}</span><span style={{ fontSize:9, fontWeight:700, color:d.color, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{d.name}</span></div>):<div style={{ fontSize:13, color:"#dbe3ee", textAlign:"center", paddingTop:6 }}>·</div>}
               </div>
             ); })}
           </div>
@@ -1162,6 +1162,8 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
   const del = id => setLeaves(ls=>ls.filter(l=>l.id!==id));
   const autoCoverLeave = l => { const d=fd(l.doctorId); if(!d) return; const md=monthDays(+l.start.split("-")[0],+l.start.split("-")[1]-1).map(x=>x.date); const load=id=>doctorSessions(doctors.find(x=>x.id===id),md,nightData,coverages,leaves).direct; const adds=[]; const used={}; const s=new Date(l.start),e=new Date(l.end); for(let dt=new Date(s);dt<=e;dt.setDate(dt.getDate()+1)){ const wi=dt.getDay(); if(wi>4) continue; const ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; ["am","pm"].forEach(p=>{ if(!isClinic(getSlot(d,wi,p))) return; if(coverages.some(c=>c.date===ds&&c.period===p&&c.absentId===d.id)) return; const av=getAvailable(doctors,[d.id],wi,ds,p,leaves,nightData,{},coverages).filter(a=>a.status!=="leave").map(a=>({a,L:load(a.doc.id)})).sort((x,y)=>(x.a.status==="free"?0:1)-(y.a.status==="free"?0:1)||x.L-y.L); const key=ds+"|"+p; const taken=used[key]||[]; const pick=av.find(x=>!taken.includes(x.a.doc.id)); if(pick){ adds.push({id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:pick.a.doc.id,reason:"leave"}); (used[key]=used[key]||[]).push(pick.a.doc.id); } }); } if(!adds.length){ showToast("لا عيادات مكشوفة أو لا متاح","warn"); return; } setCoverages(cs=>[...cs,...adds]); showToast(`تمت تغطية ${adds.length} عيادة بالأنسب`); };
   const sorted = leaves.slice().sort((a,b)=>b.start.localeCompare(a.start));
+  const [open,setOpen] = useState(()=>new Set());
+  const toggle = id => setOpen(o=>{ const n=new Set(o); n.has(id)?n.delete(id):n.add(id); return n; });
 
   return <div className="fade">
     <div style={{ ...card(), padding:16, marginBottom:16 }}>
@@ -1190,33 +1192,41 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
           coverages.forEach(cv=>{ if(cv.date===ds&&cv.coverDoctorId===d.id) carried.push({ds,p:cv.period}); });
         }
         const uncovered = l.clinicClosed!==false?0:clinics.filter(c=>!c.cov).length;
-        return <div key={l.id} style={{ ...card(), padding:14 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
-            <Avatar doc={d} size={34}/>
-            <div style={{ flex:1 }}>
+        const isOpen = open.has(l.id);
+        const chip = l.clinicClosed!==false ? {t:"العيادة مغلقة", bg:"#eef2f7", fg:C.sub}
+          : uncovered>0 ? {t:`مكشوف ${uncovered}`, bg:"#fef2f2", fg:C.err}
+          : {t:"مغطّاة ✓", bg:"#ecfdf5", fg:C.ok};
+        return <div key={l.id} style={{ ...card(), padding:0, overflow:"hidden" }}>
+          <div onClick={()=>toggle(l.id)} style={{ display:"flex", alignItems:"center", gap:10, padding:13, cursor:"pointer" }}>
+            <Avatar doc={d} size={36}/>
+            <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontWeight:700, fontSize:14 }}>{d.name}</div>
               <div style={{ fontSize:11.5, color:C.sub }}>{TYPES[l.type]} · {dmy(l.start)} ← {dmy(l.end)}</div>
             </div>
-            <Kebab items={[
-              (l.clinicClosed===false) && { icon:"⚡", label:"تغطية تلقائية", onClick:()=>autoCoverLeave(l) },
-              { icon:"🗑", label:"حذف الإجازة", danger:true, onClick:()=>{ if(confirm("حذف هذه الإجازة؟")) del(l.id); } },
-            ]} />
+            <span style={{ fontSize:10.5, fontWeight:700, background:chip.bg, color:chip.fg, borderRadius:20, padding:"4px 11px", whiteSpace:"nowrap" }}>{chip.t}</span>
+            <span onClick={e=>e.stopPropagation()}>
+              <Kebab items={[
+                (l.clinicClosed===false) && { icon:"⚡", label:"تغطية تلقائية", onClick:()=>autoCoverLeave(l) },
+                { icon:"🗑", label:"حذف الإجازة", danger:true, onClick:()=>{ if(confirm("حذف هذه الإجازة؟")) del(l.id); } },
+              ]} />
+            </span>
+            <span style={{ color:C.muted, fontSize:11 }}>{isOpen?"▲":"▼"}</span>
           </div>
-          {/* weekly schedule */}
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:4, marginBottom:10 }}>
-            {[0,1,2,3,4].map(di=><div key={di} style={{ border:`1px solid ${C.line2}`, borderRadius:8, overflow:"hidden", textAlign:"center" }}>
-              <div style={{ background:"#f8fafc", fontSize:9, fontWeight:700, color:C.sub, padding:"3px 0" }}>{DAYS[di]}</div>
-              {["am","pm"].map(p=>{ const sl=getSlot(d,di,p); const dir=DIRECT_SLOTS.includes(sl); return <div key={p} style={{ fontSize:9, padding:"4px 1px", color:dir?C.primary:C.muted, background:dir?"#f0fdfa":"#fff", fontWeight:dir?700:400 }}>{SLOT_AR[sl]||"—"}</div>; })}
-            </div>)}
-          </div>
-          {/* impact */}
-          <div style={{ background:"#f8fbfc", borderRadius:10, padding:"9px 11px" }}>
-            <div style={{ fontSize:11.5, fontWeight:700, color:C.text, marginBottom:5 }}>🏥 عياداته خلال الإجازة ({clinics.length}){uncovered>0&&<span style={{ color:C.err }}> · مكشوف {uncovered}</span>}</div>
-            {uncovered>0 && <button onClick={()=>autoCoverLeave(l)} style={{ ...sBtn(C.primary), padding:"7px 13px", fontSize:12, marginBottom:7 }}>⚡ تغطية عيادات الإجازة بالأنسب</button>}
-            {clinics.length===0?<div style={{ fontSize:11, color:C.muted }}>لا عيادات</div>:clinics.map((c,i)=><div key={i} style={{ fontSize:11, color:C.sub, padding:"1px 0" }}>• {dmy(c.ds)} {perAr(c.p)} — {c.cov?<span style={{ color:C.ok }}>✓ {fd(c.cov)?.name}</span>:(l.clinicClosed!==false?<span style={{ color:C.ok }}>مغلقة</span>:<span style={{ color:C.err }}>مكشوفة</span>)}</div>)}
-            {carried.length>0&&<div style={{ fontSize:11, color:C.warn, marginTop:6 }}>🔄 تغطياته لزملاء: {carried.length} — تحتاج إعادة تعيين</div>}
-            {evening.length>0&&<div style={{ fontSize:11, color:"#7c3aed", marginTop:3 }}>🌙 دوامه المسائي: {evening.length} — يحتاج بديلاً</div>}
-          </div>
+          {isOpen && <div style={{ padding:"0 13px 14px" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:4, marginBottom:10 }}>
+              {[0,1,2,3,4].map(di=><div key={di} style={{ border:`1px solid ${C.line2}`, borderRadius:8, overflow:"hidden", textAlign:"center" }}>
+                <div style={{ background:"#f8fafc", fontSize:9, fontWeight:700, color:C.sub, padding:"3px 0" }}>{DAYS[di]}</div>
+                {["am","pm"].map(p=>{ const sl=getSlot(d,di,p); const dir=DIRECT_SLOTS.includes(sl); return <div key={p} style={{ fontSize:9, padding:"4px 1px", color:dir?C.primary:C.muted, background:dir?"#f0fdfa":"#fff", fontWeight:dir?700:400 }}>{SLOT_AR[sl]||"—"}</div>; })}
+              </div>)}
+            </div>
+            <div style={{ background:"#f8fbfc", borderRadius:10, padding:"9px 11px" }}>
+              <div style={{ fontSize:11.5, fontWeight:700, color:C.text, marginBottom:5 }}>🏥 عياداته خلال الإجازة ({clinics.length}){uncovered>0&&<span style={{ color:C.err }}> · مكشوف {uncovered}</span>}</div>
+              {uncovered>0 && <button onClick={()=>autoCoverLeave(l)} style={{ ...sBtn(C.primary), padding:"7px 13px", fontSize:12, marginBottom:7 }}>⚡ تغطية عيادات الإجازة بالأنسب</button>}
+              {clinics.length===0?<div style={{ fontSize:11, color:C.muted }}>لا عيادات</div>:clinics.map((c,i)=><div key={i} style={{ fontSize:11, color:C.sub, padding:"1px 0" }}>• {dmy(c.ds)} {perAr(c.p)} — {c.cov?<span style={{ color:C.ok }}>✓ {fd(c.cov)?.name}</span>:(l.clinicClosed!==false?<span style={{ color:C.ok }}>مغلقة</span>:<span style={{ color:C.err }}>مكشوفة</span>)}</div>)}
+              {carried.length>0&&<div style={{ fontSize:11, color:C.warn, marginTop:6 }}>🔄 تغطياته لزملاء: {carried.length} — تحتاج إعادة تعيين</div>}
+              {evening.length>0&&<div style={{ fontSize:11, color:"#7c3aed", marginTop:3 }}>🌙 دوامه المسائي: {evening.length} — يحتاج بديلاً</div>}
+            </div>
+          </div>}
         </div>;
       })}</div>}
   </div>;
@@ -1398,7 +1408,7 @@ const SEED_DOCTORS = _SEED.map((e,i)=>({ id:9001+i, name:e[0], color:PALETTE[i%P
 
 // ════════════════════════════════ NEW MODULES ════════════════════════════════
 const DEFAULT_SETTINGS = { capEvening:8, capLeaveDay:4, restRule:false };
-const printDoc = (title, body, landscape=false) => { const w=window.open("","_blank"); if(!w) return; w.document.write(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:Tahoma,Arial,sans-serif;padding:26px;color:#1f2d3d}h1{font-size:20px;color:#0f766e}h2{font-size:15px;margin-top:18px;border-bottom:2px solid #0f766e;padding-bottom:4px}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #cbd5e1;padding:7px 9px;font-size:12.5px;text-align:center}th{background:#0f766e;color:#fff}@media print{@page{size:A4 ${landscape?"landscape":"portrait"};margin:12mm}}</style></head><body><h1>${title}</h1>${body}<script>setTimeout(function(){window.print();},350);<\/script></body></html>`); w.document.close(); };
+const printDoc = (title, body, landscape=false) => { const w=window.open("","_blank"); if(!w) return; const now=new Date().toLocaleString("ar",{year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit"}); w.document.write(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title><style>*{box-sizing:border-box}body{font-family:"Segoe UI",Tahoma,Arial,sans-serif;margin:0;color:#1f2d3d;background:#fff}.wrap{padding:22px 26px}.hdr{background:linear-gradient(135deg,${C.primaryD},${C.primary});color:#fff;padding:20px 24px;border-radius:16px;margin-bottom:18px;display:flex;align-items:center;gap:14px}.hdr .lg{width:46px;height:46px;border-radius:12px;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:23px;font-weight:800}.hdr h1{margin:0;font-size:20px;font-weight:800}.hdr .sub{font-size:11.5px;opacity:.9;margin-top:3px}h2{font-size:14.5px;color:${C.primaryD};margin:20px 0 9px;padding-inline-start:11px;border-inline-start:4px solid ${C.accent};font-weight:800}table{width:100%;border-collapse:separate;border-spacing:0;margin-top:6px;border:1px solid #e3eaf0;border-radius:11px;overflow:hidden;font-size:12.5px}thead th{background:linear-gradient(135deg,${C.primary},${C.accent});color:#fff;padding:10px 11px;font-weight:700;text-align:center}tbody td{padding:8px 11px;text-align:center;border-top:1px solid #eef3f8}tbody th{padding:8px 11px;text-align:start;border-top:1px solid #eef3f8;background:#f0f5f9;color:${C.primaryD};font-weight:700;white-space:nowrap}tbody tr:nth-child(even){background:#f7fafc}p{color:#8595a6;font-size:12px;margin:6px 0 0}.foot{margin-top:24px;padding-top:11px;border-top:1px solid #e3eaf0;font-size:10.5px;color:#9aa7b5;text-align:center}@media print{@page{size:A4 ${landscape?"landscape":"portrait"};margin:11mm}body,.hdr,thead th,tbody tr:nth-child(even){-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class="wrap"><div class="hdr"><div class="lg">ط</div><div><h1>${title}</h1><div class="sub">نظام إدارة الجداول والتغطيات · ${now}</div></div></div>${body}<div class="foot">قسم الأسنان · نظام إدارة الجداول والتغطيات</div></div><script>setTimeout(function(){window.print();},400);<\/script></body></html>`); w.document.close(); };
 
 function SettingsPage({ settings, setSettings, showToast }) {
   const s = { ...DEFAULT_SETTINGS, ...settings };
