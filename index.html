@@ -416,6 +416,7 @@ function analyzeDay(date, doctors, leaves, nightData, coverages, loadMap) {
   const prevWorkOf = (ds) => { const d=new Date(ds); for(let i=1;i<=4;i++){const p=new Date(d);p.setDate(d.getDate()-i);if(p.getDay()!==5&&p.getDay()!==6)return p.toISOString().split("T")[0];}return null; };
   const pw = prevWorkOf(date);
   const prevNextAm = pw ? ((nightData[pw]?.coverages||{}).nextAm||[]) : [];
+  const prevEveningDocs = pw ? ((nightData[pw]?.doctors)||[]) : []; // مسائيو الأمس → يُراحون هذا الصباح
 
   // ---- Build occupancy: who is busy each period, and why ----
   // periods we track for staffing: am, pm
@@ -463,7 +464,8 @@ function analyzeDay(date, doctors, leaves, nightData, coverages, loadMap) {
       const ownerEvening = eveningBusy.has(d.id);                   // took evening shift OR evening coverage
       const ownerAbsent  = !!absentReason[d.id] && !closed;          // absent/leave-open
       const ownerCovering = (occupied[per][d.id]||[]).some(r=>r.includes("تغطية")); // busy covering elsewhere same period
-      const mustCover = (ownerEvening || ownerAbsent || ownerCovering) && !closed;
+      const postEveningRest = per==="am" && prevEveningDocs.includes(d.id) && !ownerEvening && !ownerAbsent; // عمل مساءً أمس → عيادته صباح اليوم تحتاج تغطية
+      const mustCover = (ownerEvening || ownerAbsent || ownerCovering || postEveningRest) && !closed;
       // who is assigned to cover THIS owner's clinic this period?
       const coversForOwner = [];
       // individual coverage explicitly targeting this owner+period
@@ -475,7 +477,7 @@ function analyzeDay(date, doctors, leaves, nightData, coverages, loadMap) {
         return;
       }
       if (mustCover && coversForOwner.length===0) {
-        gaps.push({ date, di, period:per, ownerId:d.id, reason: ownerEvening?"دوام/تغطية مسائية":ownerAbsent?absentReason[d.id]:"مكلّف بتغطية أخرى" });
+        gaps.push({ date, di, period:per, ownerId:d.id, reason: ownerEvening?"دوام/تغطية مسائية":ownerAbsent?absentReason[d.id]:postEveningRest?"راحة بعد المسائي (أمس)":"مكلّف بتغطية أخرى" });
         periods[per].push({ ownerId:d.id, state:"gap" });
       } else if (mustCover) {
         periods[per].push({ ownerId:d.id, state:"covered", coverIds:coversForOwner });
@@ -1198,7 +1200,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                     <button key={d.id} onClick={()=>toggleEvening(date,d.id)} disabled={lv&&!on} style={{ border:`1px solid ${on?d.color:C.line}`, background:on?d.color:"#fff", color:on?"#fff":(lv?C.muted:C.text), borderRadius:18, padding:"5px 12px", fontSize:12, fontWeight:600, opacity:lv&&!on?.5:1 }}>د.{d.name}{lv?" (إجازة)":""}</button>
                   ); })}
                 </div>
-                {docs.map(d=>{ const needs=[]; if(isClinic(getSlot(d,di,"am")))needs.push(["am","عيادة الصباح",di]); if(isClinic(getSlot(d,di,"pm")))needs.push(["pm","عيادة الظهر",di]); if(isClinic(getSlot(d,nDi,"am")))needs.push(["nextAm","عيادة صباح الغد",nDi]);
+                {docs.map(d=>{ const needs=[]; if(isClinic(getSlot(d,di,"am")))needs.push(["am","عيادة الصباح",di]); if(isClinic(getSlot(d,di,"pm")))needs.push(["pm","عيادة الظهر",di]);
                   if(clinicClosedOnLeave(d,date,leaves)||!needs.length) return null;
                   return <div key={d.id} style={{ background:"#f8fafc", borderRadius:10, padding:"9px 11px", marginBottom:6 }}>
                     <div style={{ fontSize:11.5, color:C.sub, marginBottom:6 }}>تغطية عيادة د.{d.name}</div>
@@ -1244,7 +1246,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
 }
 
 // ════════════════════════════════ LEAVES ════════════════════════════════
-function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeaves, setCoverages, showToast, logAudit }) {
+function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeaves, setCoverages, setNight, showToast, logAudit }) {
   const TYPES = { annual:"سنوية", sick:"مرضية", emergency:"طارئة", other:"أخرى" };
   const [f, setF] = useState({ doctorId:"", type:"annual", start:"", end:"", clinicClosed:true });
   const add = () => { if(!f.doctorId||!f.start||!f.end){showToast("أكمل الحقول","warn");return;} if(f.end<f.start){showToast("التواريخ غير صحيحة","err");return;} setLeaves(ls=>[...ls,{id:uid(),doctorId:+f.doctorId,type:f.type,start:f.start,end:f.end,clinicClosed:f.clinicClosed}]); setF({doctorId:"",type:"annual",start:"",end:"",clinicClosed:true}); logAudit&&logAudit(`تسجيل إجازة د.${fd(+f.doctorId)?.name||""} (${f.type})`); showToast("تم تسجيل الإجازة"); };
@@ -1301,7 +1303,15 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
             </span>
             <span style={{ color:C.muted, fontSize:11 }}>{isOpen?"▲":"▼"}</span>
           </div>
-          {isOpen && <div style={{ padding:"0 13px 14px" }}>
+          {isOpen && (()=>{ 
+            const md = monthDays(+l.start.split("-")[0], +l.start.split("-")[1]-1).map(x=>x.date);
+            const loadOf = id => doctorSessions(doctors.find(x=>x.id===id), md, nightData, coverages, leaves).total;
+            const pickFor = (wi,ds,period) => getAvailable(doctors,[d.id],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
+            const evePick = ds => { const nightDocs=(nightData[ds]?.doctors)||[]; return doctors.filter(x=>x.id!==d.id&&!nightDocs.includes(x.id)).map(x=>({ doc:x, status:onLeave(x,ds,leaves)?"leave":"free", load:loadOf(x.id), commit:null })).sort((a,b)=>(({free:0,leave:3}[a.status])-({free:0,leave:3}[b.status]))||(a.load-b.load)); };
+            const assignClinic = (ds,p,cid) => { setCoverages(cs=>[...cs.filter(c=>!(c.date===ds&&c.period===p&&c.absentId===d.id)), {id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:cid,reason:"leave"}]); logAudit&&logAudit(`بديل إجازة د.${d.name} (${perAr(p)} ${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`); showToast("تم تعيين البديل"); };
+            const assignEve = (ds,cid) => { setNight&&setNight(n=>{ const day=n[ds]||{doctors:[],coverages:{am:[],pm:[],nextAm:[]}}; const docs=[...new Set((day.doctors||[]).map(x=>x===d.id?cid:x))]; if(!docs.includes(cid)) docs.push(cid); return {...n,[ds]:{...day,doctors:docs}}; }); logAudit&&logAudit(`بديل مسائي إجازة د.${d.name} (${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`); showToast("تم تعيين بديل المسائي"); };
+            const openClinics = l.clinicClosed!==false ? [] : clinics;
+            return <div style={{ padding:"0 13px 14px" }}>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:4, marginBottom:10 }}>
               {[0,1,2,3,4].map(di=><div key={di} style={{ border:`1px solid ${C.line2}`, borderRadius:8, overflow:"hidden", textAlign:"center" }}>
                 <div style={{ background:"#f8fafc", fontSize:9, fontWeight:700, color:C.sub, padding:"3px 0" }}>{DAYS[di]}</div>
@@ -1310,12 +1320,20 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
             </div>
             <div style={{ background:"#f8fbfc", borderRadius:10, padding:"9px 11px" }}>
               <div style={{ fontSize:11.5, fontWeight:700, color:C.text, marginBottom:5 }}>🏥 عياداته خلال الإجازة ({clinics.length}){uncovered>0&&<span style={{ color:C.err }}> · مكشوف {uncovered}</span>}</div>
-              {uncovered>0 && <button onClick={()=>autoCoverLeave(l)} style={{ ...sBtn(C.primary), padding:"7px 13px", fontSize:12, marginBottom:7 }}>⚡ تغطية عيادات الإجازة بالأنسب</button>}
-              {clinics.length===0?<div style={{ fontSize:11, color:C.muted }}>لا عيادات</div>:clinics.map((c,i)=><div key={i} style={{ fontSize:11, color:C.sub, padding:"1px 0" }}>• {dmy(c.ds)} {perAr(c.p)} — {c.cov?<span style={{ color:C.ok }}>✓ {fd(c.cov)?.name}</span>:(l.clinicClosed!==false?<span style={{ color:C.ok }}>مغلقة</span>:<span style={{ color:C.err }}>مكشوفة</span>)}</div>)}
+              {uncovered>0 && <button onClick={()=>autoCoverLeave(l)} style={{ ...sBtn(C.primary), padding:"7px 13px", fontSize:12, marginBottom:9 }}>⚡ تغطية الكل بالأنسب</button>}
+              {l.clinicClosed!==false && clinics.length>0 && <div style={{ fontSize:11, color:C.ok, marginBottom:4 }}>العيادة مغلقة خلال الإجازة — لا تحتاج تغطية.</div>}
+              {openClinics.map((c,i)=><div key={i} style={{ marginBottom:9, paddingBottom:9, borderBottom:i<openClinics.length-1?`1px dashed ${C.line2}`:"none" }}>
+                <div style={{ fontSize:11.5, fontWeight:700, color:C.text, marginBottom:5 }}>• {dmy(c.ds)} {perAr(c.p)} {c.cov?<span style={{ color:C.ok }}>— البديل: د.{fd(c.cov)?.name} (اضغط للتغيير)</span>:<span style={{ color:C.err }}>— اختر بديلاً</span>}</div>
+                <CoverPicker list={pickFor(dayIdx(c.ds),c.ds,c.p)} cur={c.cov} onPick={cid=>assignClinic(c.ds,c.p,cid)} />
+              </div>)}
+              {clinics.length===0 && <div style={{ fontSize:11, color:C.muted }}>لا عيادات</div>}
               {carried.length>0&&<div style={{ fontSize:11, color:C.warn, marginTop:6 }}>🔄 تغطياته لزملاء: {carried.length} — تحتاج إعادة تعيين</div>}
-              {evening.length>0&&<div style={{ fontSize:11, color:"#7c3aed", marginTop:3 }}>🌙 دوامه المسائي: {evening.length} — يحتاج بديلاً</div>}
+              {evening.map((ds,i)=><div key={"e"+i} style={{ marginTop:9 }}>
+                <div style={{ fontSize:11.5, fontWeight:700, color:"#7c3aed", marginBottom:5 }}>🌙 بديل المسائي — {dmy(ds)}</div>
+                <CoverPicker list={evePick(ds)} cur={null} onPick={cid=>assignEve(ds,cid)} />
+              </div>)}
             </div>
-          </div>}
+          </div>; })()}
         </div>;
       })}</div>}
   </div>;
@@ -1913,7 +1931,7 @@ function App() {
   const pageEl = <>
       {page==="dashboard" && <Dashboard doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} onGoto={setPage} />}
       {page==="engine" && <EnginePage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setNight={setNight} setCoverages={setCoverages} showToast={showToast} logAudit={logAudit} />}
-      {page==="leaves" && <LeavesPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setLeaves={setLeaves} setCoverages={setCoverages} showToast={showToast} logAudit={logAudit} />}
+      {page==="leaves" && <LeavesPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setLeaves={setLeaves} setCoverages={setCoverages} setNight={setNight} showToast={showToast} logAudit={logAudit} />}
       {page==="doctors" && <DoctorsPage doctors={doctors} leaves={leaves} today={today} fd={fd} setDoctors={setDoctors} showToast={showToast} logAudit={logAudit} />}
       {page==="stats" && <StatsPage doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} />}
       {page==="fairness" && <FairnessPage doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} />}
