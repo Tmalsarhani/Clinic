@@ -213,6 +213,34 @@ html[data-theme="dark"] .tog{ background:var(--primary); } html[data-theme="dark
 @media(max-width:920px){ .g4{ grid-template-columns:repeat(2,1fr); } .g3,.g2{ grid-template-columns:1fr; } }
 @media(max-width:560px){ .g4{ grid-template-columns:1fr; } }
 
+
+/* ===== interactive calendar ===== */
+.cal-wrap{ display:grid; grid-template-columns:1fr 264px; gap:16px; align-items:start; }
+.cal-grid2{ display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
+.wd{ text-align:center; font-size:12px; font-weight:600; color:var(--muted); padding-bottom:2px; }
+.cell{ min-height:106px; border-radius:13px; border:1px solid var(--line); background:var(--surface2); padding:8px; display:flex; flex-direction:column; gap:4px; transition:.16s; cursor:pointer; position:relative; }
+.cell:hover{ border-color:var(--primary); box-shadow:0 0 0 3px var(--primarySoft); }
+.cell.ok{ background:var(--okSoft); border-color:transparent; }
+.cell.warn{ background:var(--warnSoft); border-color:transparent; }
+.cell.bad{ background:var(--dangerSoft); border-color:transparent; }
+.cell.drag{ border:2px dashed var(--primary); background:var(--primarySoft); box-shadow:0 0 0 3px var(--primarySoft); }
+.cell .dn{ font-size:12.5px; font-weight:700; color:var(--ink); min-width:24px; height:24px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:var(--surface); padding:0 5px; }
+.cchip{ display:flex; align-items:center; gap:5px; background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:3px 7px; font-size:10.5px; font-weight:600; color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.04); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cchip .d{ width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.cpool{ background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:14px; box-shadow:var(--shadow); position:sticky; top:84px; }
+.cpool h3{ font-size:13px; font-weight:700; color:var(--ink); margin:0 0 3px; }
+.cpool .hint{ font-size:11px; color:var(--muted); margin:0 0 12px; line-height:1.5; }
+.pchip{ display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:11px; background:var(--surface2); margin-bottom:6px; cursor:grab; border:1px solid transparent; transition:.15s; }
+.pchip:hover{ border-color:var(--primary); background:var(--hover); }
+.pchip:active{ cursor:grabbing; }
+.pchip .pav{ width:28px; height:28px; border-radius:9px; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:10.5px; flex-shrink:0; }
+.pchip .pnm{ font-size:12px; font-weight:600; color:var(--ink); white-space:nowrap; }
+.pchip .pld{ font-size:10px; color:var(--muted); }
+.callegend{ display:flex; gap:14px; flex-wrap:wrap; margin-top:14px; font-size:12px; color:var(--text); }
+.callegend span{ display:inline-flex; align-items:center; gap:6px; }
+.callegend i{ width:12px; height:12px; border-radius:4px; }
+@media(max-width:920px){ .cal-wrap{ grid-template-columns:1fr; } .cpool{ position:static; } }
+
 </style>
 </head>
 <body>
@@ -832,7 +860,7 @@ const { useEffect } = React;
 const THEMES = {
   teal:   { name:"تركوازي",     primary:"#0FA39A", primaryD:"#0B7E77", accent:"#14B8A6" },
   blue:   { name:"أزرق",        primary:"#1d4ed8", primaryD:"#1e40af", accent:"#3b82f6" },
-  indigo: { name:"بنفسجي",      primary:"#6d28d9", primaryD:"#5b21b6", accent:"#8b5cf6" },
+  indigo: { name:"بنفسجي",      primary:"var(--eve)", primaryD:"#5b21b6", accent:"#8b5cf6" },
   green:  { name:"أخضر",        primary:"#15803d", primaryD:"#166534", accent:"#22c55e" },
   rose:   { name:"وردي",        primary:"#be123c", primaryD:"#9f1239", accent:"#fb7185" },
   slate:  { name:"رمادي داكن",  primary:"#334155", primaryD:"#1e293b", accent:"#64748b" }
@@ -846,18 +874,18 @@ const SLOT_OPTS = [["","فراغ"],["clinic","عيادة"],["virtual","افتر�
 const CAP_EVENING = 8;   // حدّ المناوبات المسائية شهرياً
 const CAP_LEAVE_DAY = 4; // حدّ المُجازين في اليوم قبل التنبيه
 const SLOT_AR = { clinic:"عيادة", virtual:"افتراضية", audit:"تدقيق", training:"تدريب", admin:"إداري" };
-const SLOT_STYLE = { clinic:{bg:"#ccfbf1",fg:"#0f766e",t:"عيادة"}, clinic_am:{bg:"#ccfbf1",fg:"#0f766e",t:"عيادة"}, clinic_pm:{bg:"#ccfbf1",fg:"#0f766e",t:"عيادة"}, virtual:{bg:"#dbeafe",fg:"#1d4ed8",t:"افتراضية"}, audit:{bg:"#fef3c7",fg:"#b45309",t:"تدقيق"}, training:{bg:"#ede9fe",fg:"#6d28d9",t:"تدريب"}, admin:{bg:"#e2e8f0",fg:"#475569",t:"إداري"}, "":{bg:"#fff",fg:"#94a3b8",t:"فراغ"} };
+const SLOT_STYLE = { clinic:{bg:"#ccfbf1",fg:"#0f766e",t:"عيادة"}, clinic_am:{bg:"#ccfbf1",fg:"#0f766e",t:"عيادة"}, clinic_pm:{bg:"#ccfbf1",fg:"#0f766e",t:"عيادة"}, virtual:{bg:"#dbeafe",fg:"#1d4ed8",t:"افتراضية"}, audit:{bg:"#fef3c7",fg:"#b45309",t:"تدقيق"}, training:{bg:"#ede9fe",fg:"var(--eve)",t:"تدريب"}, admin:{bg:"#e2e8f0",fg:"#475569",t:"إداري"}, "":{bg:"var(--surface2)",fg:"#94a3b8",t:"فراغ"} };
 const slotStyle = s => SLOT_STYLE[s] || SLOT_STYLE[""];
-const PALETTE = ["#0f766e","#0369a1","#7c3aed","#be123c","#b45309","#15803d","#0e7490","#9333ea","#c2410c","#1d4ed8","#db2777","#4d7c0f","#0891b2","#a16207"];
+const PALETTE = ["#0f766e","#0369a1","var(--eve)","#be123c","#b45309","#15803d","var(--primary-d)","#9333ea","#c2410c","#1d4ed8","#db2777","#4d7c0f","#0891b2","#a16207"];
 const uid = () => Date.now()*1000 + Math.floor(Math.random()*1000);
 const perAr = p => p==="am"?"عيادة الصباح":p==="pm"?"عيادة الظهر":p==="nextAm"?"عيادة صباح الغد":"العيادة المسائية";
 const dmy = ds => `${ds.split("-")[2]}/${+ds.split("-")[1]}`;
 const monthDays = (y,m) => { const dim=new Date(y,m+1,0).getDate(); const out=[]; for(let d=1;d<=dim;d++){ const date=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; const di=dayIdx(date); if(di>=0) out.push({date,di,day:d}); } return out; };
 
 // ── shared styles ──
-const sIn = { width:"100%", padding:"10px 12px", borderRadius:10, border:`1px solid ${C.line}`, fontSize:14, background:"#fff", color:C.text };
+const sIn = { width:"100%", padding:"10px 12px", borderRadius:10, border:`1px solid ${C.line}`, fontSize:14, background:"var(--surface)", color:C.text };
 const sBtn = (bg,fg="#fff") => ({ background:bg, color:fg, border:"none", borderRadius:10, padding:"10px 16px", fontSize:13.5, fontWeight:700 });
-const sGhost = { background:"#fff", color:C.primary, border:`1px solid ${C.line}`, borderRadius:10, padding:"9px 14px", fontSize:13, fontWeight:600 };
+const sGhost = { background:"var(--surface)", color:C.primary, border:`1px solid ${C.line}`, borderRadius:10, padding:"9px 14px", fontSize:13, fontWeight:600 };
 const card = (extra={}) => ({ background:C.card, border:`1px solid ${C.line}`, borderRadius:18, boxShadow:"0 1px 2px rgba(16,40,70,.04),0 8px 24px rgba(16,40,70,.06)", ...extra });
 const label = { fontSize:12, fontWeight:700, color:C.sub, marginBottom:6, display:"block" };
 
@@ -889,7 +917,7 @@ function Kebab({ items }) {
     <button onClick={e=>{ e.stopPropagation(); setOpen(o=>!o); }} style={{ background:"none", border:"none", padding:"4px 9px", fontSize:19, color:C.muted, cursor:"pointer", lineHeight:1, borderRadius:8 }}>⋮</button>
     {open && <>
       <div onClick={e=>{ e.stopPropagation(); setOpen(false); }} style={{ position:"fixed", inset:0, zIndex:60 }} />
-      <div onClick={e=>e.stopPropagation()} style={{ position:"absolute", insetInlineEnd:0, top:"100%", marginTop:4, background:"#fff", border:`1px solid ${C.line}`, borderRadius:12, boxShadow:"0 10px 30px rgba(16,40,60,.15)", zIndex:61, minWidth:160, overflow:"hidden" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ position:"absolute", insetInlineEnd:0, top:"100%", marginTop:4, background:"var(--surface)", border:`1px solid ${C.line}`, borderRadius:12, boxShadow:"0 10px 30px rgba(16,40,60,.15)", zIndex:61, minWidth:160, overflow:"hidden" }}>
         {items.filter(Boolean).map((it,i,arr)=>(
           <button key={i} onClick={e=>{ e.stopPropagation(); setOpen(false); it.onClick(); }} style={{ display:"flex", alignItems:"center", gap:9, width:"100%", textAlign:"start", background:"none", border:"none", borderBottom: i<arr.length-1?`1px solid ${C.line2}`:"none", padding:"11px 14px", fontSize:13, fontWeight:600, color:it.danger?C.err:C.text, cursor:"pointer" }}>
             <span style={{ fontSize:14 }}>{it.icon}</span>{it.label}
@@ -921,7 +949,7 @@ function CoverPicker({ list, cur, onPick }) {
       </button>
     ); })}
     {ask && <div onClick={()=>setAsk(null)} style={{ position:"fixed", inset:0, background:"rgba(15,30,45,.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:16, padding:20, maxWidth:330, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,.3)" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"var(--surface)", borderRadius:16, padding:20, maxWidth:330, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,.3)" }}>
         <div style={{ fontSize:15, fontWeight:800, marginBottom:8 }}>⚠️ تنبيه تعارض</div>
         <div style={{ fontSize:13, color:C.text, lineHeight:1.7, marginBottom:16 }}>د. {ask.doc.name} {ask.status==="leave"?"في إجازة":ask.status==="busy"?"لديه عيادة في هذا الوقت":"لديه التزام"+(ask.commit?` (${ask.commit})`:"")}.<br/>تكليفه يُحدث تعارضاً في الجدول. هل يوافق رئيس القسم على التكليف؟</div>
         <div style={{ display:"flex", gap:8 }}>
@@ -949,7 +977,7 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto })
   const stats = [
     { k:"الأطباء", v:doctors.length, c:C.primary, go:"doctors", i:"👨‍⚕️" },
     { k:"أيام مسائية", v:eveningCount, c:"#0369a1", go:"engine", i:"🌙" },
-    { k:"تغطيات", v:coverages.length, c:"#0e7490", go:"engine", i:"🔄" },
+    { k:"تغطيات", v:coverages.length, c:"var(--primary-d)", go:"engine", i:"🔄" },
     { k:"مكشوفة", v:ana.gaps.length, c:ana.gaps.length?C.warn:C.ok, go:"engine", i:"⚠️" },
     { k:"تعارضات", v:ana.conflicts.length, c:ana.conflicts.length?C.err:C.ok, go:"engine", i:"⛔" },
   ];
@@ -1075,7 +1103,10 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   // filters / view / tools
   const [search,setSearch] = useState("");
   const [sFilter,setSFilter] = useState("all");
-  const [view,setView] = useState("list");
+  const [view,setView] = useState("calendar");
+  const [dragDoc,setDragDoc] = useState(null);
+  const [dragCell,setDragCell] = useState(null);
+  const assignEvening = (date,id) => { ensureDay(date); setNight(nd=>{ const d={...(nd[date]||{doctors:[],coverages:{am:[],pm:[],nextAm:[]}})}; if((d.doctors||[]).includes(id)) return nd; d.doctors=[...(d.doctors||[]),id]; return {...nd,[date]:d}; }); logAudit&&logAudit(`تعيين د.${fd(id)?.name||""} مسائياً ${dmy(date)}`); showToast(`تم تعيين د.${fd(id)?.name||""} مسائياً ${dmy(date)}`); };
   const [tools,setTools] = useState(false);
   const [swp,setSwp] = useState({ date:"", from:"", to:"" });
   const [wkRef,setWkRef] = useState(today);
@@ -1123,14 +1154,14 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
       <div style={{ display:"flex", flexWrap:"wrap", gap:7, marginBottom:10 }}>
         <button onClick={()=>setShowSetup(s=>!s)} style={sBtn(C.primary)}>🗓 إنشاء جدول مسائي</button>
         <button onClick={distributeFixed} style={sGhost}>⚡ توزيع حسب الأيام الثابتة</button>
-        <button onClick={fillAvailable} style={sBtn("#7c3aed")}>🌙 إكمال المسائي بالمتاح</button>
-        <button onClick={coverAll} style={sBtn("#0e7490")}>🩺 تغطية العيادات المكشوفة</button>
+        <button onClick={fillAvailable} style={sBtn("var(--eve)")}>🌙 إكمال المسائي بالمتاح</button>
+        <button onClick={coverAll} style={sBtn("var(--primary-d)")}>🩺 تغطية العيادات المكشوفة</button>
         <button onClick={copyPrev} style={sGhost}>📋 نسخ الشهر السابق</button>
         <label style={{ ...sGhost, display:"inline-flex", alignItems:"center", gap:6, cursor:"pointer" }}>➕ إضافة يوم<input type="date" onChange={e=>{ if(e.target.value&&dayIdx(e.target.value)>=0){ ensureDay(e.target.value); setSel(e.target.value); setMo({y:+e.target.value.split("-")[0],m:+e.target.value.split("-")[1]-1}); setView("list"); } }} style={{ border:"none", background:"none", width:18, padding:0 }} value="" /></label>
         <button onClick={clearMonth} style={{ ...sGhost, color:C.err }}>🗑 مسح الشهر</button>
         <button onClick={()=>setTools(t=>!t)} style={tools?sBtn("#475569"):sGhost}>🛠 أدوات إضافية</button>
       </div>
-      {tools && <div style={{ background:"#f8fafc", border:`1px solid ${C.line}`, borderRadius:12, padding:13, marginBottom:10 }}>
+      {tools && <div style={{ background:"var(--surface2)", border:`1px solid ${C.line}`, borderRadius:12, padding:13, marginBottom:10 }}>
         <div style={{ fontSize:12.5, fontWeight:800, color:C.text, marginBottom:8 }}>🔁 تبادل مهام يوم بين طبيبين</div>
         <div style={{ fontSize:11, color:C.sub, marginBottom:8 }}>ينقل مناوبة/تغطيات الطبيب الأول في اليوم المحدّد إلى الثاني.</div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:8 }}>
@@ -1146,12 +1177,12 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 بحث باسم طبيب أو تاريخ" style={{ ...sIn, flex:"1 1 180px", padding:"8px 11px" }} />
         <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden" }}>
           {[["all","الكل"],["pending","معلّق"],["done","مكتمل"]].map(([k,l])=>(
-            <button key={k} onClick={()=>setSFilter(k)} style={{ padding:"8px 13px", border:"none", fontSize:12.5, fontWeight:700, background:sFilter===k?C.primary:"#fff", color:sFilter===k?"#fff":C.sub }}>{l}</button>
+            <button key={k} onClick={()=>setSFilter(k)} style={{ padding:"8px 13px", border:"none", fontSize:12.5, fontWeight:700, background:sFilter===k?C.primary:"var(--surface)", color:sFilter===k?"#fff":C.sub }}>{l}</button>
           ))}
         </div>
         <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden" }}>
           {[["list","📋 جدول"],["week","📆 أسبوعي"],["calendar","📅 تقويم"]].map(([k,l])=>(
-            <button key={k} onClick={()=>setView(k)} style={{ padding:"8px 13px", border:"none", fontSize:12.5, fontWeight:700, background:view===k?C.primaryD:"#fff", color:view===k?"#fff":C.sub }}>{l}</button>
+            <button key={k} onClick={()=>setView(k)} style={{ padding:"8px 13px", border:"none", fontSize:12.5, fontWeight:700, background:view===k?C.primaryD:"var(--surface)", color:view===k?"#fff":C.sub }}>{l}</button>
           ))}
         </div>
       </div>
@@ -1173,7 +1204,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
         <div style={{ fontSize:11, color:C.muted, marginBottom:10 }}>حدّد لكل يوم عدد العيادات المسائية ثم اضغط «إنشاء جدول فارغ». تبقى الخانات فارغة لتختار الأطباء يدوياً، أو «توزيع الأيام الثابتة» ثم «إكمال المسائي بالمتاح».</div>
         <div style={{ display:"flex", flexDirection:"column", gap:5, maxHeight:360, overflowY:"auto" }}>
           {days.map(({date,di,day})=>{ const v=dayReq[date]!=null?dayReq[date]:reqPerDay; return (
-            <div key={date} style={{ display:"flex", alignItems:"center", gap:10, background:"#f8fafc", borderRadius:9, padding:"7px 11px" }}>
+            <div key={date} style={{ display:"flex", alignItems:"center", gap:10, background:"var(--surface2)", borderRadius:9, padding:"7px 11px" }}>
               <span style={{ flex:1, fontSize:12.5, fontWeight:600 }}>{DAYS[di]} {day}/{mo.m+1}</span>
               <button onClick={()=>setReq(date,v-1)} style={{ ...sGhost, width:32, padding:"4px 0" }}>−</button>
               <span style={{ minWidth:26, textAlign:"center", fontWeight:800, color:C.primary }}>{v}</span>
@@ -1195,11 +1226,11 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
         {gaps.length>0 && <button onClick={coverAll} style={sBtn(C.primary)}>حلّ الكل بالأنسب</button>}
       </div>
       {ana.conflicts.length>0 && ana.conflicts.map((c,i)=>(
-        <div key={"c"+i} style={{ background:"#fff1f2", border:`1px solid #fecdd3`, borderRadius:10, padding:"9px 11px", marginBottom:7, fontSize:12.5, color:C.err, fontWeight:600 }}>⛔ {c.text}</div>
+        <div key={"c"+i} style={{ background:"var(--dangerSoft)", border:`1px solid #fecdd3`, borderRadius:10, padding:"9px 11px", marginBottom:7, fontSize:12.5, color:C.err, fontWeight:600 }}>⛔ {c.text}</div>
       ))}
-      {gaps.length===0 && ana.conflicts.length===0 ? <div style={{ background:"#ecfdf5", color:C.ok, borderRadius:10, padding:"12px", textAlign:"center", fontWeight:700, fontSize:13 }}>✓ لا عيادات مكشوفة هذا الشهر</div> :
+      {gaps.length===0 && ana.conflicts.length===0 ? <div style={{ background:"var(--okSoft)", color:C.ok, borderRadius:10, padding:"12px", textAlign:"center", fontWeight:700, fontSize:13 }}>✓ لا عيادات مكشوفة هذا الشهر</div> :
         gaps.map(g=>{ const av=availForGap(g); const best=av.find(a=>a.status==="free"); const pl=pickList(g.ownerId,g.di,g.date,g.period); const own=fd(g.ownerId); return (
-          <div key={gapKey(g)} style={{ background:"#fffbf3", border:"1px solid #fde9c8", borderRadius:10, padding:"10px 11px", marginBottom:7 }}>
+          <div key={gapKey(g)} style={{ background:"var(--warnSoft)", border:"1px solid #fde9c8", borderRadius:10, padding:"10px 11px", marginBottom:7 }}>
             <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:8 }}>
               <div style={{ flex:1, fontSize:12.5, color:"#7c5410", minWidth:140 }}><b>{dmy(g.date)} {DAYS[g.di]}</b> — عيادة د.{own?own.name:"؟"} ({perAr(g.period)}) <span style={{ fontSize:10.5, color:C.muted }}>· {g.reason}</span></div>
               {best && <button onClick={()=>coverGap(g)} style={{ ...sBtn(C.primary), padding:"6px 12px", fontSize:11.5 }}>⭐ الأنسب: د. {best.doc.name}</button>}
@@ -1229,42 +1260,69 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                 <button onClick={()=>{ if(confirm(`مسح تغطيات ${dmy(date)}؟`)) clearDayCovs(date); }} style={{ ...sGhost, color:C.err, padding:"5px 10px", fontSize:11.5 }}>🧹</button>
               </div>
               <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                <span style={{ fontSize:11, fontWeight:700, background:sm.gaps?"#fef2f2":"#ecfdf5", color:sm.gaps?"#b91c1c":"#047857", borderRadius:20, padding:"3px 11px" }}>مكشوف {sm.gaps}</span>
-                <span style={{ fontSize:11, fontWeight:700, background:"#eff6ff", color:"#1d4ed8", borderRadius:20, padding:"3px 11px" }}>مغطّى {sm.covered}</span>
-                <span style={{ fontSize:11, fontWeight:700, background:"#ede9fe", color:"#6d28d9", borderRadius:20, padding:"3px 11px" }}>مسائي {sm.eve}</span>
-                {sm.conflicts>0 && <span style={{ fontSize:11, fontWeight:700, background:"#fef2f2", color:"#b91c1c", borderRadius:20, padding:"3px 11px" }}>⛔ تعارض {sm.conflicts}</span>}
+                <span style={{ fontSize:11, fontWeight:700, background:sm.gaps?"var(--dangerSoft)":"var(--okSoft)", color:sm.gaps?"#b91c1c":"#047857", borderRadius:20, padding:"3px 11px" }}>مكشوف {sm.gaps}</span>
+                <span style={{ fontSize:11, fontWeight:700, background:"var(--surface2)", color:"#1d4ed8", borderRadius:20, padding:"3px 11px" }}>مغطّى {sm.covered}</span>
+                <span style={{ fontSize:11, fontWeight:700, background:"var(--eveSoft)", color:"var(--eve)", borderRadius:20, padding:"3px 11px" }}>مسائي {sm.eve}</span>
+                {sm.conflicts>0 && <span style={{ fontSize:11, fontWeight:700, background:"var(--dangerSoft)", color:"#b91c1c", borderRadius:20, padding:"3px 11px" }}>⛔ تعارض {sm.conflicts}</span>}
               </div>
               {docs.length>0 && <div style={{ fontSize:11.5, color:C.text, marginTop:7 }}>🌙 {docs.map(n=>"د."+n).join("، ")}</div>}
               {cls.length>0 && <div style={{ fontSize:11, color:C.sub, marginTop:4 }}>{cls.map((t,i)=><div key={i}>🔄 {t}</div>)}</div>}
             </div>
           ); })}
         </div>
-      ) : view==="calendar" ? (
-        <div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6, marginBottom:6 }}>
-            {DAYS.map(d=><div key={d} style={{ textAlign:"center", fontSize:11, fontWeight:700, color:C.sub }}>{d}</div>)}
-          </div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6 }}>
-            {Array.from({length:offset},(_,i)=><div key={"e"+i} />)}
-            {days.map(({date,di,day})=>{ const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null); const isT=date===today; const bad=r.gaps.length>0||r.conflicts.length>0; return (
-              <div key={date} onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }} style={{ minHeight:84, border:`1px solid ${isT?C.accent:C.line}`, borderRadius:10, padding:"6px 7px", cursor:"pointer", background:bad?"#fffdf7":"#fff" }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
-                  <span style={{ fontSize:11, fontWeight:800, color:isT?C.primary:C.sub }}>{day}</span>
-                  {bad && <span style={{ width:7, height:7, borderRadius:"50%", background:r.conflicts.length?C.err:C.warn }} />}
+      ) : view==="calendar" ? (() => {
+        const eveLoad={}; doctors.forEach(d=>eveLoad[d.id]=0); monthDates.forEach(dt=>(((nightData[dt]||{}).doctors)||[]).forEach(id=>{ eveLoad[id]=(eveLoad[id]||0)+1; }));
+        const pool=[...doctors].sort((a,b)=>(eveLoad[a.id]-eveLoad[b.id])||((loadMap[a.id]||0)-(loadMap[b.id]||0)));
+        return (
+        <div className="cal-wrap">
+          <div>
+            <div className="cal-grid2" style={{ marginBottom:8 }}>{DAYS.map(d=><div key={d} className="wd">{d}</div>)}</div>
+            <div className="cal-grid2">
+              {Array.from({length:offset},(_,i)=><div key={"e"+i} />)}
+              {days.map(({date,di,day})=>{ const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null); const st=r.gaps.length?"bad":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; return (
+                <div key={date} className={"cell "+st+(dragCell===date?" drag":"")}
+                  onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }}
+                  onDragOver={e=>{ e.preventDefault(); if(dragCell!==date) setDragCell(date); }}
+                  onDragLeave={()=>setDragCell(c=>c===date?null:c)}
+                  onDrop={e=>{ e.preventDefault(); setDragCell(null); const id=+e.dataTransfer.getData("text"); if(id) assignEvening(date,id); }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <span className="dn" style={isT?{ background:C.primary, color:"#fff" }:undefined}>{day}</span>
+                    {st && <span style={{ width:9, height:9, borderRadius:"50%", background:st==="bad"?C.err:st==="warn"?C.warn:C.ok }} />}
+                  </div>
+                  {docs.map(d=><div key={d.id} className="cchip"><span className="d" style={{ background:d.color }}></span>د.{d.name}</div>)}
                 </div>
-                {docs.length?docs.map(d=><div key={d.id} style={{ display:"flex", alignItems:"center", gap:4, background:d.color+"14", borderRadius:7, padding:"2px 5px", marginBottom:3 }}><span style={{ width:13, height:13, borderRadius:"50%", background:d.color, color:"#fff", fontSize:6.5, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center" }}>{sn(d.name).slice(0,2)}</span><span style={{ fontSize:9, fontWeight:700, color:d.color, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{d.name}</span></div>):<div style={{ fontSize:13, color:"#dbe3ee", textAlign:"center", paddingTop:6 }}>·</div>}
-              </div>
-            ); })}
+              ); })}
+            </div>
+            <div className="callegend">
+              <span><i style={{ background:C.ok }}></i>مكتمل</span>
+              <span><i style={{ background:C.warn }}></i>يحتاج مراجعة</span>
+              <span><i style={{ background:C.err }}></i>يوجد شاغر</span>
+              <span><i style={{ background:C.eve }}></i>عيادة مسائية</span>
+            </div>
           </div>
-          <div style={{ fontSize:11, color:C.muted, marginTop:8, textAlign:"center" }}>اضغط أي يوم للتعديل</div>
+          <div className="cpool">
+            <h3>الأطباء المتاحون</h3>
+            <p className="hint">اسحب الطبيب إلى أي يوم لإسناده مسائياً (الأقل عبئاً أولاً).</p>
+            <div style={{ maxHeight:520, overflowY:"auto", margin:"0 -4px", padding:"0 4px" }}>
+              {pool.map(d=>(
+                <div key={d.id} className="pchip" draggable
+                  onDragStart={e=>{ e.dataTransfer.setData("text",String(d.id)); setDragDoc(d.id); }}
+                  onDragEnd={()=>{ setDragDoc(null); setDragCell(null); }}>
+                  <div className="pav" style={{ background:d.color }}>{sn(d.name).slice(0,2)}</div>
+                  <div style={{ flex:1, minWidth:0 }}><div className="pnm">د.{d.name}</div><div className="pld">مسائيات: {eveLoad[d.id]||0}{onLeave(d,today,leaves)?" · إجازة اليوم":""}</div></div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-      ) : listDays.length===0 ? <Empty icon="🌙" title="لا أيام مطابقة" hint="استخدم «توزيع تلقائي» أو «إضافة يوم» من الأدوات" /> :
+        );
+      })() : listDays.length===0 ? <Empty icon="🌙" title="لا أيام مطابقة" hint="استخدم «توزيع تلقائي» أو «إضافة يوم» من الأدوات" /> :
         <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
           {listDays.map(({date,di})=>{
             const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
             const open=sel===date; const nDi=dayIdx(nextWork(date)); const cv=nd.coverages||{};
             return <div key={date} style={{ border:`1px solid ${open?C.accent:C.line}`, borderRadius:12, overflow:"hidden" }}>
-              <div onClick={()=>setSel(open?null:date)} style={{ padding:"11px 13px", cursor:"pointer", background: open?"#f0fdfa":"#fff" }}>
+              <div onClick={()=>setSel(open?null:date)} style={{ padding:"11px 13px", cursor:"pointer", background: open?"var(--primarySoft)":"var(--surface)" }}>
                 <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                   <div style={{ minWidth:42, textAlign:"center" }}><div style={{ fontSize:16, fontWeight:800, color:C.primary }}>{date.split("-")[2]}</div><div style={{ fontSize:9.5, color:C.muted }}>{DAYS[di]}</div></div>
                   <div style={{ flex:1, display:"flex", flexWrap:"wrap", gap:5 }}>
@@ -1284,9 +1342,9 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                     return { d, on, lv, fixedHere, fixedAny, el, rank };
                   }).sort((a,b)=> a.rank-b.rank || a.el-b.el || a.d.name.localeCompare(b.d.name,"ar")).map(({d,on,lv,fixedHere,fixedAny,el})=>{
                     const note = on?"مُعيّن" : lv?"إجازة" : fixedHere?"عيادة مسائية ثابتة (هذا اليوم)" : fixedAny?"لديه عيادة مسائية ثابتة" : `متاح · مسائيات ${el}`;
-                    const col = on?d.color : lv?"#ef4444" : fixedHere?"#7c3aed" : fixedAny?"#a78bfa" : "#10b981";
+                    const col = on?d.color : lv?"#ef4444" : fixedHere?"var(--eve)" : fixedAny?"#a78bfa" : "#10b981";
                     return (
-                    <button key={d.id} onClick={()=>toggleEvening(date,d.id)} title={note} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:1, border:`1px solid ${on?d.color:col}`, background:on?d.color:"#fff", color:on?"#fff":col, borderRadius:14, padding:"5px 11px", fontSize:11.5, fontWeight:700 }}>
+                    <button key={d.id} onClick={()=>toggleEvening(date,d.id)} title={note} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:1, border:`1px solid ${on?d.color:col}`, background:on?d.color:"var(--surface)", color:on?"#fff":col, borderRadius:14, padding:"5px 11px", fontSize:11.5, fontWeight:700 }}>
                       <span style={{ whiteSpace:"nowrap" }}>د.{d.name}</span>
                       <span style={{ fontSize:8.5, fontWeight:600, opacity:on?.9:1 }}>{note}</span>
                     </button>
@@ -1294,7 +1352,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                 </div>
                 {docs.map(d=>{ const needs=[]; if(isClinic(getSlot(d,di,"am")))needs.push(["am","عيادة الصباح",di]); if(isClinic(getSlot(d,di,"pm")))needs.push(["pm","عيادة الظهر",di]);
                   if(clinicClosedOnLeave(d,date,leaves)||!needs.length) return null;
-                  return <div key={d.id} style={{ background:"#f8fafc", borderRadius:10, padding:"9px 11px", marginBottom:6 }}>
+                  return <div key={d.id} style={{ background:"var(--surface2)", borderRadius:10, padding:"9px 11px", marginBottom:6 }}>
                     <div style={{ fontSize:11.5, color:C.sub, marginBottom:6 }}>تغطية عيادة د.{d.name}</div>
                     {needs.map(([slot,lbl,sdi])=>{ const isNext=slot==="nextAm"; const cur=isNext?((cv[slot]||[])[0]):ownerCover(date,d.id,slot); const pl=pickList(d.id, sdi, isNext?nextWork(date):date, isNext?"am":slot); return (
                       <div key={slot} style={{ marginBottom:8 }}>
@@ -1310,7 +1368,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                 })}
                 {coverages.filter(c=>c.date===date).length>0 && <div style={{ marginTop:6 }}>
                   {coverages.filter(c=>c.date===date).map(c=>{ const cd=fd(c.coverDoctorId); const ad=c.absentId?fd(c.absentId):null; return cd&&(
-                    <div key={c.id} style={{ display:"flex", alignItems:"center", gap:7, fontSize:12, background:"#f0fdfa", borderRadius:8, padding:"5px 9px", marginBottom:4 }}>
+                    <div key={c.id} style={{ display:"flex", alignItems:"center", gap:7, fontSize:12, background:"var(--primarySoft)", borderRadius:8, padding:"5px 9px", marginBottom:4 }}>
                       <span style={{ color:C.primary, fontWeight:700 }}>🔄 د.{cd.name} يغطّي عيادة{ad?` د.${ad.name}`:""} {perAr(c.period)}</span>
                       <span style={{ flex:1 }}/><button onClick={()=>removeCovIndiv(c.id)} style={{ ...sGhost, color:C.err, padding:"3px 9px" }}>حذف</button>
                     </div>
@@ -1376,9 +1434,9 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
         }
         const uncovered = l.clinicClosed!==false?0:clinics.filter(c=>!c.cov).length;
         const isOpen = open.has(l.id);
-        const chip = l.clinicClosed!==false ? {t:"العيادة مغلقة", bg:"#eef2f7", fg:C.sub}
-          : uncovered>0 ? {t:`مكشوف ${uncovered}`, bg:"#fef2f2", fg:C.err}
-          : {t:"مغطّاة ✓", bg:"#ecfdf5", fg:C.ok};
+        const chip = l.clinicClosed!==false ? {t:"العيادة مغلقة", bg:"var(--surface2)", fg:C.sub}
+          : uncovered>0 ? {t:`مكشوف ${uncovered}`, bg:"var(--dangerSoft)", fg:C.err}
+          : {t:"مغطّاة ✓", bg:"var(--okSoft)", fg:C.ok};
         return <div key={l.id} style={{ ...card(), padding:0, overflow:"hidden" }}>
           <div onClick={()=>toggle(l.id)} style={{ display:"flex", alignItems:"center", gap:10, padding:13, cursor:"pointer" }}>
             <Avatar doc={d} size={36}/>
@@ -1407,11 +1465,11 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
             return <div style={{ padding:"0 13px 14px" }}>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:4, marginBottom:10 }}>
               {[0,1,2,3,4].map(di=><div key={di} style={{ border:`1px solid ${C.line2}`, borderRadius:8, overflow:"hidden", textAlign:"center" }}>
-                <div style={{ background:"#f8fafc", fontSize:9, fontWeight:700, color:C.sub, padding:"3px 0" }}>{DAYS[di]}</div>
-                {["am","pm"].map(p=>{ const sl=getSlot(d,di,p); const dir=DIRECT_SLOTS.includes(sl); return <div key={p} style={{ fontSize:9, padding:"4px 1px", color:dir?C.primary:C.muted, background:dir?"#f0fdfa":"#fff", fontWeight:dir?700:400 }}>{SLOT_AR[sl]||"—"}</div>; })}
+                <div style={{ background:"var(--surface2)", fontSize:9, fontWeight:700, color:C.sub, padding:"3px 0" }}>{DAYS[di]}</div>
+                {["am","pm"].map(p=>{ const sl=getSlot(d,di,p); const dir=DIRECT_SLOTS.includes(sl); return <div key={p} style={{ fontSize:9, padding:"4px 1px", color:dir?C.primary:C.muted, background:dir?"var(--primarySoft)":"var(--surface)", fontWeight:dir?700:400 }}>{SLOT_AR[sl]||"—"}</div>; })}
               </div>)}
             </div>
-            <div style={{ background:"#f8fbfc", borderRadius:10, padding:"9px 11px" }}>
+            <div style={{ background:"var(--surface2)", borderRadius:10, padding:"9px 11px" }}>
               <div style={{ fontSize:11.5, fontWeight:700, color:C.text, marginBottom:5 }}>🏥 عياداته خلال الإجازة ({clinics.length}){uncovered>0&&<span style={{ color:C.err }}> · مكشوف {uncovered}</span>}</div>
               {uncovered>0 && <button onClick={()=>autoCoverLeave(l)} style={{ ...sBtn(C.primary), padding:"7px 13px", fontSize:12, marginBottom:9 }}>⚡ تغطية الكل بالأنسب</button>}
               {l.clinicClosed!==false && clinics.length>0 && <div style={{ fontSize:11, color:C.ok, marginBottom:4 }}>العيادة مغلقة خلال الإجازة — لا تحتاج تغطية.</div>}
@@ -1422,7 +1480,7 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
               {clinics.length===0 && <div style={{ fontSize:11, color:C.muted }}>لا عيادات</div>}
               {carried.length>0&&<div style={{ fontSize:11, color:C.warn, marginTop:6 }}>🔄 تغطياته لزملاء: {carried.length} — تحتاج إعادة تعيين</div>}
               {evening.map((ds,i)=><div key={"e"+i} style={{ marginTop:9 }}>
-                <div style={{ fontSize:11.5, fontWeight:700, color:"#7c3aed", marginBottom:5 }}>🌙 بديل المسائي — {dmy(ds)}</div>
+                <div style={{ fontSize:11.5, fontWeight:700, color:C.eve, marginBottom:5 }}>🌙 بديل المسائي — {dmy(ds)}</div>
                 <CoverPicker list={evePick(ds)} cur={null} onPick={cid=>assignEve(ds,cid)} />
               </div>)}
             </div>
@@ -1458,6 +1516,21 @@ function DoctorsPage({ doctors, leaves, today, fd, setDoctors, showToast, logAud
             ]} />
             <span style={{ color:C.muted }}>{isOpen?"▲":"▼"}</span>
           </div>
+          <div style={{ padding:"0 14px 14px" }}>
+            <div className="fbar" style={{ marginBottom:8 }}>
+              <div className="top"><b>DS · رعاية مباشرة</b><span>{directTarget(d)}/10</span></div>
+              <div className="track"><div style={{ width:(directTarget(d)/10*100)+"%", height:"100%", borderRadius:6, background:`linear-gradient(90deg,${C.primary},${C.eve})` }} /></div>
+            </div>
+            <div className="fbar" style={{ marginBottom:10 }}>
+              <div className="top"><b>SS · دعم</b><span>{posSS(d.adminPosition,d)}/10</span></div>
+              <div className="track"><div style={{ width:(posSS(d.adminPosition,d)/10*100)+"%", height:"100%", borderRadius:6, background:"linear-gradient(90deg,#8A9BB0,#647189)" }} /></div>
+            </div>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              <span className="tag t-pri">{rankLabel(rankOf(d))}</span>
+              <span className="tag t-eve">مسائي ثابت {(d.nightDays||[]).length}</span>
+              <span className="tag t-ok">{posLabel(d.adminPosition,d)}</span>
+            </div>
+          </div>
           {isOpen && <div style={{ padding:"4px 14px 14px", borderTop:`1px solid ${C.line2}` }}>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:12 }}>
               <div><label style={label}>الاسم</label><input value={d.name} onChange={e=>upd(d.id,{name:e.target.value})} style={sIn} /></div>
@@ -1467,7 +1540,7 @@ function DoctorsPage({ doctors, leaves, today, fd, setDoctors, showToast, logAud
             </div>
             <label style={label}>الأيام المسائية الثابتة</label>
             <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:12 }}>
-              {[0,1,2,3,4].map(di=>{ const on=(d.nightDays||[]).includes(di); return <button key={di} onClick={()=>upd(d.id,{nightDays:on?(d.nightDays||[]).filter(x=>x!==di):[...(d.nightDays||[]),di]})} style={{ border:`1px solid ${on?C.primary:C.line}`, background:on?C.primary:"#fff", color:on?"#fff":C.text, borderRadius:16, padding:"5px 12px", fontSize:12 }}>{DAYS[di]}</button>; })}
+              {[0,1,2,3,4].map(di=>{ const on=(d.nightDays||[]).includes(di); return <button key={di} onClick={()=>upd(d.id,{nightDays:on?(d.nightDays||[]).filter(x=>x!==di):[...(d.nightDays||[]),di]})} style={{ border:`1px solid ${on?C.primary:C.line}`, background:on?C.primary:"var(--surface)", color:on?"#fff":C.text, borderRadius:16, padding:"5px 12px", fontSize:12 }}>{DAYS[di]}</button>; })}
             </div>
             <label style={label}>جدول العيادات الأسبوعي (صباح / مساء)</label>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6, marginBottom:8 }}>
@@ -1514,7 +1587,7 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, flexWrap:"wrap" }}>
         <div style={{ flex:1, fontSize:15, fontWeight:700 }}>📈 العبء الوظيفي</div>
         <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden" }}>
-          {[["week","أسبوعي"],["month","شهري"]].map(([k,l])=><button key={k} onClick={()=>setMode(k)} style={{ padding:"7px 16px", border:"none", fontSize:12.5, fontWeight:700, background:mode===k?C.primary:"#fff", color:mode===k?"#fff":C.sub }}>{l}</button>)}
+          {[["week","أسبوعي"],["month","شهري"]].map(([k,l])=><button key={k} onClick={()=>setMode(k)} style={{ padding:"7px 16px", border:"none", fontSize:12.5, fontWeight:700, background:mode===k?C.primary:"var(--surface)", color:mode===k?"#fff":C.sub }}>{l}</button>)}
         </div>
       </div>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
@@ -1524,8 +1597,8 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
         <input type="date" value={anchor} onChange={e=>e.target.value&&setAnchor(e.target.value)} style={{ ...sIn, width:"auto", padding:"6px 9px" }} />
       </div>
       <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-        {[["أطباء عملوا بعيادة",worked,C.primary],["غياب مغطّى",absentCov,C.warn],["تغطيات منفّذة",totalCov,"#0e7490"],["مناوبات مسائية",totalEve,"#7c3aed"]].map(([l,v,col])=>(
-          <div key={l} style={{ flex:"1 1 110px", background:"#f8fafc", borderRadius:10, padding:"10px", textAlign:"center" }}><div style={{ fontSize:20, fontWeight:800, color:col }}>{v}</div><div style={{ fontSize:10.5, color:C.sub, marginTop:3 }}>{l}</div></div>
+        {[["أطباء عملوا بعيادة",worked,C.primary],["غياب مغطّى",absentCov,C.warn],["تغطيات منفّذة",totalCov,"var(--primary-d)"],["مناوبات مسائية",totalEve,"var(--eve)"]].map(([l,v,col])=>(
+          <div key={l} style={{ flex:"1 1 110px", background:"var(--surface2)", borderRadius:10, padding:"10px", textAlign:"center" }}><div style={{ fontSize:20, fontWeight:800, color:col }}>{v}</div><div style={{ fontSize:10.5, color:C.sub, marginTop:3 }}>{l}</div></div>
         ))}
       </div>
       <div style={{ fontSize:11, color:C.muted, marginTop:10 }}>الهدف الأسبوعي للرعاية: أخصائي ٩ · استشاري ٨ · المسائي = فترتان رعاية · اضغط أي طبيب لملفه</div>
@@ -1539,11 +1612,11 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
             <div style={{ flex:1 }}><div style={{ fontWeight:700, fontSize:13.5 }}>{d.name}</div><div style={{ fontSize:11, color:C.sub }}>{rankLabel(rankOf(d))}</div></div>
             <div style={{ textAlign:"center" }}><div style={{ fontSize:18, fontWeight:800, color:C.primary }}>{sess.care}</div><div style={{ fontSize:10, color:C.muted }}>/ {target}</div></div>
           </div>
-          <div style={{ height:8, background:"#eef3f8", borderRadius:6, overflow:"hidden" }}><div style={{ width:pct+"%", height:"100%", background:pct>=85?C.ok:pct>=60?C.accent:C.warn, borderRadius:6 }} /></div>
+          <div style={{ height:8, background:"var(--surface2)", borderRadius:6, overflow:"hidden" }}><div style={{ width:pct+"%", height:"100%", background:pct>=85?C.ok:pct>=60?C.accent:C.warn, borderRadius:6 }} /></div>
           <div style={{ display:"flex", gap:12, marginTop:8, fontSize:11.5, color:C.sub, flexWrap:"wrap" }}>
             <span>رعاية: <b style={{ color:C.primary }}>{sess.care}</b></span>
-            <span>مسائي: <b style={{ color:"#7c3aed" }}>{sess.evening}</b></span>
-            <span>تغطيات: <b style={{ color:"#0e7490" }}>{sess.covers}</b></span>
+            <span>مسائي: <b style={{ color:"var(--eve)" }}>{sess.evening}</b></span>
+            <span>تغطيات: <b style={{ color:"var(--primary-d)" }}>{sess.covers}</b></span>
           </div>
         </div>;
       })}</div>}
@@ -1555,30 +1628,30 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
       const myLeaves=leaves.filter(l=>l.doctorId===sd.id).sort((a,b)=>b.start.localeCompare(a.start));
       const sess=doctorSessions(sd, md, nightData, coverages, leaves);
       const LT={annual:"سنوية",sick:"مرضية",emergency:"طارئة",other:"أخرى"};
-      const stat=(lbl,val,col)=><div style={{ flex:"1 1 70px", background:"#f8fafc", borderRadius:10, padding:"10px", textAlign:"center" }}><div style={{ fontSize:20, fontWeight:800, color:col }}>{val}</div><div style={{ fontSize:10.5, color:C.sub, marginTop:3 }}>{lbl}</div></div>;
+      const stat=(lbl,val,col)=><div style={{ flex:"1 1 70px", background:"var(--surface2)", borderRadius:10, padding:"10px", textAlign:"center" }}><div style={{ fontSize:20, fontWeight:800, color:col }}>{val}</div><div style={{ fontSize:10.5, color:C.sub, marginTop:3 }}>{lbl}</div></div>;
       return <div onClick={()=>setSel(null)} style={{ position:"fixed", inset:0, background:"rgba(20,30,40,.5)", zIndex:100, display:"flex", alignItems:"flex-start", justifyContent:"center", padding:"20px 14px", overflowY:"auto" }}>
-        <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:full?12:18, maxWidth:full?1000:560, width:"100%", minHeight:full?"94vh":"auto", padding:18, boxShadow:"0 20px 60px rgba(0,0,0,.3)" }}>
+        <div onClick={e=>e.stopPropagation()} style={{ background:"var(--surface)", borderRadius:full?12:18, maxWidth:full?1000:560, width:"100%", minHeight:full?"94vh":"auto", padding:18, boxShadow:"0 20px 60px rgba(0,0,0,.3)" }}>
           <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:14 }}>
             <Avatar doc={sd} size={48}/>
             <div style={{ flex:1 }}><div style={{ fontSize:17, fontWeight:700 }}>د.{sd.name}</div><div style={{ fontSize:12, color:C.sub }}>{rankLabel(rankOf(sd))} · {posLabel(sd.adminPosition,sd)} · SS {posSS(sd.adminPosition,sd)} · DS {directTarget(sd)}</div></div>
             <button onClick={()=>setFull(f=>!f)} style={{ ...sGhost, padding:"6px 12px" }} title="توسيع/تصغير">{full?"⤡ تصغير":"⤢ توسيع"}</button><button onClick={()=>{setSel(null);setFull(false);}} style={{ ...sGhost, padding:"6px 12px" }}>✕</button>
           </div>
           <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:16 }}>
-            {stat("رعاية مباشرة",sess.care,C.primary)}{stat("دعم",sess.support,"#64748b")}{stat("مسائي",sess.evening,"#7c3aed")}{stat("تغطيات",cov.length,"#0e7490")}{stat("إجازات",myLeaves.length,C.warn)}{stat("إجمالي العمل",sess.total,"#0f172a")}
+            {stat("رعاية مباشرة",sess.care,C.primary)}{stat("دعم",sess.support,"#64748b")}{stat("مسائي",sess.evening,"var(--eve)")}{stat("تغطيات",cov.length,"var(--primary-d)")}{stat("إجازات",myLeaves.length,C.warn)}{stat("إجمالي العمل",sess.total,"var(--ink)")}
           </div>
-          <div style={{ background:"#f8fbfc", border:`1px solid ${C.line2}`, borderRadius:12, padding:13, marginBottom:16 }}>
+          <div style={{ background:"var(--surface2)", border:`1px solid ${C.line2}`, borderRadius:12, padding:13, marginBottom:16 }}>
             <div style={{ fontSize:12.5, fontWeight:800, marginBottom:10 }}>📐 توزيع الأسبوع — WS = ١٠ فترات</div>
             {[["DS · الرعاية المباشرة", sess.care, directTarget(sd), C.primary],["SS · الدعم", sess.support, posSS(sd.adminPosition,sd), "#64748b"]].map(([l,act,tgt,col])=>(
               <div key={l} style={{ marginBottom:10 }}>
                 <div style={{ display:"flex", fontSize:11.5, marginBottom:4 }}><span style={{ flex:1, fontWeight:700 }}>{l}</span><span style={{ color:C.sub }}>الفعلي {act} · الهدف {tgt}</span></div>
-                <div style={{ height:8, background:"#eef3f8", borderRadius:6, overflow:"hidden" }}><div style={{ width:Math.min(100, tgt? (act/tgt*100):0)+"%", height:"100%", background:col }} /></div>
+                <div style={{ height:8, background:"var(--surface2)", borderRadius:6, overflow:"hidden" }}><div style={{ width:Math.min(100, tgt? (act/tgt*100):0)+"%", height:"100%", background:col }} /></div>
               </div>
             ))}
             <div style={{ fontSize:11, color:C.muted }}>الهدف الأسبوعي: SS {posSS(sd.adminPosition,sd)} دعم + DS {directTarget(sd)} رعاية = WS ١٠ ({posLabel(sd.adminPosition,sd)})</div>
           </div>
           <div style={{ fontSize:12.5, fontWeight:700, marginBottom:6 }}>🏥 جدول العيادات</div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:4, marginBottom:16 }}>
-            {[0,1,2,3,4].map(di=><div key={di} style={{ border:`1px solid ${C.line2}`, borderRadius:8, overflow:"hidden", textAlign:"center" }}><div style={{ background:"#f8fafc", fontSize:9, fontWeight:700, color:C.sub, padding:"3px 0" }}>{DAYS[di]}</div>{["am","pm"].map(p=>{ const sl=getSlot(sd,di,p); const dir=DIRECT_SLOTS.includes(sl); return <div key={p} style={{ fontSize:9, padding:"4px 1px", color:dir?C.primary:C.muted, background:dir?"#f0fdfa":"#fff", fontWeight:dir?700:400 }}>{SLOT_AR[sl]||"—"}</div>; })}</div>)}
+            {[0,1,2,3,4].map(di=><div key={di} style={{ border:`1px solid ${C.line2}`, borderRadius:8, overflow:"hidden", textAlign:"center" }}><div style={{ background:"var(--surface2)", fontSize:9, fontWeight:700, color:C.sub, padding:"3px 0" }}>{DAYS[di]}</div>{["am","pm"].map(p=>{ const sl=getSlot(sd,di,p); const dir=DIRECT_SLOTS.includes(sl); return <div key={p} style={{ fontSize:9, padding:"4px 1px", color:dir?C.primary:C.muted, background:dir?"var(--primarySoft)":"var(--surface)", fontWeight:dir?700:400 }}>{SLOT_AR[sl]||"—"}</div>; })}</div>)}
           </div>
           <div style={{ fontSize:12.5, fontWeight:700, marginBottom:4 }}>🌙 الدوام المسائي ({ev.length})</div>
           <div style={{ fontSize:12, color:C.sub, marginBottom:16 }}>{ev.length?ev.map(dmy).join("، "):"—"}</div>
@@ -1623,6 +1696,7 @@ const printDoc = (title, body, landscape=false) => { const w=window.open("","_bl
 function SettingsPage({ settings, setSettings, showToast }) {
   const s = { ...DEFAULT_SETTINGS, ...settings };
   const set = (k,v)=> setSettings(p=>({ ...p, [k]:v }));
+  const [dk,setDk] = useState(document.documentElement.getAttribute("data-theme")==="dark");
   const field = (k,ttl,hint)=> <div style={{ ...card(), padding:16, marginBottom:12 }}>
     <label style={label}>{ttl}</label>
     <input type="number" min="0" value={s[k]} onChange={e=>set(k,Math.max(0,+e.target.value||0))} style={{ ...sIn, width:130 }} />
@@ -1633,11 +1707,18 @@ function SettingsPage({ settings, setSettings, showToast }) {
       <div style={{ fontSize:15, fontWeight:700 }}>⚙️ إعدادات النظام</div>
       <div style={{ fontSize:11.5, color:C.sub, marginTop:3 }}>قيم الحدود المستخدمة في التنبيهات والعدالة</div>
     </div>
+    <div className="card" style={{ padding:16, marginBottom:12 }}>
+      <label style={label}>🌗 المظهر</label>
+      <div style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 13px", background:"var(--surface2)", borderRadius:13, marginTop:6 }}>
+        <span style={{ flex:1, fontSize:13.5, fontWeight:600, color:C.text }}>الوضع الليلي</span>
+        <div className="tog" onClick={()=>{ const isDk=document.documentElement.getAttribute("data-theme")==="dark"; document.documentElement.setAttribute("data-theme",isDk?"light":"dark"); S.set("v2_dark",!isDk); setDk(!isDk); }}><div className="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="4"/></svg></div></div>
+      </div>
+    </div>
     <div style={{ ...card(), padding:16, marginBottom:12 }}>
       <label style={label}>🎨 لون التصميم</label>
       <div style={{ display:"flex", flexWrap:"wrap", gap:10, marginTop:4 }}>
         {Object.entries(THEMES).map(([k,t])=>{ const active=(S.get("v2_theme")||"teal")===k; return (
-          <button key={k} onClick={()=>{ S.set("v2_theme",k); location.reload(); }} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:6, border:`2px solid ${active?t.primary:C.line}`, borderRadius:12, padding:"10px 12px", background:"#fff", cursor:"pointer", minWidth:74 }}>
+          <button key={k} onClick={()=>{ S.set("v2_theme",k); location.reload(); }} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:6, border:`2px solid ${active?t.primary:C.line}`, borderRadius:12, padding:"10px 12px", background:"var(--surface)", cursor:"pointer", minWidth:74 }}>
             <span style={{ width:30, height:30, borderRadius:"50%", background:`linear-gradient(135deg,${t.primary},${t.accent})` }} />
             <span style={{ fontSize:11, fontWeight:700, color:active?t.primary:C.sub }}>{t.name}{active?" ✓":""}</span>
           </button>
@@ -1671,7 +1752,7 @@ function FairnessPage({ doctors, leaves, nightData, coverages, today }) {
       <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
         <div style={{ flex:1, fontSize:15, fontWeight:700 }}>⚖️ مؤشر مساهمة الأطباء</div>
         <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden" }}>
-          {[["month","الشهر"],["year","السنة"]].map(([k,l])=><button key={k} onClick={()=>setScope(k)} style={{ padding:"7px 15px", border:"none", fontSize:12.5, fontWeight:700, background:scope===k?C.primary:"#fff", color:scope===k?"#fff":C.sub }}>{l}</button>)}
+          {[["month","الشهر"],["year","السنة"]].map(([k,l])=><button key={k} onClick={()=>setScope(k)} style={{ padding:"7px 15px", border:"none", fontSize:12.5, fontWeight:700, background:scope===k?C.primary:"var(--surface)", color:scope===k?"#fff":C.sub }}>{l}</button>)}
         </div>
       </div>
       <div style={{ fontSize:11.5, color:C.sub, marginTop:8 }}>المساهمة = التغطيات المنفّذة + المسائي الإضافي. متوسط القسم: <b style={{ color:C.primary }}>{avg.toFixed(1)}</b></div>
@@ -1690,7 +1771,7 @@ function FairnessPage({ doctors, leaves, nightData, coverages, today }) {
             <span style={{ fontSize:11, color:C.sub }}>تغطيات {r.covers} · مسائي+ {r.eve}</span>
             <span style={{ fontWeight:800, color:above?C.primary:C.warn, minWidth:24, textAlign:"center" }}>{r.contrib}</span>
           </div>
-          <div style={{ height:8, background:"#eef3f8", borderRadius:6, overflow:"hidden" }}><div style={{ width:pct+"%", height:"100%", background:above?C.accent:C.warn, borderRadius:6 }} /></div>
+          <div style={{ height:8, background:"var(--surface2)", borderRadius:6, overflow:"hidden" }}><div style={{ width:pct+"%", height:"100%", background:above?`linear-gradient(90deg,${C.primary},${C.eve})`:C.warn, borderRadius:6 }} /></div>
         </div>
       ); })}
     </div>
@@ -1708,19 +1789,19 @@ function AlertsPage({ doctors, leaves, nightData, coverages, today, fd, settings
   doctors.forEach(d=>{ let n=0; monthDays(now.getFullYear(),now.getMonth()).forEach(({date})=>{ if(((nightData[date]||{}).doctors||[]).includes(d.id)) n++; }); if(n>s.capEvening) al.push({ sev:"err", t:`د.${d.name} تجاوز حدّ المناوبات (${n}/${s.capEvening})`, go:"doctors" }); });
   monthDays(now.getFullYear(),now.getMonth()).forEach(({date,di})=>{ const onLv=doctors.filter(d=>onLeave(d,date,leaves)).length; if(onLv>=s.capLeaveDay) al.push({ sev:"warn", t:`تواجد منخفض ${dmy(date)} ${DAYS[di]} — ${onLv} في إجازة`, go:"leaves" }); });
   al.sort((a,b)=>(a.sev==="err"?0:1)-(b.sev==="err"?0:1));
-  const SEV = { err:{bg:"#fef2f2",bd:"#fecaca",fg:"#b91c1c",ic:"⛔"}, warn:{bg:"#fffbeb",bd:"#fde68a",fg:"#b45309",ic:"⚠️"} };
+  const SEV = { err:{ fg:C.err, ic:"!", tag:"t-bad", lbl:"عاجل" }, warn:{ fg:C.warn, ic:"~", tag:"t-warn", lbl:"مراجعة" } };
   return <div className="fade">
-    <div style={{ ...card(), padding:16, marginBottom:14 }}>
-      <div style={{ fontSize:15, fontWeight:700 }}>🔔 مركز التنبيهات <span style={{ fontWeight:400, color:C.muted, fontSize:12 }}>({al.length})</span></div>
-      <div style={{ fontSize:11.5, color:C.sub, marginTop:3 }}>تعارضات · عيادات مكشوفة · حدود · إجازات قادمة</div>
+    <div className="card" style={{ padding:18, marginBottom:16 }}>
+      <div className="ctitle">🔔 مركز التنبيهات <span style={{ fontWeight:400, color:C.muted, fontSize:12 }}>({al.length})</span></div>
+      <div className="csub" style={{ margin:0 }}>تعارضات · عيادات مكشوفة · حدود · إجازات قادمة</div>
     </div>
     {al.length===0 ? <Empty icon="✅" title="لا تنبيهات" hint="كل شيء متوازن" /> :
-      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+      <div className="card" style={{ padding:8 }}>
         {al.map((a,i)=>{ const c=SEV[a.sev]; return (
-          <div key={i} onClick={()=>onGoto(a.go)} style={{ display:"flex", alignItems:"center", gap:10, background:c.bg, border:`1px solid ${c.bd}`, borderRadius:11, padding:"11px 13px", cursor:"pointer" }}>
-            <span style={{ fontSize:16 }}>{c.ic}</span>
-            <span style={{ flex:1, fontSize:13, color:c.fg, fontWeight:600 }}>{a.t}</span>
-            <span style={{ fontSize:11, color:C.muted }}>›</span>
+          <div key={i} className="row" onClick={()=>onGoto(a.go)} style={{ cursor:"pointer" }}>
+            <div className="rav" style={{ background:c.fg }}>{c.ic}</div>
+            <div style={{ flex:1 }}><div className="nm" style={{ fontSize:13 }}>{a.t}</div></div>
+            <span className={"tag "+c.tag}>{c.lbl}</span>
           </div>
         ); })}
       </div>}
@@ -1787,7 +1868,7 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd }) {
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
         <div style={{ flex:1, fontSize:15, fontWeight:700 }}>📊 تقارير الأطباء</div>
         <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden" }}>
-          {[["week","أسبوعي"],["month","شهري"]].map(([k,l])=><button key={k} onClick={()=>setScope(k)} style={{ padding:"7px 15px", border:"none", fontSize:12.5, fontWeight:700, background:scope===k?C.primary:"#fff", color:scope===k?"#fff":C.sub }}>{l}</button>)}
+          {[["week","أسبوعي"],["month","شهري"]].map(([k,l])=><button key={k} onClick={()=>setScope(k)} style={{ padding:"7px 15px", border:"none", fontSize:12.5, fontWeight:700, background:scope===k?C.primary:"var(--surface)", color:scope===k?"#fff":C.sub }}>{l}</button>)}
         </div>
       </div>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
@@ -1810,8 +1891,8 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd }) {
           <button onClick={()=>printDoctor(d)} style={{ ...sGhost, padding:"7px 12px", fontSize:12 }}>🖨 طباعة الجدول</button>
         </div>
         <div style={{ display:"flex", flexWrap:"wrap", gap:7, marginBottom:12 }}>
-          {[["رعاية",s.care,C.primary],["دعم",s.support,"#64748b"],["مسائي",s.evening,"#7c3aed"],["تغطيات",s.covers,"#0e7490"],["إجمالي",s.total,"#0f172a"],["إجازات",lv.length,C.warn]].map(([l,v,col])=>(
-            <div key={l} style={{ flex:"1 1 64px", background:"#f8fafc", borderRadius:9, padding:"9px 6px", textAlign:"center" }}><div style={{ fontSize:18, fontWeight:800, color:col }}>{v}</div><div style={{ fontSize:10, color:C.sub, marginTop:2 }}>{l}</div></div>
+          {[["رعاية",s.care,C.primary],["دعم",s.support,"#64748b"],["مسائي",s.evening,"var(--eve)"],["تغطيات",s.covers,"var(--primary-d)"],["إجمالي",s.total,"var(--ink)"],["إجازات",lv.length,C.warn]].map(([l,v,col])=>(
+            <div key={l} style={{ flex:"1 1 64px", background:"var(--surface2)", borderRadius:9, padding:"9px 6px", textAlign:"center" }}><div style={{ fontSize:18, fontWeight:800, color:col }}>{v}</div><div style={{ fontSize:10, color:C.sub, marginTop:2 }}>{l}</div></div>
           ))}
         </div>
         <div style={{ fontSize:11.5, fontWeight:700, color:C.sub, marginBottom:6 }}>🏥 الجدول الأسبوعي</div>
@@ -1860,7 +1941,7 @@ function LoginScreen({ users, onLogin }) {
   const [err,setErr] = useState("");
   const go = () => { const f=users.find(x=>x.username.trim().toLowerCase()===u.trim().toLowerCase() && String(x.pin)===String(p)); if(f){ setErr(""); onLogin(f); } else setErr("اسم المستخدم أو الرمز غير صحيح"); };
   return <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:`linear-gradient(135deg,${C.primaryD},${C.primary})`, padding:20 }}>
-    <div style={{ background:"#fff", borderRadius:20, padding:"30px 26px", width:"100%", maxWidth:360, boxShadow:"0 20px 60px rgba(0,0,0,.25)" }}>
+    <div style={{ background:"var(--surface)", borderRadius:20, padding:"30px 26px", width:"100%", maxWidth:360, boxShadow:"0 20px 60px rgba(0,0,0,.25)" }}>
       <div style={{ textAlign:"center", marginBottom:22 }}>
         <div style={{ width:58, height:58, borderRadius:16, background:`linear-gradient(135deg,${C.primary},${C.accent})`, color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, fontWeight:800, margin:"0 auto 12px" }}>ط</div>
         <div style={{ fontSize:18, fontWeight:800, color:C.text }}>نظام إدارة التغطيات</div>
@@ -1906,7 +1987,7 @@ function UsersPage({ users, setUsers, doctors, currentUser, showToast }) {
     <div style={{ ...card(), padding:14 }}>
       {users.map(u=>(
         <div key={u.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 2px", borderBottom:`1px solid ${C.line2}` }}>
-          <div style={{ width:34, height:34, borderRadius:10, background:u.role==="doctor"?"#e0f2fe":"#dcfce7", color:u.role==="doctor"?"#0369a1":"#15803d", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>{u.role==="doctor"?"🩺":"🛡"}</div>
+          <div style={{ width:34, height:34, borderRadius:10, background:u.role==="doctor"?"var(--primarySoft)":"var(--okSoft)", color:u.role==="doctor"?"var(--primary-d)":C.ok, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>{u.role==="doctor"?"🩺":"🛡"}</div>
           <div style={{ flex:1 }}>
             <div style={{ fontWeight:700, fontSize:13.5 }}>{u.username} {u.id===currentUser.id && <span style={{ fontSize:10, color:C.primary }}>(أنت)</span>}</div>
             <div style={{ fontSize:11, color:C.sub }}>{ROLE_AR[u.role]}{u.role==="doctor"?(" · "+linked(u.doctorId)):""}</div>
@@ -1929,7 +2010,7 @@ function DoctorPortal({ doctor, doctors, leaves, nightData, coverages, today, fd
   Object.entries(nightData).forEach(([dt,nd])=>{ const cv=nd.coverages||{}; ["am","pm","nextAm"].forEach(sl=>{ (cv[sl]||[]).forEach(id=>{ if(id===doctor.id) myCovs.push({ date:dt, period:sl, ownerId:null }); }); }); });
   myCovs.sort((a,b)=>a.date.localeCompare(b.date));
   const perTxt = p => p==="am"?"عيادة الصباح":p==="pm"?"عيادة الظهر":p==="nextAm"?"عيادة صباح الغد":"العيادة المسائية";
-  const tiles = [["رعاية مباشرة",s.care,C.primary],["دعم",s.support,"#64748b"],["مسائي",s.evening,"#7c3aed"],["تغطيات",s.covers,"#0e7490"],["إجمالي العمل",s.total,"#0f172a"],["إجازات",myLeaves.length,C.warn]];
+  const tiles = [["رعاية مباشرة",s.care,C.primary],["دعم",s.support,"#64748b"],["مسائي",s.evening,"var(--eve)"],["تغطيات",s.covers,"var(--primary-d)"],["إجمالي العمل",s.total,"var(--ink)"],["إجازات",myLeaves.length,C.warn]];
   return <div className="fade">
     <div style={{ ...card(), padding:"18px 18px", marginBottom:14, display:"flex", alignItems:"center", gap:12 }}>
       <Avatar doc={doctor} size={48}/>
@@ -1949,7 +2030,7 @@ function DoctorPortal({ doctor, doctors, leaves, nightData, coverages, today, fd
     </div>
     <div style={{ ...card(), padding:16, marginBottom:14 }}>
       <div style={{ fontWeight:700, fontSize:13.5, marginBottom:8 }}>🌙 الدوام المسائي ({evDates.length})</div>
-      {evDates.length? <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>{evDates.map(dt=><span key={dt} style={{ background:"#ede9fe", color:"#6d28d9", fontSize:11.5, fontWeight:700, borderRadius:8, padding:"5px 10px" }}>{dmy(dt)}</span>)}</div> : <div style={{ fontSize:12, color:C.muted }}>—</div>}
+      {evDates.length? <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>{evDates.map(dt=><span key={dt} style={{ background:"var(--eveSoft)", color:"var(--eve)", fontSize:11.5, fontWeight:700, borderRadius:8, padding:"5px 10px" }}>{dmy(dt)}</span>)}</div> : <div style={{ fontSize:12, color:C.muted }}>—</div>}
     </div>
     <div style={{ ...card(), padding:16, marginBottom:14 }}>
       <div style={{ fontWeight:700, fontSize:13.5, marginBottom:8 }}>🔄 التغطيات المؤدّاة ({myCovs.length})</div>
@@ -2057,12 +2138,18 @@ function App() {
   // ---- Auth gating ----
   if(!currentUser) return <LoginScreen users={users} onLogin={u=>{ setSession({userId:u.id}); setPage("dashboard"); }} />;
   if(role==="doctor"){ const myDoc=doctors.find(d=>d.id===currentUser.doctorId); return (
-    <div style={{ maxWidth:780, margin:"0 auto", minHeight:"100vh", background:C.bg }}>
-      <div style={{ background:`linear-gradient(135deg,${C.primaryD},${C.primary})`, color:"#fff", padding:"15px 18px", display:"flex", alignItems:"center", gap:10 }}>
-        <div style={{ flex:1 }}><div style={{ fontSize:16, fontWeight:800 }}>حسابي</div><div style={{ fontSize:11.5, opacity:.85 }}>جدولك · تغطياتك · إحصائياتك</div></div>
-        <button onClick={logout} style={{ background:"rgba(255,255,255,.2)", color:"#fff", border:"none", borderRadius:9, padding:"7px 15px", fontWeight:700, fontSize:12.5, cursor:"pointer" }}>خروج</button>
-      </div>
-      <div style={{ padding:"16px 14px 40px" }}>{ myDoc ? <DoctorPortal doctor={myDoc} doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} /> : <Empty icon="⚠️" title="لا يوجد طبيب مرتبط بحسابك" hint="تواصل مع رئيس القسم" /> }</div>
+    <div style={{ minHeight:"100vh", background:"var(--bg)" }}>
+      <header className="topbar" style={{ paddingInline:18 }}>
+        <div className="brand" style={{ padding:0, gap:10 }}>
+          <div className="logo" style={{ width:38, height:38 }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></div>
+          <div><div style={{ fontWeight:700, fontSize:15, color:"var(--ink)" }}>حسابي</div><div style={{ fontSize:11, color:C.muted }}>جدولك · تغطياتك · إحصائياتك</div></div>
+        </div>
+        <div style={{ marginInlineStart:"auto", display:"flex", alignItems:"center", gap:10 }}>
+          <div className="tog" onClick={toggleDark} title="الوضع الليلي/النهاري"><div className="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/></svg></div></div>
+          <button className="icobtn" onClick={logout} title="تسجيل الخروج"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></button>
+        </div>
+      </header>
+      <div className="content" style={{ maxWidth:880, margin:"0 auto" }}>{ myDoc ? <DoctorPortal doctor={myDoc} doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} /> : <Empty icon="⚠️" title="لا يوجد طبيب مرتبط بحسابك" hint="تواصل مع رئيس القسم" /> }</div>
       <Toast toast={toast} />
     </div>
   ); }
@@ -2103,7 +2190,7 @@ function App() {
         <button className="icobtn bell" title="التنبيهات" onClick={()=>setPage("alerts")}><span className="n"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg></button>
       </div>
       <div className="content" style={{ paddingBottom: pending?84:undefined }}>
-        {pending && <div style={{ background:"#fffbeb", border:"1px solid #fde68a", borderRadius:13, padding:"12px 14px", marginBottom:12 }}>
+        {pending && <div style={{ background:"var(--warnSoft)", border:"1px solid #fde68a", borderRadius:13, padding:"12px 14px", marginBottom:12 }}>
           <div style={{ fontSize:12.5, fontWeight:700, color:"#b45309", marginBottom:9 }}>🟡 لديك تغييرات بصيغة <b>مسودة</b> لم تُعتمد — الإحصائيات والتقارير تعرض آخر نسخة معتمدة.</div>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
             <button onClick={saveDraft} style={{ ...sGhost, padding:"8px 14px", fontSize:12.5 }}>💾 حفظ كمسودة</button>
