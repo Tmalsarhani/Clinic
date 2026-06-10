@@ -957,6 +957,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const gapKey = g => `${g.date}|${g.period}|${g.ownerId}`;
   const monthDates = days.map(x=>x.date);
   const loadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>{ const s=doctorSessions(d, monthDates, nightData, coverages, leaves); m[d.id]=s.total; }); return m; }, [mo,doctors,nightData,coverages,leaves]);
+  const eveLoadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>m[d.id]=0); monthDates.forEach(dt=>((nightData[dt]||{}).doctors||[]).forEach(id=>{ m[id]=(m[id]||0)+1; })); return m; }, [mo,doctors,nightData]);
   const rankAvail = arr => arr.filter(a=>a.status!=="leave").map(a=>({ ...a, load:loadMap[a.doc.id]||0 })).sort((a,b)=> (a.status==="free"?0:1)-(b.status==="free"?0:1) || a.load-b.load);
   const availForGap = g => rankAvail(getAvailable(doctors,[g.ownerId],g.di,g.date,g.period,leaves,nightData,{},coverages));
   const pickList = (excludeId,di,date,period) => getAvailable(doctors,[excludeId],di,date,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadMap[a.doc.id]||0, commit: a.status==="warn" ? (SLOT_COMMIT[getSlot(a.doc,di,period)]||"التزام") : null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
@@ -984,7 +985,10 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   useEffect(()=>S.set("v2_dayreq",dayReq),[dayReq]);
   const [showSetup, setShowSetup] = useState(false);
   const setReq = (date,n) => setDayReq(r=>({ ...r, [date]:Math.max(0,n) }));
-  const autoFillCount = () => { setNight(nd=>{ const n={...nd}; const usage={}; doctors.forEach(d=>usage[d.id]=0); monthDates.forEach(dt=>((n[dt]||{}).doctors||[]).forEach(id=>{ usage[id]=(usage[id]||0)+1; })); days.forEach(({date,di})=>{ const req = (dayReq[date]!=null?dayReq[date]:reqPerDay); const cur=(n[date]||{}).doctors?[...n[date].doctors]:[]; const avail=doctors.filter(d=>!cur.includes(d.id)&&!onLeave(d,date,leaves)); avail.sort((a,b)=> (((b.nightDays||[]).includes(di)?1:0)-((a.nightDays||[]).includes(di)?1:0)) || (usage[a.id]-usage[b.id]) || ((loadMap[a.id]||0)-(loadMap[b.id]||0)) ); while(cur.length<req && avail.length){ const pk=avail.shift(); cur.push(pk.id); usage[pk.id]++; } n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur }; }); return n; }); showToast("تم إنشاء الجدول حسب إعداد الأيام"); };
+  const needOf = date => (dayReq[date]!=null?dayReq[date]:reqPerDay);
+  const createEmpty = () => { setNight(nd=>{ const n={...nd}; days.forEach(({date})=>{ const need=needOf(date); if(need>0){ n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:[], eveningSlots:need }; } }); return n; }); logAudit&&logAudit("إنشاء جدول مسائي فارغ حسب عدد العيادات"); showToast("تم إنشاء جدول فارغ — اختر الأطباء أو وزّع تلقائياً"); setShowSetup(false); };
+  const distributeFixed = () => { setNight(nd=>{ const n={...nd}; days.forEach(({date,di})=>{ const need=needOf(date); if(need<=0) return; const cur=(n[date]?.doctors)?[...n[date].doctors]:[]; doctors.filter(d=>(d.nightDays||[]).includes(di) && !onLeave(d,date,leaves) && !(d.blockedDays||[]).includes(di) && !cur.includes(d.id)).forEach(d=>{ if(cur.length<need) cur.push(d.id); }); n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur, eveningSlots:need }; }); return n; }); logAudit&&logAudit("توزيع الأطباء أصحاب الأيام الثابتة"); showToast("تم وضع أصحاب الأيام الثابتة — والباقي فارغ"); };
+  const fillAvailable = () => { setNight(nd=>{ const n={...nd}; const usage={}; doctors.forEach(d=>usage[d.id]=0); monthDates.forEach(dt=>((n[dt]||{}).doctors||[]).forEach(id=>usage[id]=(usage[id]||0)+1)); days.forEach(({date,di})=>{ const need=needOf(date); if(need<=0) return; const cur=(n[date]?.doctors)?[...n[date].doctors]:[]; const avail=doctors.filter(d=>!cur.includes(d.id)&&!onLeave(d,date,leaves)&&!(d.blockedDays||[]).includes(di)&&!((d.nightDays||[]).length>0)); avail.sort((a,b)=> (usage[a.id]-usage[b.id]) || ((loadMap[a.id]||0)-(loadMap[b.id]||0)) ); while(cur.length<need && avail.length){ const pk=avail.shift(); cur.push(pk.id); usage[pk.id]++; } n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur, eveningSlots:need }; }); return n; }); logAudit&&logAudit("إكمال الناقص بالأطباء المتاحين"); showToast("تم إكمال الناقص بالمتاحين (الأقل عبئاً المسائي)"); };
 
   // individual coverage form
   const [cf, setCf] = useState({ absentId:"", date:"", period:"am", coverId:"" });
@@ -1015,7 +1019,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     const covCal = buildCal(date=>{ const cl=covLines(date); return cl.map(t=>`<div class="cov">🔄 ${t}</div>`).join("")||'<div class="dim">—</div>'; });
     openPrint(`المسائي والتغطيات — ${MONTHS[mo.m]} ${mo.y}`, `<h2>🌙 الجدول المسائي</h2>${eveCal}<h2 class="pb">🔄 جدول التغطيات</h2>${covCal}`);
   };
-  const filled = days.filter(d=>{ const nd=nightData[d.date]; return nd && ((nd.doctors||[]).length || coverages.some(c=>c.date===d.date)); });
+  const filled = days.filter(d=>{ const nd=nightData[d.date]; return nd && ((nd.doctors||[]).length || nd.eveningSlots>0 || coverages.some(c=>c.date===d.date)); });
   const statusOf = date => { const r=analyzeDay(date,doctors,leaves,nightData,coverages,null); const nd=nightData[date]||{}; return ((nd.doctors||[]).length && r.gaps.length===0 && r.conflicts.length===0) ? "done":"pending"; };
   const listDays = filled.filter(d=>{ if(sFilter!=="all" && statusOf(d.date)!==sFilter) return false; if(search){ const q=search.trim(); const nd=nightData[d.date]||{}; const names=(nd.doctors||[]).map(id=>fd(id)?.name||"").join(" ")+" "+coverages.filter(c=>c.date===d.date).map(c=>fd(c.coverDoctorId)?.name||"").join(" "); if(!names.includes(q)&&!d.date.includes(q)) return false; } return true; });
   const offset = days.length?days[0].di:0;
@@ -1040,8 +1044,9 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
       <div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:7 }}>أدوات الجدول</div>
       <div style={{ display:"flex", flexWrap:"wrap", gap:7, marginBottom:10 }}>
         <button onClick={()=>setShowSetup(s=>!s)} style={sBtn(C.primary)}>🗓 إنشاء جدول مسائي</button>
-        <button onClick={autoEvening} style={sGhost}>⚡ توزيع حسب الأيام الثابتة</button>
-        <button onClick={coverAll} style={sBtn("#0e7490")}>✓ إكمال الناقص (التغطيات)</button>
+        <button onClick={distributeFixed} style={sGhost}>⚡ توزيع حسب الأيام الثابتة</button>
+        <button onClick={fillAvailable} style={sBtn("#7c3aed")}>🌙 إكمال المسائي بالمتاح</button>
+        <button onClick={coverAll} style={sBtn("#0e7490")}>🩺 تغطية العيادات المكشوفة</button>
         <button onClick={copyPrev} style={sGhost}>📋 نسخ الشهر السابق</button>
         <label style={{ ...sGhost, display:"inline-flex", alignItems:"center", gap:6, cursor:"pointer" }}>➕ إضافة يوم<input type="date" onChange={e=>{ if(e.target.value&&dayIdx(e.target.value)>=0){ ensureDay(e.target.value); setSel(e.target.value); setMo({y:+e.target.value.split("-")[0],m:+e.target.value.split("-")[1]-1}); setView("list"); } }} style={{ border:"none", background:"none", width:18, padding:0 }} value="" /></label>
         <button onClick={clearMonth} style={{ ...sGhost, color:C.err }}>🗑 مسح الشهر</button>
@@ -1087,7 +1092,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           <div style={{ flex:1, fontSize:14, fontWeight:700 }}>🗓 عدد العيادات المسائية لكل يوم</div>
           <label style={{ fontSize:11.5, color:C.sub, display:"inline-flex", alignItems:"center", gap:6 }}>الافتراضي<input type="number" min="0" max="10" value={reqPerDay} onChange={e=>setReqPerDay(Math.max(0,+e.target.value||0))} style={{ width:44, border:`1px solid ${C.line}`, borderRadius:7, padding:"4px", textAlign:"center" }} /></label>
         </div>
-        <div style={{ fontSize:11, color:C.muted, marginBottom:10 }}>حدّد لكل يوم العدد المطلوب ثم اضغط «إنشاء الجدول».</div>
+        <div style={{ fontSize:11, color:C.muted, marginBottom:10 }}>حدّد لكل يوم عدد العيادات المسائية ثم اضغط «إنشاء جدول فارغ». تبقى الخانات فارغة لتختار الأطباء يدوياً، أو «توزيع الأيام الثابتة» ثم «إكمال المسائي بالمتاح».</div>
         <div style={{ display:"flex", flexDirection:"column", gap:5, maxHeight:360, overflowY:"auto" }}>
           {days.map(({date,di,day})=>{ const v=dayReq[date]!=null?dayReq[date]:reqPerDay; return (
             <div key={date} style={{ display:"flex", alignItems:"center", gap:10, background:"#f8fafc", borderRadius:9, padding:"7px 11px" }}>
@@ -1100,7 +1105,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
         </div>
         <div style={{ display:"flex", gap:8, marginTop:12 }}>
           <button onClick={()=>{ showToast("تم حفظ الإعداد"); setShowSetup(false); }} style={{ ...sGhost, flex:1 }}>💾 حفظ الإعداد</button>
-          <button onClick={()=>{ autoFillCount(); setShowSetup(false); }} style={{ ...sBtn(C.primary), flex:1 }}>⚡ إنشاء الجدول</button>
+          <button onClick={createEmpty} style={{ ...sBtn(C.primary), flex:1 }}>🗓 إنشاء جدول فارغ</button>
         </div>
       </div>
     )}
@@ -1194,10 +1199,19 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                 </div>}
               </div>
               {open && <div style={{ padding:"4px 13px 13px", borderTop:`1px solid ${C.line2}` }}>
-                <div style={label}>الطبيب المسائي</div>
+                <div style={label}>الطبيب المسائي {nd.eveningSlots>0&&<span style={{ color:C.muted, fontWeight:400 }}>· المطلوب {nd.eveningSlots} · المعيّن {(nd.doctors||[]).length}</span>}</div>
                 <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:10 }}>
-                  {doctors.map(d=>{ const on=(nd.doctors||[]).includes(d.id); const lv=onLeave(d,date,leaves); return (
-                    <button key={d.id} onClick={()=>toggleEvening(date,d.id)} disabled={lv&&!on} style={{ border:`1px solid ${on?d.color:C.line}`, background:on?d.color:"#fff", color:on?"#fff":(lv?C.muted:C.text), borderRadius:18, padding:"5px 12px", fontSize:12, fontWeight:600, opacity:lv&&!on?.5:1 }}>د.{d.name}{lv?" (إجازة)":""}</button>
+                  {doctors.map(d=>{ const on=(nd.doctors||[]).includes(d.id); const lv=onLeave(d,date,leaves); const fixedHere=(d.nightDays||[]).includes(di); const fixedAny=(d.nightDays||[]).length>0; const el=eveLoadMap[d.id]||0;
+                    const rank = on?0 : lv?4 : fixedHere?1 : fixedAny?3 : 2; // ترتيب
+                    return { d, on, lv, fixedHere, fixedAny, el, rank };
+                  }).sort((a,b)=> a.rank-b.rank || a.el-b.el || a.d.name.localeCompare(b.d.name,"ar")).map(({d,on,lv,fixedHere,fixedAny,el})=>{
+                    const note = on?"مُعيّن" : lv?"إجازة" : fixedHere?"عيادة مسائية ثابتة (هذا اليوم)" : fixedAny?"لديه عيادة مسائية ثابتة" : `متاح · مسائيات ${el}`;
+                    const col = on?d.color : lv?"#ef4444" : fixedHere?"#7c3aed" : fixedAny?"#a78bfa" : "#10b981";
+                    return (
+                    <button key={d.id} onClick={()=>toggleEvening(date,d.id)} title={note} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:1, border:`1px solid ${on?d.color:col}`, background:on?d.color:"#fff", color:on?"#fff":col, borderRadius:14, padding:"5px 11px", fontSize:11.5, fontWeight:700 }}>
+                      <span style={{ whiteSpace:"nowrap" }}>د.{d.name}</span>
+                      <span style={{ fontSize:8.5, fontWeight:600, opacity:on?.9:1 }}>{note}</span>
+                    </button>
                   ); })}
                 </div>
                 {docs.map(d=>{ const needs=[]; if(isClinic(getSlot(d,di,"am")))needs.push(["am","عيادة الصباح",di]); if(isClinic(getSlot(d,di,"pm")))needs.push(["pm","عيادة الظهر",di]);
@@ -1307,7 +1321,8 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
             const md = monthDays(+l.start.split("-")[0], +l.start.split("-")[1]-1).map(x=>x.date);
             const loadOf = id => doctorSessions(doctors.find(x=>x.id===id), md, nightData, coverages, leaves).total;
             const pickFor = (wi,ds,period) => getAvailable(doctors,[d.id],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
-            const evePick = ds => { const nightDocs=(nightData[ds]?.doctors)||[]; return doctors.filter(x=>x.id!==d.id&&!nightDocs.includes(x.id)).map(x=>({ doc:x, status:onLeave(x,ds,leaves)?"leave":"free", load:loadOf(x.id), commit:null })).sort((a,b)=>(({free:0,leave:3}[a.status])-({free:0,leave:3}[b.status]))||(a.load-b.load)); };
+            const eveLoad = id => md.reduce((a,dt)=>a+(((nightData[dt]||{}).doctors||[]).includes(id)?1:0),0);
+            const evePick = ds => { const nightDocs=(nightData[ds]?.doctors)||[]; return doctors.filter(x=>x.id!==d.id&&!nightDocs.includes(x.id)).map(x=>{ const lv=onLeave(x,ds,leaves); const fixedAny=(x.nightDays||[]).length>0; return { doc:x, status: lv?"leave":fixedAny?"warn":"free", commit: (fixedAny&&!lv)?"عيادة مسائية ثابتة":null, load:eveLoad(x.id) }; }).sort((a,b)=>(({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status]))||(a.load-b.load)); };
             const assignClinic = (ds,p,cid) => { setCoverages(cs=>[...cs.filter(c=>!(c.date===ds&&c.period===p&&c.absentId===d.id)), {id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:cid,reason:"leave"}]); logAudit&&logAudit(`بديل إجازة د.${d.name} (${perAr(p)} ${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`); showToast("تم تعيين البديل"); };
             const assignEve = (ds,cid) => { setNight&&setNight(n=>{ const day=n[ds]||{doctors:[],coverages:{am:[],pm:[],nextAm:[]}}; const docs=[...new Set((day.doctors||[]).map(x=>x===d.id?cid:x))]; if(!docs.includes(cid)) docs.push(cid); return {...n,[ds]:{...day,doctors:docs}}; }); logAudit&&logAudit(`بديل مسائي إجازة د.${d.name} (${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`); showToast("تم تعيين بديل المسائي"); };
             const openClinics = l.clinicClosed!==false ? [] : clinics;
