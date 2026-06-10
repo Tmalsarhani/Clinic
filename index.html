@@ -1360,12 +1360,12 @@ function DoctorsPage({ doctors, leaves, today, fd, setDoctors, showToast, logAud
             </div>
             <label style={label}>جدول العيادات الأسبوعي (صباح / مساء)</label>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6, marginBottom:8 }}>
-              {[0,1,2,3,4].map(di=><div key={di}>
+              {[0,1,2,3,4].map(di=><div key={di} style={{ minWidth:0 }}>
                 <div style={{ fontSize:10.5, fontWeight:700, color:C.sub, textAlign:"center", marginBottom:4 }}>{DAYS[di]}</div>
                 {[["am","عيادة الصباح"],["pm","عيادة الظهر"]].map(([p,pl])=>{ const v=getSlot(d,di,p); const st=slotStyle(v); return (
-                  <div key={p} style={{ display:"flex", alignItems:"center", gap:3, marginBottom:4 }}>
-                    <span style={{ fontSize:9, color:C.muted, minWidth:62, textAlign:"start" }}>{pl}</span>
-                    <select value={v} onChange={e=>setSlot(d.id,di,p,e.target.value)} style={{ flex:1, border:`1px solid ${v?st.fg+"55":C.line}`, background:st.bg, color:st.fg, borderRadius:8, padding:"6px 2px", fontSize:11, fontWeight:v?700:400 }}>{SLOT_OPTS.map(([sv,l])=><option key={sv} value={sv}>{l}</option>)}</select>
+                  <div key={p} style={{ marginBottom:5 }}>
+                    <div style={{ fontSize:8.5, color:C.muted, marginBottom:2, textAlign:"center" }}>{pl}</div>
+                    <select value={v} onChange={e=>setSlot(d.id,di,p,e.target.value)} style={{ width:"100%", border:`1px solid ${v?st.fg+"55":C.line}`, background:st.bg, color:st.fg, borderRadius:8, padding:"6px 2px", fontSize:11, fontWeight:v?700:400 }}>{SLOT_OPTS.map(([sv,l])=><option key={sv} value={sv}>{l}</option>)}</select>
                   </div>
                 ); })}
               </div>)}
