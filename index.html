@@ -766,9 +766,9 @@ function doctorSessions(doctor, dates, nightData, coverages, leaves) {
     prevNextAm.forEach(id => { if (id===doctor.id) covers += 1; });
     dind.forEach(x => { if (x.coverDoctorId===doctor.id) covers += 1; });
   });
-  const care = direct + covers;          // الرعاية المباشرة = عيادات فعلية + تغطيات
-  const total = care + support + evening*2;   // إجمالي العمل = رعاية + دعم + (المسائي فترتان)
-  return { direct, care, total, support, supportive:support, full:total, attended:direct, covers, evening, eveningFixed, eveningExtra, absentCovered };
+  const care = direct + covers + evening*2;   // الرعاية = عيادات نهارية (ص/ظ ×1) + تغطيات نهارية + المسائي (×2). لا يُستثنى أي مسائي.
+  const total = care + support;               // إجمالي العمل = الرعاية + الدعم (إدارة/لجان)
+  return { direct, care, carePoints:care, daytimeCare:direct, eveningCare:evening*2, total, support, supportive:support, full:total, attended:direct, covers, evening, eveningFixed, eveningExtra, absentCovered };
 }
 
 // Workload per doctor for a month, by ACTUAL worked periods.
