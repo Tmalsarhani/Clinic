@@ -1907,6 +1907,26 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd }) {
   };
   const printDoctor = d => printDoc(`تقرير — د.${d.name} (${label})`, reportCSS+`<div class="pdoc">${docReportBody(d)}</div>`, false);
   const printAll = () => { if(!shown.length) return; printDoc(`تقرير الأطباء — ${label}`, reportCSS+shown.map((d,i)=>`<div class="pdoc ${i>0?"pb":""}">${docReportBody(d)}</div>`).join(""), false); };
+  const printDepartment = () => {
+    const gaps=[], conflicts=[];
+    dates.forEach(dt=>{ const r=analyzeDay(dt,doctors,leaves,nightData,coverages,null); (r.gaps||[]).forEach(g=>gaps.push({ date:dt, di:(g.di!=null?g.di:new Date(dt).getDay()), ownerId:g.ownerId, period:g.period, reason:g.reason||"" })); (r.conflicts||[]).forEach(c=>conflicts.push({ date:dt, text:c.text||c.reason||"تعارض" })); });
+    gaps.sort((a,b)=>a.date.localeCompare(b.date));
+    const issueCSS = `<style>.alert{border-radius:14px;padding:14px 16px;margin-bottom:14px}.alert.bad{background:#fef2f2;border:1px solid #fecaca}.alert.ok{background:#ecfdf5;border:1px solid #bbf7d0}.alert h2{margin:0 0 8px;border:none;padding:0}.alert.bad h2{color:#b91c1c}.alert.bad h2::before{background:#ef4444}.alert.ok h2{color:#15803d}.alert.ok h2::before{background:#16a34a}.wsched td.s{background:#f4f8fb;font-weight:700;color:${C.primaryD}}</style>`;
+    const gapRows = gaps.map(g=>`<tr><td>${dmy(g.date)}</td><td>${DAYS[g.di]||""}</td><td style="font-weight:700">د.${fd(g.ownerId)?.name||"—"}</td><td>${perTxt(g.period)}</td><td style="text-align:start">${g.reason}</td></tr>`).join("");
+    const confRows = conflicts.map(c=>`<tr><td>${dmy(c.date)}</td><td style="text-align:start">${c.text}</td></tr>`).join("");
+    const review = (gaps.length||conflicts.length)
+      ? `<div class="alert bad"><h2>⚠️ يحتاج مراجعة — عيادات مكشوفة (${gaps.length}) · تعارضات (${conflicts.length})</h2>${gaps.length?`<table><thead><tr><th>التاريخ</th><th>اليوم</th><th>الطبيب صاحب العيادة</th><th>الفترة</th><th>السبب</th></tr></thead><tbody>${gapRows}</tbody></table>`:""}${conflicts.length?`<table style="margin-top:10px"><thead><tr><th>التاريخ</th><th>وصف التعارض</th></tr></thead><tbody>${confRows}</tbody></table>`:""}</div>`
+      : `<div class="alert ok"><h2>✅ لا عيادات مكشوفة ولا تعارضات خلال ${label}</h2></div>`;
+    const docs = doctors.map(d=>{
+      const sx=doctorSessions(d,dates,nightData,coverages,leaves); const ev=eveOf(d); const cv=covsOf(d); const lv=lvOf(d);
+      const sched = DAYS.map((dn,di)=>`<tr><td class="s">${dn}</td><td>${SLOT_AR[(d.sched?.[di]?.am)||""]||"—"}</td><td>${SLOT_AR[(d.sched?.[di]?.pm)||""]||"—"}</td></tr>`).join("");
+      const evTbl = ev.length?`<table><thead><tr><th style="width:150px">التاريخ</th><th>اليوم</th></tr></thead><tbody>${ev.map(dt=>`<tr><td>${dmy(dt)}</td><td>${DAYS[new Date(dt).getDay()]||""}</td></tr>`).join("")}</tbody></table>`:`<p>لا يوجد</p>`;
+      const cvTbl = cv.length?`<table><thead><tr><th style="width:130px">التاريخ</th><th style="width:110px">الفترة</th><th>تفاصيل التغطية</th></tr></thead><tbody>${cv.map(c=>`<tr><td>${dmy(c.date)}</td><td>${perTxt(c.period)}</td><td style="text-align:start">${c.ownerId?("عيادة د."+(fd(c.ownerId)?.name||"")):"تغطية عيادة طبيب المسائي"}</td></tr>`).join("")}</tbody></table>`:`<p>لا يوجد</p>`;
+      const lvTbl = lv.length?`<table><thead><tr><th>من</th><th>إلى</th></tr></thead><tbody>${lv.map(l=>`<tr><td>${dmy(l.start)}</td><td>${dmy(l.end)}</td></tr>`).join("")}</tbody></table>`:`<p>لا يوجد</p>`;
+      return `<div class="pdoc pb"><div class="dhead"><span class="dav">${sn(d.name).slice(0,2)}</span><div><div class="dnm">د.${d.name}</div><div class="dmt">${rankLabel(rankOf(d))} · رعاية ${sx.care} · مسائي ${sx.evening} · تغطيات ${sx.covers}</div></div></div><h2>🏥 الجدول الأسبوعي الثابت</h2><table class="wsched"><thead><tr><th>اليوم</th><th>صباح</th><th>ظهر</th></tr></thead><tbody>${sched}</tbody></table><h2>🌙 الدوام المسائي (${ev.length})</h2>${evTbl}<h2>🔄 التغطيات (${cv.length})</h2>${cvTbl}<h2>🏖 الإجازات (${lv.length})</h2>${lvTbl}</div>`;
+    }).join("");
+    printDoc(`مراجعة جدول القسم الشامل — ${label}`, reportCSS+issueCSS+review+docs, false);
+  };
 
   return <div className="fade">
     <div style={{ ...card(), padding:16, marginBottom:14 }}>
@@ -1926,6 +1946,7 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd }) {
         {doctors.map(d=><option key={d.id} value={d.id}>د.{d.name}</option>)}
       </select>
       <button onClick={printAll} style={{ ...sGhost, width:"100%" }}>🖨 طباعة {sel==="all"?"الكل (كل طبيب بصفحة)":"الطبيب المحدد"}</button>
+      <button onClick={printDepartment} style={{ ...sBtn(C.primaryD), width:"100%", marginTop:8 }}>🗂 مراجعة جدول القسم الشامل (تعارضات + عيادات مكشوفة + كل طبيب)</button>
     </div>
 
     {shown.map(d=>{ const s=doctorSessions(d,dates,nightData,coverages,leaves); const cv=covsOf(d); const ev=eveOf(d); const lv=lvOf(d); return (
