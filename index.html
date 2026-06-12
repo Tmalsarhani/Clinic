@@ -1073,6 +1073,19 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto })
 }
 
 
+
+// ════════ الرابط الحي (Firebase Firestore REST) ════════
+function cloudCfg(){ const c=S.get("v2_cloud"); return (c&&c.dbUrl)?c:null; } // {dbUrl}
+async function cloudPublish(officialSnap){
+  const cfg=cloudCfg(); if(!cfg||!cfg.dbUrl) throw new Error("no-config");
+  const base=String(cfg.dbUrl).replace(/\/+$/,"");
+  const url=`${base}/public/schedule.json`;
+  const body={ data: JSON.stringify(officialSnap), updatedAt: new Date().toISOString() };
+  const res=await fetch(url,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(body) });
+  if(!res.ok){ const t=await res.text(); throw new Error("publish-failed: "+res.status+" "+t.slice(0,120)); }
+  return true;
+}
+
 // ════════ مشاركة وتصدير ════════
 function buildScheduleText(days, nightData, coverages, leaves, doctors, fd, monthLabel){
   const lines=[`📅 جدول الدوام المسائي والتغطيات — ${monthLabel}`,""];
@@ -1889,6 +1902,26 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
       </label>
     </div>
     <div style={{ ...card(), padding:16, marginBottom:12 }}>
+      <label style={label}>🔗 الرابط الحي للجدول</label>
+      <div style={{ fontSize:11.5, color:C.muted, marginBottom:10 }}>عند الاعتماد الرسمي تُنشر النسخة المعتمدة تلقائياً، ويظل رابط العرض واحداً ومحدَّثاً دائماً للجميع.</div>
+      {(()=>{ const cfg=S.get("v2_cloud")||{}; return <>
+        <input defaultValue={cfg.dbUrl||""} id="cl_url" placeholder="رابط Realtime Database (https://xxx-default-rtdb.firebaseio.com)" style={{ ...sIn, marginBottom:8, direction:"ltr", textAlign:"left" }} />
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+          <button onClick={()=>{ let url=document.getElementById("cl_url").value.trim(); if(!url){ showToast("ألصق رابط قاعدة Realtime","warn"); return; } if(!/^https?:\/\//.test(url)) url="https://"+url; S.set("v2_cloud",{ dbUrl:url }); showToast("✓ تم حفظ رابط القاعدة الحية"); }} style={{ ...sBtn(C.primary), flex:1, minWidth:140 }}>💾 حفظ</button>
+          <button onClick={async()=>{ const cf=cloudCfg(); if(!cf){ showToast("احفظ الرابط أولاً","warn"); return; } showToast("جارٍ الاختبار…"); try{ const base=String(cf.dbUrl).replace(/\/+$/,""); const r=await fetch(`${base}/public/schedule.json`,{cache:"no-store"}); if(r.ok) showToast("✓ الاتصال بالقاعدة سليم"); else showToast("القاعدة ردّت بخطأ — تحقق من الرابط والقواعد","warn"); }catch(e){ showToast("تعذّر الاتصال — تحقق من الرابط","err"); } }} style={{ ...sGhost, flex:1, minWidth:120, color:C.accent }}>🔌 اختبار</button>
+          <button onClick={()=>{ const link=location.origin+location.pathname.replace(/[^/]*$/,"")+"view.html"; navigator.clipboard&&navigator.clipboard.writeText(link); showToast("✓ نُسخ: "+link); }} style={{ ...sGhost, flex:1, minWidth:140 }}>📋 نسخ رابط العرض</button>
+        </div>
+        <div style={{ fontSize:11, color:C.muted, marginTop:10, lineHeight:1.8 }}>
+          قاعدتك من نوع <b>Realtime Database</b>. الإعداد: (١) من Firebase ← Realtime Database انسخ الرابط أعلى الصفحة (ينتهي بـ <span style={{direction:"ltr",unicodeBidi:"isolate"}}>firebaseio.com</span> أو <span style={{direction:"ltr",unicodeBidi:"isolate"}}>firebasedatabase.app</span>) → (٢) في Rules اجعلها كالأسفل → (٣) ألصق الرابط هنا واحفظ → (٤) ضع نفس الرابط في view.html → (٥) ارفع view.html بجانب index.html.
+        </div>
+        <pre style={{ fontSize:10.5, background:"var(--surface2)", border:`1px solid ${C.line}`, borderRadius:10, padding:"10px 12px", marginTop:8, overflowX:"auto", direction:"ltr", textAlign:"left", color:C.text }}>{`{
+  "rules": {
+    "public": { "schedule": { ".read": true, ".write": true } }
+  }
+}`}</pre>
+      </>; })()}
+    </div>
+    <div style={{ ...card(), padding:16, marginBottom:12 }}>
       <label style={label}>📅 العطلات الرسمية للقسم</label>
       <div style={{ fontSize:11.5, color:C.muted, marginBottom:10 }}>اليوم يُقفل كاملاً: لا يُحسب في الرعاية ولا يحتاج تغطية. يمكن تحديد مناوب اختياري.</div>
       <input value={hName} onChange={e=>setHName(e.target.value)} placeholder="اسم العطلة (مثل: عيد الفطر · اليوم الوطني)" style={{ ...sIn, marginBottom:8 }} />
@@ -2365,7 +2398,10 @@ function App() {
     if(JSON.stringify(off.settings)!==JSON.stringify(a.settings)) diff.push("تعديل الإعدادات");
     return diff; };
   const diffList = pending ? computeDiff() : [];
-  const approve = () => { const diff=computeDiff(); logAudit(`اعتماد رسمي${diff.length?(" — "+diff.join("، ")):""}`,"معتمدة"); setOfficial(snap()); showToast("✓ تم الاعتماد وتحديث الإحصائيات"); };
+  const approve = () => { const diff=computeDiff(); logAudit(`اعتماد رسمي${diff.length?(" — "+diff.join("، ")):""}`,"معتمدة"); const a=snap(); setOfficial(a);
+    if(cloudCfg()){ showToast("✓ تم الاعتماد — جارٍ النشر للرابط الحي…"); cloudPublish(a).then(()=>showToast("✓ نُشر للرابط الحي — الرابط محدَّث للجميع")).catch(()=>showToast("الاعتماد تم، لكن تعذّر النشر للرابط — تحقّق من إعدادات Firebase","warn")); }
+    else showToast("✓ تم الاعتماد وتحديث الإحصائيات"); };
+  const publishNow = () => { const a=official||snap(); if(!cloudCfg()){ showToast("فعّل الرابط الحي من الإعدادات أولاً","warn"); setPage("settings"); return; } showToast("جارٍ النشر…"); cloudPublish(a).then(()=>showToast("✓ نُشر — الرابط الحي محدَّث")).catch(e=>showToast("تعذّر النشر — تحقق من الإعدادات","err")); };
   const revert = () => { setDoctors(off.doctors); setLeaves(off.leaves); setNight(off.nightData); setCoverages(off.coverages); setSettings(off.settings||{}); logAudit("تراجع عن التغييرات غير المعتمدة","ملغاة"); showToast("تم التراجع لآخر نسخة معتمدة"); };
   const saveDraft = () => { logAudit("حفظ كمسودة (بانتظار الاعتماد)","مسودة"); showToast("حُفظت كمسودة"); };
 
@@ -2453,7 +2489,7 @@ function App() {
             <div style={{ display:"flex", gap:8, marginInlineStart:"auto", flexWrap:"wrap" }}>
               <button onClick={()=>{ if(confirm("تراجع عن كل التغييرات غير المعتمدة؟")) revert(); }} style={{ ...sGhost, color:C.err, borderColor:"#fecaca", padding:"8px 14px", fontSize:12.5 }}>↩︎ تراجع</button>
               {canApprove
-                ? <button onClick={approve} style={{ ...sBtn(C.primary), padding:"8px 22px", fontSize:13 }}>✓ اعتماد رسمي</button>
+                ? <button onClick={approve} style={{ ...sBtn(C.primary), padding:"8px 22px", fontSize:13 }}>✓ اعتماد رسمي{cloudCfg()?" + نشر":""}</button>
                 : <span style={{ fontSize:12, color:C.warn, fontWeight:700, alignSelf:"center" }}>بانتظار اعتماد رئيس القسم</span>}
             </div>
           </div>
