@@ -1,0 +1,115 @@
+<!doctype html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>الجدول المعتمد — قسم الأسنان</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{ --primary:#0FA39A; --primaryD:#0B7E77; --eve:#6D5DF6; --bg:#EEF3F8; --surface:#fff; --line:#E4ECF3; --ink:#0D1B2A; --text:#34465A; --muted:#8A9BB0; --ok:#16A34A; --warn:#E0982B; --err:#E5484D; }
+*{box-sizing:border-box}
+body{margin:0;font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;background:var(--bg);color:var(--text)}
+.wrap{max-width:1100px;margin:0 auto;padding:18px 16px 60px}
+.hdr{background:linear-gradient(120deg,var(--primaryD),var(--primary) 65%,var(--eve));color:#fff;border-radius:18px;padding:18px 20px;display:flex;align-items:center;gap:13px;box-shadow:0 12px 30px rgba(15,163,154,.25);margin-bottom:14px;flex-wrap:wrap}
+.hdr .lg{width:44px;height:44px;border-radius:13px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:800}
+.hdr h1{margin:0;font-size:17px;font-weight:800}
+.hdr .sub{font-size:11px;opacity:.92;margin-top:2px}
+.live{margin-inline-start:auto;display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);border-radius:20px;padding:5px 13px;font-size:11.5px;font-weight:700}
+.live .dot{width:8px;height:8px;border-radius:50%;background:#4ADE80;animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.nav{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.nav button{width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-size:15px;color:var(--text)}
+.nav .m{flex:1;text-align:center;font-size:15.5px;font-weight:800;color:var(--ink)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:13px;box-shadow:0 1px 2px rgba(16,40,70,.04),0 8px 24px rgba(16,40,70,.06);margin-bottom:10px}
+.day{display:flex;align-items:flex-start;gap:12px}
+.dn{min-width:52px;text-align:center}
+.dn b{display:block;font-size:18px;font-weight:800;color:var(--primary)}
+.dn span{font-size:10px;color:var(--muted)}
+.body{flex:1;min-width:0}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
+.chip{display:inline-flex;align-items:center;gap:5px;border-radius:20px;padding:3px 11px;font-size:12px;font-weight:700;background:#ECEAFE;color:var(--eve);border:1px solid #DDD6FE}
+.cov{font-size:11.5px;color:var(--primaryD);font-weight:600;line-height:1.7;background:#EFFAFB;border:1px solid #D7EEF1;border-radius:8px;padding:4px 9px;margin-bottom:4px}
+.empty-day{font-size:12px;color:var(--muted)}
+.state{padding:40px 16px;text-align:center;color:var(--muted);font-size:13.5px}
+.upd{font-size:10.5px;color:var(--muted);text-align:center;margin-top:14px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 14px;font-size:11.5px;color:var(--text)}
+.legend i{width:11px;height:11px;border-radius:4px;display:inline-block;margin-inline-end:5px;vertical-align:-1px}
+@media(max-width:560px){ .hdr h1{font-size:15px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div class="lg">ط</div>
+    <div><h1>الجدول المسائي والتغطيات — المعتمد</h1><div class="sub">قسم الأسنان · عرض للقراءة فقط</div></div>
+    <div class="live"><span class="dot"></span>رابط حي — يتحدّث تلقائياً</div>
+  </div>
+  <div class="nav">
+    <button id="prev">‹</button>
+    <div class="m" id="mlabel">—</div>
+    <button id="next">›</button>
+  </div>
+  <div class="legend"><span><i style="background:#6D5DF6"></i>عيادة مسائية</span><span><i style="background:#0B7E77"></i>تغطية</span></div>
+  <div id="list"><div class="state">⏳ جارٍ تحميل الجدول المعتمد…</div></div>
+  <div class="upd" id="upd"></div>
+</div>
+<script>
+/* ===== إعداد Realtime Database: عدّل هذا فقط (نفس الرابط في إعدادات التطبيق) ===== */
+const DB_URL = "https://restorative-department-default-rtdb.europe-west1.firebasedatabase.app"; // قاعدتك
+/* ============================================================================== */
+const MONTHS=["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+const WDAY=["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
+const LEAVE_AR={annual:"إجازة سنوية",sick:"إجازة مرضية",emergency:"إجازة طارئة",other:"إجازة أخرى"};
+const perFull=p=>p==="am"?"العيادة الصباحية":p==="pm"?"عيادة الظهر":p==="nextAm"?"عيادة صباح الغد":(p||"");
+let DATA=null; let cur=new Date(); cur.setDate(1);
+const $=id=>document.getElementById(id);
+function dmy(ds){const p=ds.split("-");return p[2]+"/"+(+p[1]);}
+function covReason(ownerId,date,reason,leaves){ if(reason==="evening"||ownerId==null) return "دوام مسائي"; if(reason==="absence") return "غياب"; const lv=(leaves||[]).find(l=>l.doctorId===ownerId&&date>=l.start&&date<=l.end); if(lv) return LEAVE_AR[lv.type]||"إجازة"; if(reason==="leave") return "إجازة"; return reason||"غياب"; }
+function render(){
+  if(!DATA){ return; }
+  const y=cur.getFullYear(), m=cur.getMonth();
+  $("mlabel").textContent=MONTHS[m]+" "+y;
+  const fd=id=>(DATA.doctors||[]).find(d=>d.id===id);
+  const dim=new Date(y,m+1,0).getDate(); const rows=[];
+  for(let d=1;d<=dim;d++){
+    const date=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const wd=new Date(date).getDay(); if(wd>=5) continue;
+    const nd=(DATA.nightData||{})[date]||{};
+    const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
+    const covs=(DATA.coverages||[]).filter(c=>c.date===date);
+    const nightCovs=[]; const cv=nd.coverages||{};
+    ["am","pm","nextAm"].forEach(sl=>(cv[sl]||[]).forEach(id=>{ const c=fd(id); if(c) nightCovs.push({sl,name:c.name}); }));
+    if(!docs.length&&!covs.length&&!nightCovs.length) continue;
+    rows.push(`<div class="card"><div class="day">
+      <div class="dn"><b>${d}</b><span>${WDAY[wd]}</span></div>
+      <div class="body">
+        ${docs.length?`<div class="chips">${docs.map(x=>`<span class="chip">🌙 د.${x.name}</span>`).join("")}</div>`:""}
+        ${covs.map(c=>`<div class="cov">🔄 تم تغطية ${perFull(c.period)} لـ د.${fd(c.absentId)?.name||"—"} بـ د.${fd(c.coverDoctorId)?.name||"—"} بسبب ${covReason(c.absentId,c.date,c.reason,DATA.leaves)}</div>`).join("")}
+        ${nightCovs.map(x=>`<div class="cov">🔄 تم تغطية ${perFull(x.sl)} لطبيب المسائي بـ د.${x.name} بسبب دوام مسائي</div>`).join("")}
+      </div></div></div>`);
+  }
+  $("list").innerHTML = rows.length?rows.join(""):`<div class="state">لا يوجد دوام مسائي أو تغطيات معتمدة في ${MONTHS[m]} ${y}</div>`;
+}
+async function load(){
+  if(DB_URL.startsWith("PASTE")){ $("list").innerHTML=`<div class="state">⚙️ لم يُهيّأ الرابط الحي بعد.<br>افتح هذا الملف وضع DB_URL (نفس رابط القاعدة في إعدادات التطبيق).</div>`; return; }
+  try{
+    const base=DB_URL.replace(/\/+$/,"");
+    const res=await fetch(`${base}/public/schedule.json`,{cache:"no-store"});
+    if(!res.ok) throw new Error(res.status);
+    const doc=await res.json();
+    if(!doc||!doc.data) throw new Error("empty");
+    DATA=JSON.parse(doc.data);
+    const upd=doc.updatedAt?new Date(doc.updatedAt):null;
+    $("upd").textContent=upd?("آخر اعتماد ونشر: "+upd.toLocaleString("ar",{dateStyle:"full",timeStyle:"short"})):"";
+    render();
+  }catch(e){ $("list").innerHTML=`<div class="state">⚠️ تعذّر تحميل الجدول — لم يُنشر بعد أو الرابط/القواعد غير صحيحة.</div>`; }
+}
+$("prev").onclick=()=>{cur.setMonth(cur.getMonth()-1);render();};
+$("next").onclick=()=>{cur.setMonth(cur.getMonth()+1);render();};
+load();
+setInterval(load, 120000); // تحديث تلقائي كل دقيقتين
+</script>
+</body>
+</html>
