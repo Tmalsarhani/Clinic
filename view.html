@@ -92,7 +92,7 @@ const perFull=p=>p==="am"?"العيادة الصباحية":p==="pm"?"عيادة
 let DATA=null; let cur=new Date(); cur.setDate(1);
 const $=id=>document.getElementById(id);
 function dmy(ds){const p=ds.split("-");return p[2]+"/"+(+p[1]);}
-function covReason(ownerId,date,reason,leaves){ if(reason==="evening"||ownerId==null) return "دوام مسائي"; if(reason==="absence") return "غياب"; const lv=(leaves||[]).find(l=>l.doctorId===ownerId&&date>=l.start&&date<=l.end); if(lv) return LEAVE_AR[lv.type]||"إجازة"; if(reason==="leave") return "إجازة"; return reason||"غياب"; }
+function covReason(ownerId,date,reason,leaves){ if(reason==="evening"||ownerId==null) return "دوام مسائي"; if(reason==="post_evening") return "راحة بعد دوام مسائي (أمس)"; if(reason==="absence") return "غياب"; const lv=(leaves||[]).find(l=>l.doctorId===ownerId&&date>=l.start&&date<=l.end); if(lv) return LEAVE_AR[lv.type]||"إجازة"; if(reason==="leave") return "إجازة"; return reason||"غياب"; }
 function sn(n){ n=(n||"").trim(); const p=n.split(/\s+/); return ((p[0]||"")[0]||"")+((p[1]||"")[0]||""); }
 function dayData(y,m,fd){ const dim=new Date(y,m+1,0).getDate(); const out=[]; for(let d=1;d<=dim;d++){ const date=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; const wd=new Date(date).getDay(); if(wd>=5) continue; const nd=(DATA.nightData||{})[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const covs=(DATA.coverages||[]).filter(c=>c.date===date); const nightCovs=[]; const cv=nd.coverages||{}; ["am","pm","nextAm"].forEach(sl=>(cv[sl]||[]).forEach(id=>{ const c=fd(id); if(c) nightCovs.push({sl,name:c.name}); })); out.push({d,date,wd,docs,covs,nightCovs}); } return out; }
 
