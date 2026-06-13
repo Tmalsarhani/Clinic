@@ -42,11 +42,14 @@ body{margin:0;font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;background
 .vtoggle button.on{background:var(--primary);color:#fff;border-color:var(--primary)}
 .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .wd{background:linear-gradient(135deg,var(--primary),var(--eve));color:#fff;text-align:center;font-weight:700;padding:7px 0;border-radius:9px;font-size:11px}
-.gc{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:6px;min-height:78px}
+.gc{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:7px;min-height:90px;display:flex;flex-direction:column;gap:3px}
 .gc.empty{background:transparent;border:none;min-height:0}
 .gnum{font-weight:800;color:var(--primaryD);font-size:13px;margin-bottom:4px}
 .gchip{background:#ECEAFE;color:var(--eve);border-radius:7px;padding:2px 6px;font-size:10px;font-weight:700;margin-bottom:3px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gcov{font-size:9.5px;color:var(--primaryD);background:#EFFAFB;border-radius:7px;padding:2px 6px;font-weight:600;margin-top:2px}
+.gcovs{display:flex;flex-direction:column;gap:3px;margin-top:1px}
+.gcov{font-size:10px;color:var(--primaryD);background:#EFFAFB;border:1px solid #D7EEF1;border-radius:7px;padding:3px 6px;font-weight:600;line-height:1.5;white-space:normal;word-break:break-word}
+.gcov .per{display:inline-block;background:var(--primaryD);color:#fff;border-radius:5px;padding:0 5px;font-size:9px;font-weight:700;margin-inline-end:4px}
+.gcov .ar{color:#0e7490;font-weight:800}
 .dr{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 13px;margin-bottom:9px}
 .dr .h{display:flex;align-items:center;gap:9px;margin-bottom:8px}
 .dr .av{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--primary),var(--eve));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px}
@@ -69,7 +72,7 @@ body{margin:0;font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;background
     <div class="m" id="mlabel">—</div>
     <button id="next">›</button>
   </div>
-  <div class="legend"><span><i style="background:#6D5DF6"></i>عيادة مسائية</span><span><i style="background:#0B7E77"></i>تغطية</span></div>
+  <div class="legend"><span><i style="background:#6D5DF6"></i>عيادة مسائية</span><span><i style="background:#0B7E77"></i>تغطية</span><span style="color:var(--muted)">التغطية: المغطّي <b style="color:#0e7490">◂</b> الغائب</span></div>
   <div class="vtoggle">
     <button id="t_grid" class="on">🗂 جدول شهري</button>
     <button id="t_list">☰ قائمة</button>
@@ -108,13 +111,22 @@ function renderList(y,m,fd){
   return rows.length?rows.join(""):`<div class="state">لا يوجد دوام مسائي أو تغطيات معتمدة في ${MONTHS[m]} ${y}</div>`;
 }
 
+function pS(p){ return p==="am"?"صباح":p==="pm"?"ظهر":p==="nextAm"?"صباح الغد":p==="evening"?"مساء":(p||""); }
+function fn(n){ return (n||"").split(/\s+/)[0]; }
 function renderGrid(y,m,fd){
   const head=WDAY.slice(0,5).map(w=>`<div class="wd">${w}</div>`).join("");
   let cells=""; const firstWd=new Date(`${y}-${String(m+1).padStart(2,"0")}-01`).getDay();
   const pad=firstWd<=4?firstWd:0; for(let i=0;i<pad;i++) cells+=`<div class="gc empty"></div>`;
-  dayData(y,m,fd).forEach(({d,docs,covs,nightCovs})=>{
-    const cov=covs.length+nightCovs.length;
-    cells+=`<div class="gc"><div class="gnum">${d}</div>${docs.map(x=>`<div class="gchip">🌙 د.${(x.name||"").split(" ")[0]}</div>`).join("")}${cov?`<div class="gcov">🔄 ${cov} تغطية</div>`:""}</div>`;
+  const ord="am pm nextAm evening";
+  dayData(y,m,fd).forEach(({d,date,docs,covs,nightCovs})=>{
+    const lines=[];
+    covs.slice().sort((a,b)=>ord.indexOf(a.period)-ord.indexOf(b.period)).forEach(c=>{
+      lines.push(`<div class="gcov"><span class="per">${pS(c.period)}</span>د.${fn(fd(c.coverDoctorId)?.name)} <span class="ar">◂</span> د.${fn(fd(c.absentId)?.name)}</div>`);
+    });
+    nightCovs.slice().sort((a,b)=>ord.indexOf(a.sl)-ord.indexOf(b.sl)).forEach(x=>{
+      lines.push(`<div class="gcov"><span class="per">${pS(x.sl)}</span>د.${fn(x.name)} <span class="ar">◂</span> مسائي</div>`);
+    });
+    cells+=`<div class="gc"><div class="gnum">${d}</div>${docs.map(x=>`<div class="gchip">🌙 د.${fn(x.name)}</div>`).join("")}${lines.length?`<div class="gcovs">${lines.join("")}</div>`:""}</div>`;
   });
   return `<div class="grid">${head}${cells}</div>`;
 }
