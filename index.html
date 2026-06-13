@@ -91,6 +91,8 @@ html[data-theme="dark"]{
 }
 html[data-theme="dark"] body{ background:var(--bg); }
 body{ transition:background .3s ease, color .3s ease; }
+body{ zoom:1.08; }
+@media(max-width:760px){ body{ zoom:1.05; } }
 
 /* layout */
 .shell{ display:flex; min-height:100vh; }
