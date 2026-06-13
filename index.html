@@ -1138,6 +1138,14 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const placeCover = (g,cid) => { if(eveningOwner(g)&&(g.period==="am"||g.period==="pm")) setOwnerCover(g.date,g.ownerId,g.period,cid); else pushCov({absentId:g.ownerId,date:g.date,period:g.period,coverDoctorId:cid,reason:"absence"}); logAudit&&logAudit(`تغطية عيادة د.${fd(g.ownerId)?.name||"؟"} — بـ د.${fd(cid)?.name||"؟"} (${perAr(g.period)} ${dmy(g.date)})`); };
   const coverGap = g => { const av=availForGap(g); const s=picks[gapKey(g)]; const cid=s?+s:(av.find(a=>a.status==="free")?.doc?.id); if(!cid){showToast("لا يوجد طبيب متفرّغ — اختر يدوياً","warn");return;} placeCover(g,cid); showToast("تمت التغطية"); };
   const coverAll = () => { let n=0; const used={}; gaps.forEach(g=>{ const av=availForGap(g); const s=picks[gapKey(g)]; const key=g.date+"|"+g.period; const taken=used[key]||[]; const pick = s?+s : (av.find(a=>a.status==="free" && !taken.includes(a.doc.id))?.doc?.id); if(pick){ placeCover(g,pick); (used[key]=used[key]||[]).push(pick); n++; } }); showToast(n?`غُطّيت ${n} عيادة بالأنسب`:"لا يوجد متاح"); };
+  const cleanOrphanCovs = () => {
+    const orphans = coverages.filter(c=>c.reason==="leave" && !leaves.some(l=>l.doctorId===c.absentId && c.date>=l.start && c.date<=l.end));
+    if(!orphans.length){ showToast("لا توجد تغطيات إجازات ملغاة","ok"); return; }
+    const ids = new Set(orphans.map(o=>o.id));
+    setCoverages(cs=>cs.filter(c=>!ids.has(c.id)));
+    logAudit&&logAudit(`تنظيف ${orphans.length} تغطية إجازة ملغاة`);
+    showToast(`✓ حُذفت ${orphans.length} تغطية إجازة ملغاة`);
+  };
 
   const toggleEvening = (date,id) => { ensureDay(date); setNight(nd=>{ const d={...(nd[date]||{doctors:[],coverages:{am:[],pm:[],nextAm:[]}})}; const has=(d.doctors||[]).includes(id); d.doctors=has?d.doctors.filter(x=>x!==id):[...(d.doctors||[]),id]; return {...nd,[date]:d}; }); };
   const setCov = (date,slot,id) => { if(!id) return; setNight(nd=>{ const d={...(nd[date]||{doctors:[],coverages:{}})}; const cv={am:[],pm:[],nextAm:[],...(d.coverages||{})}; cv[slot]=[+id]; d.coverages=cv; return {...nd,[date]:d}; }); };
@@ -1262,7 +1270,13 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     const covCal = buildCal(date=>{ const cl=covLines(date); return cl.map(t=>`<div class="cov">🔄 ${t}</div>`).join("")||'<div class="dim">—</div>'; });
     openPrint(`المسائي والتغطيات — ${MONTHS[mo.m]} ${mo.y}`, `<h2>🌙 الجدول المسائي</h2>${eveCal}<h2 class="pb">🔄 جدول التغطيات</h2>${covCal}`);
   };
-  const filled = days.filter(d=>{ const nd=nightData[d.date]; return nd && ((nd.doctors||[]).length || nd.eveningSlots>0 || coverages.some(c=>c.date===d.date)); });
+  const filled = days.filter(d=>{
+    const nd=nightData[d.date];
+    const hasNight = nd && ((nd.doctors||[]).length || nd.eveningSlots>0 || ["am","pm","nextAm"].some(s=>(nd.coverages?.[s]||[]).length));
+    const hasCov = coverages.some(c=>c.date===d.date);
+    const hasLeave = leaves.some(l=>d.date>=l.start && d.date<=l.end);
+    return hasNight || hasCov || hasLeave;
+  });
   const statusOf = date => { const r=analyzeDay(date,doctors,leaves,nightData,coverages,null); const nd=nightData[date]||{}; return ((nd.doctors||[]).length && r.gaps.length===0 && r.conflicts.length===0) ? "done":"pending"; };
   const listDays = filled.filter(d=>{ if(sFilter!=="all" && statusOf(d.date)!==sFilter) return false; if(search){ const q=search.trim(); const nd=nightData[d.date]||{}; const names=(nd.doctors||[]).map(id=>fd(id)?.name||"").join(" ")+" "+coverages.filter(c=>c.date===d.date).map(c=>fd(c.coverDoctorId)?.name||"").join(" "); if(!names.includes(q)&&!d.date.includes(q)) return false; } return true; });
   const offset = days.length?days[0].di:0;
@@ -1308,7 +1322,10 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
         </div>
         <button onClick={swapDay} style={{ ...sBtn(C.primary), width:"100%", marginBottom:14 }}>تنفيذ التبادل</button>
         <div style={{ fontSize:12.5, fontWeight:800, color:C.text, marginBottom:8 }}>🧹 مسح/إعادة تعيين تغطيات يوم</div>
-        <label style={{ ...sGhost, display:"inline-flex", alignItems:"center", gap:6, cursor:"pointer", color:C.err }}>🧹 اختر اليوم لمسح تغطياته<input type="date" onChange={e=>{ if(e.target.value){ if(confirm(`مسح كل تغطيات ${dmy(e.target.value)}؟`)) clearDayCovs(e.target.value); } }} style={{ border:"none", background:"none", width:18, padding:0 }} value="" /></label>
+        <label style={{ ...sGhost, display:"inline-flex", alignItems:"center", gap:6, cursor:"pointer", color:C.err, marginBottom:14 }}>🧹 اختر اليوم لمسح تغطياته<input type="date" onChange={e=>{ if(e.target.value){ if(confirm(`مسح كل تغطيات ${dmy(e.target.value)}؟`)) clearDayCovs(e.target.value); } }} style={{ border:"none", background:"none", width:18, padding:0 }} value="" /></label>
+        <div style={{ fontSize:12.5, fontWeight:800, color:C.text, marginBottom:8 }}>🧽 تنظيف تغطيات الإجازات الملغاة</div>
+        <div style={{ fontSize:11, color:C.sub, marginBottom:8 }}>يحذف أي تغطية «إجازة» لم يعد لها إجازة قائمة (تغطيات يتيمة بقيت بعد حذف إجازات).</div>
+        <button onClick={cleanOrphanCovs} style={{ ...sGhost, width:"100%", color:C.err }}>🧽 تنظيف الآن</button>
       </div>}
     </div>
 
