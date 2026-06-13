@@ -1322,7 +1322,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
         <button onClick={distributeFixed} style={sGhost}>⚡ توزيع حسب الأيام الثابتة</button>
         <button onClick={fillAvailable} style={sBtn("var(--eve)")}>🌙 إكمال المسائي بالمتاح</button>
         <button onClick={coverAll} style={sBtn("var(--primary-d)")}>🩺 تغطية العيادات المكشوفة</button>
-        <label style={{ ...sGhost, display:"inline-flex", alignItems:"center", gap:6, cursor:"pointer" }}>➕ إضافة يوم<input type="date" onChange={e=>{ if(e.target.value&&dayIdx(e.target.value)>=0){ ensureDay(e.target.value); setSel(e.target.value); setMo({y:+e.target.value.split("-")[0],m:+e.target.value.split("-")[1]-1}); setView("list"); } }} style={{ border:"none", background:"none", width:18, padding:0 }} value="" /></label>
+        <label style={{ ...sGhost, display:"inline-flex", alignItems:"center", gap:6, cursor:"pointer", position:"relative", overflow:"hidden" }}>➕ إضافة يوم<input type="date" onChange={e=>{ if(e.target.value&&dayIdx(e.target.value)>=0){ ensureDay(e.target.value); setSel(e.target.value); setMo({y:+e.target.value.split("-")[0],m:+e.target.value.split("-")[1]-1}); setView("list"); } }} style={{ position:"absolute", inset:0, width:"100%", height:"100%", opacity:0, cursor:"pointer" }} value="" /></label>
         <div style={{ position:"relative", display:"inline-block" }}>
           <button onClick={()=>setClrOpen(o=>!o)} style={{ ...sGhost, color:C.err }}>🗑 مسح ▾</button>
           {clrOpen && <>
@@ -1360,7 +1360,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
         </div>
         <button onClick={swapDay} style={{ ...sBtn(C.primary), width:"100%", marginBottom:14 }}>تنفيذ التبادل</button>
         <div style={{ fontSize:12.5, fontWeight:800, color:C.text, marginBottom:8 }}>🧹 مسح/إعادة تعيين تغطيات يوم</div>
-        <label style={{ ...sGhost, display:"inline-flex", alignItems:"center", gap:6, cursor:"pointer", color:C.err, marginBottom:14 }}>🧹 اختر اليوم لمسح تغطياته<input type="date" onChange={e=>{ if(e.target.value){ if(confirm(`مسح كل تغطيات ${dmy(e.target.value)}؟`)) clearDayCovs(e.target.value); } }} style={{ border:"none", background:"none", width:18, padding:0 }} value="" /></label>
+        <label style={{ ...sGhost, display:"inline-flex", alignItems:"center", gap:6, cursor:"pointer", color:C.err, marginBottom:14, position:"relative", overflow:"hidden" }}>🧹 اختر اليوم لمسح تغطياته<input type="date" onChange={e=>{ if(e.target.value){ if(confirm(`مسح كل تغطيات ${dmy(e.target.value)}؟`)) clearDayCovs(e.target.value); } }} style={{ position:"absolute", inset:0, width:"100%", height:"100%", opacity:0, cursor:"pointer" }} value="" /></label>
         <div style={{ fontSize:12.5, fontWeight:800, color:C.text, marginBottom:8 }}>🧽 تنظيف تغطيات الإجازات الملغاة</div>
         <div style={{ fontSize:11, color:C.sub, marginBottom:8 }}>يحذف أي تغطية «إجازة» لم يعد لها إجازة قائمة (تغطيات يتيمة بقيت بعد حذف إجازات).</div>
         <button onClick={cleanOrphanCovs} style={{ ...sGhost, width:"100%", color:C.err }}>🧽 تنظيف الآن</button>
