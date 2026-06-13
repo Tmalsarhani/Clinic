@@ -36,6 +36,24 @@ body{margin:0;font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;background
 .upd{font-size:10.5px;color:var(--muted);text-align:center;margin-top:14px}
 .legend{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 14px;font-size:11.5px;color:var(--text)}
 .legend i{width:11px;height:11px;border-radius:4px;display:inline-block;margin-inline-end:5px;vertical-align:-1px}
+
+.vtoggle{display:flex;gap:6px;margin-bottom:12px}
+.vtoggle button{flex:1;padding:9px 6px;border-radius:11px;border:1px solid var(--line);background:var(--surface);font-family:inherit;font-weight:700;font-size:12.5px;color:var(--muted);cursor:pointer}
+.vtoggle button.on{background:var(--primary);color:#fff;border-color:var(--primary)}
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.wd{background:linear-gradient(135deg,var(--primary),var(--eve));color:#fff;text-align:center;font-weight:700;padding:7px 0;border-radius:9px;font-size:11px}
+.gc{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:6px;min-height:78px}
+.gc.empty{background:transparent;border:none;min-height:0}
+.gnum{font-weight:800;color:var(--primaryD);font-size:13px;margin-bottom:4px}
+.gchip{background:#ECEAFE;color:var(--eve);border-radius:7px;padding:2px 6px;font-size:10px;font-weight:700;margin-bottom:3px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gcov{font-size:9.5px;color:var(--primaryD);background:#EFFAFB;border-radius:7px;padding:2px 6px;font-weight:600;margin-top:2px}
+.dr{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 13px;margin-bottom:9px}
+.dr .h{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.dr .av{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--primary),var(--eve));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px}
+.dr .nm{font-weight:800;color:var(--ink);font-size:14px}
+.dr .mini{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:7px}
+.dr .tag{font-size:11px;font-weight:700;border-radius:20px;padding:3px 10px}
+.dr .line{font-size:12px;color:var(--text);line-height:1.7;padding:2px 0}
 @media(max-width:560px){ .hdr h1{font-size:15px} }
 </style>
 </head>
@@ -52,6 +70,11 @@ body{margin:0;font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;background
     <button id="next">›</button>
   </div>
   <div class="legend"><span><i style="background:#6D5DF6"></i>عيادة مسائية</span><span><i style="background:#0B7E77"></i>تغطية</span></div>
+  <div class="vtoggle">
+    <button id="t_grid" class="on">🗂 جدول شهري</button>
+    <button id="t_list">☰ قائمة</button>
+    <button id="t_doc">👥 حسب الطبيب</button>
+  </div>
   <div id="list"><div class="state">⏳ جارٍ تحميل الجدول المعتمد…</div></div>
   <div class="upd" id="upd"></div>
 </div>
@@ -67,21 +90,13 @@ let DATA=null; let cur=new Date(); cur.setDate(1);
 const $=id=>document.getElementById(id);
 function dmy(ds){const p=ds.split("-");return p[2]+"/"+(+p[1]);}
 function covReason(ownerId,date,reason,leaves){ if(reason==="evening"||ownerId==null) return "دوام مسائي"; if(reason==="absence") return "غياب"; const lv=(leaves||[]).find(l=>l.doctorId===ownerId&&date>=l.start&&date<=l.end); if(lv) return LEAVE_AR[lv.type]||"إجازة"; if(reason==="leave") return "إجازة"; return reason||"غياب"; }
-function render(){
-  if(!DATA){ return; }
-  const y=cur.getFullYear(), m=cur.getMonth();
-  $("mlabel").textContent=MONTHS[m]+" "+y;
-  const fd=id=>(DATA.doctors||[]).find(d=>d.id===id);
-  const dim=new Date(y,m+1,0).getDate(); const rows=[];
-  for(let d=1;d<=dim;d++){
-    const date=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-    const wd=new Date(date).getDay(); if(wd>=5) continue;
-    const nd=(DATA.nightData||{})[date]||{};
-    const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean);
-    const covs=(DATA.coverages||[]).filter(c=>c.date===date);
-    const nightCovs=[]; const cv=nd.coverages||{};
-    ["am","pm","nextAm"].forEach(sl=>(cv[sl]||[]).forEach(id=>{ const c=fd(id); if(c) nightCovs.push({sl,name:c.name}); }));
-    if(!docs.length&&!covs.length&&!nightCovs.length) continue;
+function sn(n){ n=(n||"").trim(); const p=n.split(/\s+/); return ((p[0]||"")[0]||"")+((p[1]||"")[0]||""); }
+function dayData(y,m,fd){ const dim=new Date(y,m+1,0).getDate(); const out=[]; for(let d=1;d<=dim;d++){ const date=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; const wd=new Date(date).getDay(); if(wd>=5) continue; const nd=(DATA.nightData||{})[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const covs=(DATA.coverages||[]).filter(c=>c.date===date); const nightCovs=[]; const cv=nd.coverages||{}; ["am","pm","nextAm"].forEach(sl=>(cv[sl]||[]).forEach(id=>{ const c=fd(id); if(c) nightCovs.push({sl,name:c.name}); })); out.push({d,date,wd,docs,covs,nightCovs}); } return out; }
+
+function renderList(y,m,fd){
+  const rows=[];
+  dayData(y,m,fd).forEach(({d,date,wd,docs,covs,nightCovs})=>{
+    if(!docs.length&&!covs.length&&!nightCovs.length) return;
     rows.push(`<div class="card"><div class="day">
       <div class="dn"><b>${d}</b><span>${WDAY[wd]}</span></div>
       <div class="body">
@@ -89,8 +104,53 @@ function render(){
         ${covs.map(c=>`<div class="cov">🔄 تم تغطية ${perFull(c.period)} لـ د.${fd(c.absentId)?.name||"—"} بـ د.${fd(c.coverDoctorId)?.name||"—"} بسبب ${covReason(c.absentId,c.date,c.reason,DATA.leaves)}</div>`).join("")}
         ${nightCovs.map(x=>`<div class="cov">🔄 تم تغطية ${perFull(x.sl)} لطبيب المسائي بـ د.${x.name} بسبب دوام مسائي</div>`).join("")}
       </div></div></div>`);
-  }
-  $("list").innerHTML = rows.length?rows.join(""):`<div class="state">لا يوجد دوام مسائي أو تغطيات معتمدة في ${MONTHS[m]} ${y}</div>`;
+  });
+  return rows.length?rows.join(""):`<div class="state">لا يوجد دوام مسائي أو تغطيات معتمدة في ${MONTHS[m]} ${y}</div>`;
+}
+
+function renderGrid(y,m,fd){
+  const head=WDAY.slice(0,5).map(w=>`<div class="wd">${w}</div>`).join("");
+  let cells=""; const firstWd=new Date(`${y}-${String(m+1).padStart(2,"0")}-01`).getDay();
+  const pad=firstWd<=4?firstWd:0; for(let i=0;i<pad;i++) cells+=`<div class="gc empty"></div>`;
+  dayData(y,m,fd).forEach(({d,docs,covs,nightCovs})=>{
+    const cov=covs.length+nightCovs.length;
+    cells+=`<div class="gc"><div class="gnum">${d}</div>${docs.map(x=>`<div class="gchip">🌙 د.${(x.name||"").split(" ")[0]}</div>`).join("")}${cov?`<div class="gcov">🔄 ${cov} تغطية</div>`:""}</div>`;
+  });
+  return `<div class="grid">${head}${cells}</div>`;
+}
+
+function renderByDoctor(y,m,fd){
+  const docs=(DATA.doctors||[]).slice();
+  const dd=dayData(y,m,fd);
+  const blocks=[];
+  docs.forEach(doc=>{
+    const eves=dd.filter(x=>x.docs.some(p=>p.id===doc.id)).map(x=>`${WDAY[x.wd]} ${dmy(x.date)}`);
+    const covLines=[];
+    dd.forEach(x=>{
+      x.covs.filter(c=>c.coverDoctorId===doc.id).forEach(c=>covLines.push(`${WDAY[x.wd]} ${dmy(x.date)} — ${perFull(c.period)} لـ د.${fd(c.absentId)?.name||"—"} (${covReason(c.absentId,c.date,c.reason,DATA.leaves)})`));
+      ["am","pm","nextAm"].forEach(sl=>{ if(((x.nightCovs||[]).some(n=>n.sl===sl))){} });
+      const cv=( (DATA.nightData||{})[x.date]||{}).coverages||{};
+      ["am","pm","nextAm"].forEach(sl=>{ (cv[sl]||[]).forEach(id=>{ if(id===doc.id) covLines.push(`${WDAY[x.wd]} ${dmy(x.date)} — ${perFull(sl)} لطبيب المسائي (دوام مسائي)`); }); });
+    });
+    if(!eves.length && !covLines.length) return;
+    const covHtml = covLines.length ? (`<div class="line"><b>التغطيات:</b></div>` + covLines.map(l=>`<div class="line">• ${l}</div>`).join("")) : "";
+    const eveHtml = eves.length ? `<div class="line"><b>المسائي:</b> ${eves.join("، ")}</div>` : "";
+    blocks.push(`<div class="dr">
+      <div class="h"><div class="av">${sn(doc.name)}</div><div class="nm">د.${doc.name}</div></div>
+      <div class="mini"><span class="tag" style="background:#ECEAFE;color:var(--eve)">🌙 مسائي ${eves.length}</span><span class="tag" style="background:#EFFAFB;color:var(--primaryD)">🔄 تغطيات ${covLines.length}</span></div>
+      ${eveHtml}${covHtml}
+    </div>`);
+  });
+  return blocks.length?blocks.join(""):`<div class="state">لا بيانات معتمدة في ${MONTHS[m]} ${y}</div>`;
+}
+
+let viewMode="grid";
+function render(){
+  if(!DATA) return;
+  const y=cur.getFullYear(), m=cur.getMonth();
+  $("mlabel").textContent=MONTHS[m]+" "+y;
+  const fd=id=>(DATA.doctors||[]).find(d=>d.id===id);
+  $("list").innerHTML = viewMode==="grid"?renderGrid(y,m,fd):viewMode==="doc"?renderByDoctor(y,m,fd):renderList(y,m,fd);
 }
 async function load(){
   if(DB_URL.startsWith("PASTE")){ $("list").innerHTML=`<div class="state">⚙️ لم يُهيّأ الرابط الحي بعد.<br>افتح هذا الملف وضع DB_URL (نفس رابط القاعدة في إعدادات التطبيق).</div>`; return; }
@@ -106,6 +166,8 @@ async function load(){
     render();
   }catch(e){ $("list").innerHTML=`<div class="state">⚠️ تعذّر تحميل الجدول — لم يُنشر بعد أو الرابط/القواعد غير صحيحة.</div>`; }
 }
+function setView(v){ viewMode=v; ["grid","list","doc"].forEach(k=>{ const b=document.getElementById(k==="grid"?"t_grid":k==="list"?"t_list":"t_doc"); if(b) b.classList.toggle("on",k===v); }); render(); }
+$("t_grid").onclick=()=>setView("grid"); $("t_list").onclick=()=>setView("list"); $("t_doc").onclick=()=>setView("doc");
 $("prev").onclick=()=>{cur.setMonth(cur.getMonth()-1);render();};
 $("next").onclick=()=>{cur.setMonth(cur.getMonth()+1);render();};
 load();
