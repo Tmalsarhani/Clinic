@@ -1227,10 +1227,13 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const [dragCell,setDragCell] = useState(null);
   const assignEvening = (date,id) => { ensureDay(date); setNight(nd=>{ const d={...(nd[date]||{doctors:[],coverages:{am:[],pm:[],nextAm:[]}})}; if((d.doctors||[]).includes(id)) return nd; d.doctors=[...(d.doctors||[]),id]; return {...nd,[date]:d}; }); logAudit&&logAudit(`تعيين د.${fd(id)?.name||""} مسائياً ${dmy(date)}`); showToast(`تم تعيين د.${fd(id)?.name||""} مسائياً ${dmy(date)}`); };
   const [tools,setTools] = useState(false);
+  const [clrOpen,setClrOpen] = useState(false);
   const [swp,setSwp] = useState({ date:"", from:"", to:"" });
   const [wkRef,setWkRef] = useState(today);
   const pre = `${mo.y}-${String(mo.m+1).padStart(2,"0")}`;
-  const clearMonth = () => { if(!confirm("مسح كل مسائيات وتغطيات هذا الشهر؟")) return; setNight(nd=>{ const n={...nd}; Object.keys(n).forEach(k=>{ if(k.startsWith(pre)) delete n[k]; }); return n; }); setCoverages(cs=>cs.filter(c=>!String(c.date).startsWith(pre))); showToast("تم مسح الشهر"); };
+  const clearEvening = () => { if(!confirm("مسح الجدول المسائي وتغطياته المسائية لهذا الشهر؟\n(تبقى تغطيات الإجازات والإجازات كما هي)")) return; setNight(nd=>{ const n={...nd}; Object.keys(n).forEach(k=>{ if(k.startsWith(pre)) delete n[k]; }); return n; }); setCoverages(cs=>cs.filter(c=>!(String(c.date).startsWith(pre) && (c.reason==="evening"||c.reason==="post_evening")))); logAudit&&logAudit("مسح الجدول المسائي وتغطياته المسائية"); setClrOpen(false); showToast("تم مسح المسائي وتغطياته المسائية"); };
+  const clearMonthAll = () => { if(!confirm("مسح كامل الشهر: كل المسائي وكل التغطيات؟\n(الإجازات تبقى محفوظة)")) return; setNight(nd=>{ const n={...nd}; Object.keys(n).forEach(k=>{ if(k.startsWith(pre)) delete n[k]; }); return n; }); setCoverages(cs=>cs.filter(c=>!String(c.date).startsWith(pre))); logAudit&&logAudit("مسح كامل الشهر (مع إبقاء الإجازات)"); setClrOpen(false); showToast("تم مسح كامل الشهر (الإجازات محفوظة)"); };
+  const clearMonth = clearMonthAll;
   const copyPrev = () => { const pm=mo.m===0?11:mo.m-1, py=mo.m===0?mo.y-1:mo.y; const prevDays=monthDays(py,pm).filter(d=>(nightData[d.date]?.doctors||[]).length); if(!prevDays.length){showToast("لا بيانات في الشهر السابق","warn");return;} const byWd={}; prevDays.forEach(d=>{ (byWd[d.di]=byWd[d.di]||[]).push(nightData[d.date].doctors); }); const idx={0:0,1:0,2:0,3:0,4:0}; setNight(nd=>{ const n={...nd}; monthDays(mo.y,mo.m).forEach(d=>{ const q=byWd[d.di]; if(q&&q.length){ const docs=q[idx[d.di]%q.length]; idx[d.di]++; n[d.date]={ ...(n[d.date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:[...docs] }; } }); return n; }); showToast("تم نسخ نمط الشهر السابق"); };
 
   const openPrint = (title, body) => { const w=window.open("","_blank"); if(!w){ showToast("اسمح بالنوافذ المنبثقة","warn"); return; } const now=new Date().toLocaleString("ar",{year:"numeric",month:"long",day:"numeric"}); w.document.write(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet"><style>*{box-sizing:border-box}body{font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif;margin:0;color:#334155;background:#f1f5f9;line-height:1.6}.wrap{max-width:1080px;margin:0 auto;padding:22px;background:#fff}.hdr{background:linear-gradient(120deg,${C.primaryD},${C.primary} 70%,${C.accent});color:#fff;padding:20px 24px;border-radius:18px;margin-bottom:18px;display:flex;align-items:center;gap:14px;box-shadow:0 10px 30px rgba(15,118,110,.18)}.hdr .lg{width:46px;height:46px;border-radius:13px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;border:1px solid rgba(255,255,255,.3)}.hdr h1{margin:0;font-size:19px;font-weight:800;letter-spacing:-.3px}.hdr .sub{font-size:11px;opacity:.92;margin-top:3px}h2{font-size:14px;color:${C.primaryD};margin:20px 0 9px;font-weight:800;display:flex;align-items:center;gap:8px}h2::before{content:"";width:9px;height:9px;border-radius:50%;background:${C.accent};display:inline-block}.pb{page-break-before:always}table{width:100%;border-collapse:separate;border-spacing:0;margin-top:6px;border:1px solid #e8eef3;border-radius:13px;overflow:hidden}thead th{background:linear-gradient(135deg,${C.primary},${C.accent});color:#fff;font-weight:700;padding:10px 11px;text-align:center;font-size:12px}tbody td{padding:9px 11px;text-align:center;border-top:1px solid #eef3f8;font-size:12.5px}tbody tr:nth-child(even){background:#f8fbfd}p{font-size:13px;line-height:1.8;color:#475569}.cal{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:8px}.wd{background:linear-gradient(135deg,${C.primary},${C.accent});color:#fff;text-align:center;font-weight:700;padding:8px 0;border-radius:9px;font-size:12.5px;letter-spacing:.3px}.cell{border:1px solid #e8eef3;border-radius:12px;padding:8px 9px;min-height:96px;background:#fff;overflow-wrap:anywhere;word-break:break-word}.cell.empty{border:none;background:transparent}.dnum{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#eef6f8;color:${C.primaryD};font-weight:800;font-size:12px;margin-bottom:7px}.eve{color:#6d28d9;font-weight:700;font-size:11px;margin-bottom:5px;line-height:1.5;background:#f5f3ff;border:1px solid #e9e2fb;border-radius:7px;padding:3px 7px;overflow-wrap:anywhere}.cov{color:#0e7490;font-size:10.5px;margin-bottom:5px;line-height:1.55;background:#effafb;border:1px solid #d7eef1;border-radius:7px;padding:3px 7px;overflow-wrap:anywhere}.dim{color:#cbd5e1;font-size:11px}@media print{body{background:#fff}.wrap{padding:0}.hdr{box-shadow:none}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4 landscape;margin:10mm}}</style></head><body><div class="wrap"><div class="hdr"><div class="lg">ط</div><div><h1>${title}</h1><div class="sub">قسم الأسنان · ${now}</div></div></div>${body}</div><script>setTimeout(function(){window.print();},700);<\/script></body></html>`); w.document.close(); };
@@ -1273,14 +1276,14 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     printDoc(`تقرير الأطباء — ${MONTHS[mo.m]} ${mo.y}`, extra+cards);
   };
 
-  const printCalendars = () => {
-    const off = days.length?days[0].di:0;
-    const head = DAYS.map(d=>`<div class="wd">${d}</div>`).join("");
-    const buildCal = render => { let cells=""; for(let i=0;i<off;i++) cells+='<div class="cell empty"></div>'; days.forEach(({date,day})=>{ cells+=`<div class="cell"><div class="dnum">${day}</div>${render(date)}</div>`; }); return `<div class="cal">${head}</div><div class="cal">${cells}</div>`; };
-    const eveCal = buildCal(date=>{ const docs=((nightData[date]||{}).doctors||[]).map(id=>fd(id)?.name).filter(Boolean); return docs.map(n=>`<div class="eve">🌙 د.${n}</div>`).join("")||'<div class="dim">—</div>'; });
-    const covCal = buildCal(date=>{ const cl=covLines(date); return cl.map(t=>`<div class="cov">🔄 ${t}</div>`).join("")||'<div class="dim">—</div>'; });
-    openPrint(`المسائي والتغطيات — ${MONTHS[mo.m]} ${mo.y}`, `<h2>🌙 الجدول المسائي</h2>${eveCal}<h2 class="pb">🔄 جدول التغطيات</h2>${covCal}`);
-  };
+  const _calOff = () => days.length?days[0].di:0;
+  const _calHead = () => DAYS.map(d=>`<div class="wd">${d}</div>`).join("");
+  const _buildCal = render => { const off=_calOff(); let cells=""; for(let i=0;i<off;i++) cells+='<div class="cell empty"></div>'; days.forEach(({date,day})=>{ cells+=`<div class="cell"><div class="dnum">${day}</div>${render(date)}</div>`; }); return `<div class="cal">${_calHead()}</div><div class="cal">${cells}</div>`; };
+  const _eveCal = () => _buildCal(date=>{ const docs=((nightData[date]||{}).doctors||[]).map(id=>fd(id)?.name).filter(Boolean); const req=((nightData[date]||{}).eveningSlots!=null?(nightData[date].eveningSlots):needOf(date))||0; const empty=Math.max(0,req-docs.length); return docs.map(n=>`<div class="eve">🌙 د.${n}</div>`).join("") + (empty>0?`<div class="eve" style="background:#fff7ed;border-color:#fed7aa;color:#b45309">🌙 ${empty} عيادة فارغة</div>`:"") || '<div class="dim">—</div>'; });
+  const _covCal = () => _buildCal(date=>{ const cl=covLines(date); return cl.map(t=>`<div class="cov">🔄 ${t}</div>`).join("")||'<div class="dim">—</div>'; });
+  const printEveCal = () => openPrint(`تقويم المسائي — ${MONTHS[mo.m]} ${mo.y}`, `<h2>🌙 الجدول المسائي</h2>${_eveCal()}`);
+  const printCovCal = () => openPrint(`تقويم التغطيات — ${MONTHS[mo.m]} ${mo.y}`, `<h2>🔄 جدول التغطيات</h2>${_covCal()}`);
+  const printCalendars = () => openPrint(`المسائي والتغطيات — ${MONTHS[mo.m]} ${mo.y}`, `<h2>🌙 الجدول المسائي</h2>${_eveCal()}<h2 class="pb">🔄 جدول التغطيات</h2>${_covCal()}`);
   const filled = days.filter(d=>{
     const nd=nightData[d.date];
     const hasNight = nd && ((nd.doctors||[]).length || nd.eveningSlots>0 || ["am","pm","nextAm"].some(s=>(nd.coverages?.[s]||[]).length));
@@ -1317,7 +1320,28 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
         <button onClick={fillAvailable} style={sBtn("var(--eve)")}>🌙 إكمال المسائي بالمتاح</button>
         <button onClick={coverAll} style={sBtn("var(--primary-d)")}>🩺 تغطية العيادات المكشوفة</button>
         <label style={{ ...sGhost, display:"inline-flex", alignItems:"center", gap:6, cursor:"pointer" }}>➕ إضافة يوم<input type="date" onChange={e=>{ if(e.target.value&&dayIdx(e.target.value)>=0){ ensureDay(e.target.value); setSel(e.target.value); setMo({y:+e.target.value.split("-")[0],m:+e.target.value.split("-")[1]-1}); setView("list"); } }} style={{ border:"none", background:"none", width:18, padding:0 }} value="" /></label>
-        <button onClick={clearMonth} style={{ ...sGhost, color:C.err }}>🗑 مسح الشهر</button>
+        <div style={{ position:"relative", display:"inline-block" }}>
+          <button onClick={()=>setClrOpen(o=>!o)} style={{ ...sGhost, color:C.err }}>🗑 مسح ▾</button>
+          {clrOpen && <>
+            <div onClick={()=>setClrOpen(false)} style={{ position:"fixed", inset:0, zIndex:40 }} />
+            <div style={{ position:"absolute", insetInlineEnd:0, top:"calc(100% + 6px)", zIndex:41, background:"var(--surface)", border:`1px solid ${C.line}`, borderRadius:14, boxShadow:"0 14px 40px rgba(16,40,70,.18)", padding:8, width:300 }}>
+              <button onClick={clearEvening} style={{ display:"block", width:"100%", textAlign:"start", background:"none", border:"none", borderRadius:10, padding:"11px 12px", cursor:"pointer", fontFamily:"inherit" }}>
+                <div style={{ fontSize:13, fontWeight:800, color:"var(--eve)" }}>🌙 مسح الجدول المسائي + تغطياته المسائية</div>
+                <div style={{ fontSize:11, color:C.sub, marginTop:2 }}>يحذف المناوبات وتغطيات (دوام مسائي / راحة بعد مسائي). تبقى الإجازات وتغطياتها.</div>
+              </button>
+              <div style={{ height:1, background:C.line2, margin:"4px 6px" }} />
+              <button onClick={()=>{ setClrOpen(false); showToast("تغطيات الإجازات تُحذف بحذف الإجازة من صفحة الإجازات","warn"); }} style={{ display:"block", width:"100%", textAlign:"start", background:"none", border:"none", borderRadius:10, padding:"11px 12px", cursor:"pointer", fontFamily:"inherit" }}>
+                <div style={{ fontSize:13, fontWeight:800, color:"#b45309" }}>🏖 تغطيات الإجازات</div>
+                <div style={{ fontSize:11, color:C.sub, marginTop:2 }}>تُحذف تلقائياً عند حذف الإجازة من صفحة الإجازات (لا تُمسح من هنا).</div>
+              </button>
+              <div style={{ height:1, background:C.line2, margin:"4px 6px" }} />
+              <button onClick={clearMonthAll} style={{ display:"block", width:"100%", textAlign:"start", background:"none", border:"none", borderRadius:10, padding:"11px 12px", cursor:"pointer", fontFamily:"inherit" }}>
+                <div style={{ fontSize:13, fontWeight:800, color:C.err }}>🗑 مسح كامل الشهر</div>
+                <div style={{ fontSize:11, color:C.sub, marginTop:2 }}>يحذف كل المسائي وكل التغطيات لهذا الشهر. الإجازات تبقى محفوظة.</div>
+              </button>
+            </div>
+          </>}
+        </div>
         <button onClick={()=>setTools(t=>!t)} style={tools?sBtn("#475569"):sGhost}>🛠 أدوات إضافية</button>
       </div>
       {tools && <div style={{ background:"var(--surface2)", border:`1px solid ${C.line}`, borderRadius:12, padding:13, marginTop:10 }}>
@@ -1452,11 +1476,22 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
         return (
         <div className="cal-wrap">
           <div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:7, marginBottom:12 }}>
+              <button onClick={printEveCal} style={{ ...sGhost, fontSize:12.5 }}>🖨 طباعة المسائي</button>
+              <button onClick={printCovCal} style={{ ...sGhost, fontSize:12.5 }}>🖨 طباعة التغطيات</button>
+              <button onClick={printCalendars} style={{ ...sBtn(C.primaryD), fontSize:12.5 }}>🖨 طباعة شاملة (الاثنين)</button>
+            </div>
+
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+              <h3 style={{ margin:0, fontSize:15, fontWeight:800, color:"var(--eve)" }}>🌙 تقويم المسائي</h3>
+              <span style={{ fontSize:11.5, color:C.muted }}>مَن عنده مناوبة مسائية كل يوم</span>
+            </div>
             <div className="cal-grid2" style={{ marginBottom:8 }}>{DAYS.map(d=><div key={d} className="wd">{d}</div>)}</div>
             <div className="cal-grid2">
               {Array.from({length:offset},(_,i)=><div key={"e"+i} />)}
-              {days.map(({date,di,day})=>{ const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null); const st=r.gaps.length?"bad":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; return (
+              {days.map(({date,di,day})=>{ const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null); const reqEve=(nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0; const emptyEve=Math.max(0,reqEve-docs.length); const st=r.gaps.length?"bad":emptyEve>0?"warn":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; return (
                 <div key={date} className={"cell "+st+(dragCell===date?" drag":"")}
+                  style={emptyEve>0?{ outline:`2px dashed ${C.warn}`, outlineOffset:-2, background:"var(--warnSoft)" }:undefined}
                   onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }}
                   onDragOver={e=>{ e.preventDefault(); if(dragCell!==date) setDragCell(date); }}
                   onDragLeave={()=>setDragCell(c=>c===date?null:c)}
@@ -1466,14 +1501,36 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                     {st && <span style={{ width:9, height:9, borderRadius:"50%", background:st==="bad"?C.err:st==="warn"?C.warn:C.ok }} />}
                   </div>
                   {docs.map(d=><div key={d.id} className="cchip"><span className="d" style={{ background:d.color }}></span>د.{d.name}</div>)}
+                  {emptyEve>0 && <div style={{ display:"inline-flex", alignItems:"center", gap:4, marginTop:4, background:"#fff", border:`1px solid ${C.warn}`, color:C.warn, borderRadius:20, padding:"2px 8px", fontSize:10.5, fontWeight:800 }}>🌙 {emptyEve} فارغة</div>}
                 </div>
               ); })}
             </div>
             <div className="callegend">
               <span><i style={{ background:C.ok }}></i>مكتمل</span>
-              <span><i style={{ background:C.warn }}></i>يحتاج مراجعة</span>
-              <span><i style={{ background:C.err }}></i>يوجد شاغر</span>
+              <span><i style={{ background:C.warn }}></i>عيادة مسائية فارغة</span>
+              <span><i style={{ background:C.err }}></i>عيادة نهارية مكشوفة</span>
               <span><i style={{ background:C.eve }}></i>عيادة مسائية</span>
+            </div>
+
+            <div style={{ height:1, background:C.line2, margin:"22px 0" }} />
+
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+              <h3 style={{ margin:0, fontSize:15, fontWeight:800, color:"var(--primary-d)" }}>🔄 تقويم التغطيات</h3>
+              <span style={{ fontSize:11.5, color:C.muted }}>مَن يغطّي مَن ولماذا — مستقل عن المسائي (يظهر حتى لو لم يُنشأ جدول)</span>
+            </div>
+            <div className="cal-grid2" style={{ marginBottom:8 }}>{DAYS.map(d=><div key={"ch"+d} className="wd">{d}</div>)}</div>
+            <div className="cal-grid2">
+              {Array.from({length:offset},(_,i)=><div key={"ce"+i} />)}
+              {days.map(({date,di,day})=>{ const lines=covLines(date); const isT=date===today; return (
+                <div key={"cov"+date} className="cell" style={{ cursor:"pointer" }} onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <span className="dn" style={isT?{ background:C.primaryD, color:"#fff" }:undefined}>{day}</span>
+                    {lines.length>0 && <span style={{ fontSize:10, fontWeight:800, color:"#fff", background:C.primaryD, borderRadius:20, padding:"1px 8px" }}>{lines.length}</span>}
+                  </div>
+                  {lines.length===0 ? <div style={{ fontSize:11, color:C.muted, marginTop:6 }}>—</div> :
+                    lines.map((t,i)=><div key={i} style={{ fontSize:10.5, color:"var(--primary-d)", background:"#EFFAFB", border:"1px solid #D7EEF1", borderRadius:7, padding:"4px 7px", marginTop:4, lineHeight:1.55, whiteSpace:"normal", wordBreak:"break-word" }}>🔄 {t}</div>)}
+                </div>
+              ); })}
             </div>
           </div>
         </div>
