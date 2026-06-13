@@ -1540,7 +1540,13 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
   const TYPES = { annual:"سنوية", sick:"مرضية", emergency:"طارئة", other:"أخرى" };
   const [f, setF] = useState({ doctorId:"", type:"annual", start:"", end:"", clinicClosed:true });
   const add = () => { if(!f.doctorId||!f.start||!f.end){showToast("أكمل الحقول","warn");return;} if(f.end<f.start){showToast("التواريخ غير صحيحة","err");return;} setLeaves(ls=>[...ls,{id:uid(),doctorId:+f.doctorId,type:f.type,start:f.start,end:f.end,clinicClosed:f.clinicClosed}]); setF({doctorId:"",type:"annual",start:"",end:"",clinicClosed:true}); logAudit&&logAudit(`تسجيل إجازة د.${fd(+f.doctorId)?.name||""} (${f.type})`); showToast("تم تسجيل الإجازة"); };
-  const del = id => setLeaves(ls=>ls.filter(l=>l.id!==id));
+  const del = id => {
+    const l = leaves.find(x=>x.id===id); if(!l) return;
+    setLeaves(ls=>ls.filter(x=>x.id!==id));
+    setCoverages(cs=>cs.filter(c=>!(c.reason==="leave" && c.absentId===l.doctorId && c.date>=l.start && c.date<=l.end)));
+    logAudit&&logAudit(`حذف إجازة د.${fd(l.doctorId)?.name||""} وإلغاء تغطياتها المرتبطة`);
+    showToast&&showToast("تم حذف الإجازة وإلغاء التغطيات المرتبطة بها");
+  };
   const autoCoverLeave = l => { const d=fd(l.doctorId); if(!d) return; const md=monthDays(+l.start.split("-")[0],+l.start.split("-")[1]-1).map(x=>x.date); const load=id=>{ const s=doctorSessions(doctors.find(x=>x.id===id),md,nightData,coverages,leaves); return s.total; }; const adds=[]; const used={}; const s=new Date(l.start),e=new Date(l.end); for(let dt=new Date(s);dt<=e;dt.setDate(dt.getDate()+1)){ const wi=dt.getDay(); if(wi>4) continue; const ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; ["am","pm"].forEach(p=>{ if(!isClinic(getSlot(d,wi,p))) return; if(coverages.some(c=>c.date===ds&&c.period===p&&c.absentId===d.id)) return; const av=getAvailable(doctors,[d.id],wi,ds,p,leaves,nightData,{},coverages).filter(a=>a.status==="free").map(a=>({a,L:load(a.doc.id)})).sort((x,y)=>x.L-y.L); const key=ds+"|"+p; const taken=used[key]||[]; const pick=av.find(x=>!taken.includes(x.a.doc.id)); if(pick){ adds.push({id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:pick.a.doc.id,reason:"leave"}); (used[key]=used[key]||[]).push(pick.a.doc.id); } }); } if(!adds.length){ showToast("لا عيادات مكشوفة أو لا متاح","warn"); return; } setCoverages(cs=>[...cs,...adds]); showToast(`تمت تغطية ${adds.length} عيادة بالأنسب`); };
   const sorted = leaves.slice().sort((a,b)=>b.start.localeCompare(a.start));
   const [open,setOpen] = useState(()=>new Set());
@@ -2074,10 +2080,20 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd }) {
     const cvTbl = cv.length
       ? `<table><thead><tr><th style="width:200px">اليوم والتاريخ</th><th>تفاصيل التغطية</th></tr></thead><tbody>${cv.map(c=>`<tr><td style="font-weight:600">${dmyFull(c.date)}</td><td class="cov-c" style="text-align:start">تم تغطية ${perFull(c.period)} لـ ${c.ownerId?("د."+(fd(c.ownerId)?.name||"—")):"طبيب المسائي"} بـ <b>د.${d.name}</b> بسبب ${coverReasonAr(c.ownerId,c.date,c.reason,leaves)}</td></tr>`).join("")}</tbody></table>`
       : `<p>لا توجد تغطيات في هذه الفترة</p>`;
+    const schedTbl = `<table><thead><tr><th>اليوم</th><th>صباح (٠٨:٠٠–١٢:٠٠)</th><th>ظهر (١٣:٠٠–١٦:٠٠)</th></tr></thead><tbody>${DAYS.map((dn,di)=>`<tr><td style="font-weight:700;background:#f4f8fb;color:${C.primaryD}">${dn}</td><td>${SLOT_AR[(d.sched?.[di]?.am)||""]||"—"}</td><td>${SLOT_AR[(d.sched?.[di]?.pm)||""]||"—"}</td></tr>`).join("")}</tbody></table>`;
+    const awayTbl = coveredAway.length
+      ? `<table><thead><tr><th style="width:200px">اليوم والتاريخ</th><th>من قام بتغطيته</th></tr></thead><tbody>${coveredAway.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(c=>`<tr><td style="font-weight:600">${dmyFull(c.date)}</td><td style="text-align:start">تمت تغطية ${perFull(c.period)} الخاصة به بـ <b>د.${fd(c.coverDoctorId)?.name||"—"}</b> بسبب ${coverReasonAr(d.id,c.date,c.reason,leaves)}</td></tr>`).join("")}</tbody></table>`
+      : `<p>لم تُغطَّ عيادته من قِبل أحد في هذه الفترة</p>`;
+    const lvTbl = lv.length
+      ? `<table><thead><tr><th style="width:150px">من</th><th style="width:150px">إلى</th><th>النوع</th><th>العيادة</th></tr></thead><tbody>${lv.slice().sort((a,b)=>a.start.localeCompare(b.start)).map(l=>`<tr><td style="font-weight:600">${dmyFull(l.start)}</td><td style="font-weight:600">${dmyFull(l.end)}</td><td>${LEAVE_AR[l.type]||"إجازة"}</td><td>${l.clinicClosed?"مغلقة":"تُغطّى"}</td></tr>`).join("")}</tbody></table>`
+      : `<p>لا إجازات في هذه الفترة</p>`;
     return `<div class="dhead"><span class="dav">${sn(d.name).slice(0,2)}</span><div><div class="dnm">د.${d.name}</div><div class="dmt">${rankLabel(rankOf(d))} · ${posLabel(d.adminPosition,d)} · ${label}</div></div></div>
       ${summary}
+      <h2>🏥 الجدول الأسبوعي الثابت</h2>${schedTbl}
       <h2>🌙 الدوام المسائي (${ev.length})</h2>${evTbl}
-      <h2>🔄 التغطيات (${cv.length})</h2>${cvTbl}`;
+      <h2>🩹 من قام بتغطيته (${coveredAway.length})</h2>${awayTbl}
+      <h2>🔄 تغطياته لزملائه (${cv.length})</h2>${cvTbl}
+      <h2>🏖 إجازاته (${lv.length})</h2>${lvTbl}`;
   };
   const printDoctor = d => printDoc(`تقرير — د.${d.name} (${label})`, reportCSS+`<div class="pdoc">${docReportBody(d)}</div>`, false);
   const printAll = () => { if(!shown.length) return; printDoc(`تقرير الأطباء — ${label}`, reportCSS+shown.map((d,i)=>`<div class="pdoc ${i>0?"pb":""}">${docReportBody(d)}</div>`).join(""), false); };
