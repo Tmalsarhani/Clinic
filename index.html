@@ -890,7 +890,7 @@ const WDAY = ["الأحد","الاثنين","الثلاثاء","الأربعاء
 const dmyFull = ds => `${WDAY[new Date(ds).getDay()]||""} ${dmy(ds)}`;
 const LEAVE_AR = { annual:"إجازة سنوية", sick:"إجازة مرضية", emergency:"إجازة طارئة", other:"إجازة أخرى" };
 const perFull = per => per==="am"?"العيادة الصباحية":per==="pm"?"عيادة الظهر":per==="nextAm"?"عيادة صباح الغد":(per||"");
-const coverReasonAr = (ownerId, date, reason, leaves) => { if(reason==="evening"||ownerId==null) return "دوام مسائي"; if(reason==="absence") return "غياب"; const lv=(leaves||[]).find(l=>l.doctorId===ownerId && date>=l.start && date<=l.end); if(lv) return LEAVE_AR[lv.type]||"إجازة"; if(reason==="leave") return "إجازة"; return reason||"غياب"; };
+const coverReasonAr = (ownerId, date, reason, leaves) => { if(reason==="evening"||ownerId==null) return "دوام مسائي"; if(reason==="post_evening") return "راحة بعد دوام مسائي (أمس)"; if(reason==="absence") return "غياب"; const lv=(leaves||[]).find(l=>l.doctorId===ownerId && date>=l.start && date<=l.end); if(lv) return LEAVE_AR[lv.type]||"إجازة"; if(reason==="leave") return "إجازة"; return reason||"غياب"; };
 const monthDays = (y,m) => { const dim=new Date(y,m+1,0).getDate(); const out=[]; for(let d=1;d<=dim;d++){ const date=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; const di=dayIdx(date); if(di>=0) out.push({date,di,day:d}); } return out; };
 
 // ── shared styles ──
@@ -1135,7 +1135,18 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const ownerCover = (date,ownerId,period) => { const c=coverages.find(x=>x.date===date&&x.absentId===ownerId&&x.period===period&&x.reason==="evening"); return c?c.coverDoctorId:undefined; };
   const setOwnerCover = (date,ownerId,period,cid) => setCoverages(cs=>[...cs.filter(c=>!(c.date===date&&c.absentId===ownerId&&c.period===period&&c.reason==="evening")), {id:uid(),absentId:ownerId,date,period,coverDoctorId:cid,reason:"evening"}]);
   const clearOwnerCover = (date,ownerId,period) => setCoverages(cs=>cs.filter(c=>!(c.date===date&&c.absentId===ownerId&&c.period===period&&c.reason==="evening")));
-  const placeCover = (g,cid) => { if(eveningOwner(g)&&(g.period==="am"||g.period==="pm")) setOwnerCover(g.date,g.ownerId,g.period,cid); else pushCov({absentId:g.ownerId,date:g.date,period:g.period,coverDoctorId:cid,reason:"absence"}); logAudit&&logAudit(`تغطية عيادة د.${fd(g.ownerId)?.name||"؟"} — بـ د.${fd(cid)?.name||"؟"} (${perAr(g.period)} ${dmy(g.date)})`); };
+  const placeCover = (g,cid) => {
+    if(eveningOwner(g)&&(g.period==="am"||g.period==="pm")) setOwnerCover(g.date,g.ownerId,g.period,cid);
+    else {
+      const owner=fd(g.ownerId);
+      const onLv = owner && onLeave(owner,g.date,leaves);
+      const pcd=(()=>{ const dt=new Date(g.date); dt.setDate(dt.getDate()-1); return dt.getDay()>=5?null:dt.toISOString().split("T")[0]; })();
+      const prevEve = pcd && ((nightData[pcd]||{}).doctors||[]).includes(g.ownerId);
+      const reason = onLv ? "leave" : (g.period==="am" && prevEve) ? "post_evening" : "absence";
+      pushCov({absentId:g.ownerId,date:g.date,period:g.period,coverDoctorId:cid,reason});
+    }
+    logAudit&&logAudit(`تغطية عيادة د.${fd(g.ownerId)?.name||"؟"} — بـ د.${fd(cid)?.name||"؟"} (${perAr(g.period)} ${dmy(g.date)})`);
+  };
   const coverGap = g => { const av=availForGap(g); const s=picks[gapKey(g)]; const cid=s?+s:(av.find(a=>a.status==="free")?.doc?.id); if(!cid){showToast("لا يوجد طبيب متفرّغ — اختر يدوياً","warn");return;} placeCover(g,cid); showToast("تمت التغطية"); };
   const coverAll = () => { let n=0; const used={}; gaps.forEach(g=>{ const av=availForGap(g); const s=picks[gapKey(g)]; const key=g.date+"|"+g.period; const taken=used[key]||[]; const pick = s?+s : (av.find(a=>a.status==="free" && !taken.includes(a.doc.id))?.doc?.id); if(pick){ placeCover(g,pick); (used[key]=used[key]||[]).push(pick); n++; } }); showToast(n?`غُطّيت ${n} عيادة بالأنسب`:"لا يوجد متاح"); };
   const cleanOrphanCovs = () => {
