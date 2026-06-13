@@ -1228,6 +1228,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const assignEvening = (date,id) => { ensureDay(date); setNight(nd=>{ const d={...(nd[date]||{doctors:[],coverages:{am:[],pm:[],nextAm:[]}})}; if((d.doctors||[]).includes(id)) return nd; d.doctors=[...(d.doctors||[]),id]; return {...nd,[date]:d}; }); logAudit&&logAudit(`تعيين د.${fd(id)?.name||""} مسائياً ${dmy(date)}`); showToast(`تم تعيين د.${fd(id)?.name||""} مسائياً ${dmy(date)}`); };
   const [tools,setTools] = useState(false);
   const [clrOpen,setClrOpen] = useState(false);
+  const [calMode,setCalMode] = useState("split"); // split | merged
   const [swp,setSwp] = useState({ date:"", from:"", to:"" });
   const [wkRef,setWkRef] = useState(today);
   const pre = `${mo.y}-${String(mo.m+1).padStart(2,"0")}`;
@@ -1284,6 +1285,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const printEveCal = () => openPrint(`تقويم المسائي — ${MONTHS[mo.m]} ${mo.y}`, `<h2>🌙 الجدول المسائي</h2>${_eveCal()}`);
   const printCovCal = () => openPrint(`تقويم التغطيات — ${MONTHS[mo.m]} ${mo.y}`, `<h2>🔄 جدول التغطيات</h2>${_covCal()}`);
   const printCalendars = () => openPrint(`المسائي والتغطيات — ${MONTHS[mo.m]} ${mo.y}`, `<h2>🌙 الجدول المسائي</h2>${_eveCal()}<h2 class="pb">🔄 جدول التغطيات</h2>${_covCal()}`);
+  const _mergedCal = () => _buildCal(date=>{ const docs=((nightData[date]||{}).doctors||[]).map(id=>fd(id)?.name).filter(Boolean); const req=((nightData[date]||{}).eveningSlots!=null?(nightData[date].eveningSlots):needOf(date))||0; const empty=Math.max(0,req-docs.length); const cl=covLines(date); const eve=docs.map(n=>`<div class="eve">🌙 د.${n}</div>`).join("")+(empty>0?`<div class="eve" style="background:#fff7ed;border-color:#fed7aa;color:#b45309">🌙 ${empty} عيادة فارغة</div>`:""); const cov=cl.map(t=>`<div class="cov">🔄 ${t}</div>`).join(""); return (eve+cov)||'<div class="dim">—</div>'; });
+  const printMergedCal = () => openPrint(`التقويم الموحّد — ${MONTHS[mo.m]} ${mo.y}`, `<h2>🗓 المسائي والتغطيات معاً</h2>${_mergedCal()}`);
   const filled = days.filter(d=>{
     const nd=nightData[d.date];
     const hasNight = nd && ((nd.doctors||[]).length || nd.eveningSlots>0 || ["am","pm","nextAm"].some(s=>(nd.coverages?.[s]||[]).length));
@@ -1476,12 +1479,51 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
         return (
         <div className="cal-wrap">
           <div>
-            <div style={{ display:"flex", flexWrap:"wrap", gap:7, marginBottom:12 }}>
-              <button onClick={printEveCal} style={{ ...sGhost, fontSize:12.5 }}>🖨 طباعة المسائي</button>
-              <button onClick={printCovCal} style={{ ...sGhost, fontSize:12.5 }}>🖨 طباعة التغطيات</button>
-              <button onClick={printCalendars} style={{ ...sBtn(C.primaryD), fontSize:12.5 }}>🖨 طباعة شاملة (الاثنين)</button>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:7, marginBottom:12, alignItems:"center" }}>
+              <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden", marginInlineEnd:"auto" }}>
+                {[["split","🔀 منفصلان"],["merged","🗓 تقويم موحّد"]].map(([k,l])=>(
+                  <button key={k} onClick={()=>setCalMode(k)} style={{ padding:"8px 13px", border:"none", fontSize:12.5, fontWeight:700, background:calMode===k?C.primaryD:"var(--surface)", color:calMode===k?"#fff":C.sub }}>{l}</button>
+                ))}
+              </div>
+              {calMode==="split" ? <>
+                <button onClick={printEveCal} style={{ ...sGhost, fontSize:12.5 }}>🖨 طباعة المسائي</button>
+                <button onClick={printCovCal} style={{ ...sGhost, fontSize:12.5 }}>🖨 طباعة التغطيات</button>
+                <button onClick={printCalendars} style={{ ...sBtn(C.primaryD), fontSize:12.5 }}>🖨 طباعة شاملة</button>
+              </> : <button onClick={printMergedCal} style={{ ...sBtn(C.primaryD), fontSize:12.5 }}>🖨 طباعة التقويم الموحّد</button>}
             </div>
 
+            {calMode==="merged" ? <>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, flexWrap:"wrap" }}>
+                <h3 style={{ margin:0, fontSize:15, fontWeight:800 }}>🗓 التقويم الموحّد</h3>
+                <span style={{ fontSize:11.5, color:C.muted }}>المسائي والتغطيات معاً في كل يوم</span>
+              </div>
+              <div className="cal-grid2" style={{ marginBottom:8 }}>{DAYS.map(d=><div key={"mh"+d} className="wd">{d}</div>)}</div>
+              <div className="cal-grid2">
+                {Array.from({length:offset},(_,i)=><div key={"me"+i} />)}
+                {days.map(({date,di,day})=>{ const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null); const reqEve=(nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0; const emptyEve=Math.max(0,reqEve-docs.length); const lines=covLines(date); const st=r.gaps.length?"bad":emptyEve>0?"warn":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; return (
+                  <div key={"m"+date} className={"cell "+st+(dragCell===date?" drag":"")}
+                    style={emptyEve>0?{ outline:`2px dashed ${C.warn}`, outlineOffset:-2, background:"var(--warnSoft)" }:undefined}
+                    onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }}
+                    onDragOver={e=>{ e.preventDefault(); if(dragCell!==date) setDragCell(date); }}
+                    onDragLeave={()=>setDragCell(c=>c===date?null:c)}
+                    onDrop={e=>{ e.preventDefault(); setDragCell(null); const id=+e.dataTransfer.getData("text"); if(id) assignEvening(date,id); }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                      <span className="dn" style={isT?{ background:C.primary, color:"#fff" }:undefined}>{day}</span>
+                      {st && <span style={{ width:9, height:9, borderRadius:"50%", background:st==="bad"?C.err:st==="warn"?C.warn:C.ok }} />}
+                    </div>
+                    {docs.map(d=><div key={d.id} className="cchip"><span className="d" style={{ background:d.color }}></span>د.{d.name}</div>)}
+                    {emptyEve>0 && <div style={{ display:"inline-flex", alignItems:"center", gap:4, marginTop:4, background:"#fff", border:`1px solid ${C.warn}`, color:C.warn, borderRadius:20, padding:"2px 8px", fontSize:10.5, fontWeight:800 }}>🌙 {emptyEve} فارغة</div>}
+                    {lines.map((t,i)=><div key={i} style={{ fontSize:10.5, color:"var(--primary-d)", background:"#EFFAFB", border:"1px solid #D7EEF1", borderRadius:7, padding:"4px 7px", marginTop:4, lineHeight:1.55, whiteSpace:"normal", wordBreak:"break-word" }}>🔄 {t}</div>)}
+                  </div>
+                ); })}
+              </div>
+              <div className="callegend">
+                <span><i style={{ background:C.eve }}></i>🌙 مسائي</span>
+                <span><i style={{ background:C.primaryD }}></i>🔄 تغطية</span>
+                <span><i style={{ background:C.warn }}></i>عيادة مسائية فارغة</span>
+                <span><i style={{ background:C.err }}></i>عيادة نهارية مكشوفة</span>
+              </div>
+            </> : <>
             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
               <h3 style={{ margin:0, fontSize:15, fontWeight:800, color:"var(--eve)" }}>🌙 تقويم المسائي</h3>
               <span style={{ fontSize:11.5, color:C.muted }}>مَن عنده مناوبة مسائية كل يوم</span>
@@ -1532,6 +1574,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                 </div>
               ); })}
             </div>
+            </>}
           </div>
         </div>
         );
