@@ -742,7 +742,7 @@ const prevCalDay = ds => { const dd=new Date(ds); dd.setDate(dd.getDate()-1); re
 // القاعدة: اشتغل الفترة = +1 · غاب = لا تُحسب · غُطّيت عنه = لا تُحسب له · تغطية أدّاها = +1 له
 const CLINIC_SLOTS = ["clinic","clinic_am","clinic_pm","virtual"]; // العيادات التي قد تحتاج تغطية
 function doctorSessions(doctor, dates, nightData, coverages, leaves) {
-  let direct=0, support=0, covers=0, evening=0, eveningFixed=0, eveningExtra=0, absentCovered=0;
+  let direct=0, support=0, covers=0, eveningFixed=0, eveningExtra=0, absentCovered=0;
   if (!doctor) return { direct:0, care:0, support:0, supportive:0, full:0, attended:0, covers:0, evening:0, eveningFixed:0, eveningExtra:0, absentCovered:0 };
   (dates||[]).forEach(date => {
     const di = dayIdx(date); if (di < 0) return;
