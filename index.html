@@ -747,16 +747,16 @@ function doctorSessions(doctor, dates, nightData, coverages, leaves) {
   (dates||[]).forEach(date => {
     const di = dayIdx(date); if (di < 0) return;
     const nd = nightData[date] || {}; const c = nd.coverages || {};
-    const isEve = (nd.doctors||[]).includes(doctor.id);
     const onLv = onLeave(doctor, date, leaves||[]);
     const pw = prevWorkDay(date);
     const prevNextAm = pw ? ((nightData[pw]?.coverages||{}).nextAm || []) : [];
     const dind = (coverages||[]).filter(x => x.date === date);
-    if (isEve) {
-      evening += 1;                                              // مناوبة مسائية (تُحسب منفصلة)
-      if ((doctor.nightDays||[]).includes(di)) eveningFixed += 1; else eveningExtra += 1;
-      // عياداته النهارية مُغطّاة عنه في يوم المسائي → لا تُحسب ضمن الرعاية المباشرة
-    } else {
+    const fixedEveHere = (doctor.nightDays||[]).includes(di);          // عيادة مسائية ثابتة (من جدول الطبيب)
+    const assignedEve  = (nd.doctors||[]).includes(doctor.id);          // مُسند مسائياً في صفحة الدوام
+    if (fixedEveHere && !onLv) eveningFixed += 1;                        // ثابت → رعاية (×2)
+    if (assignedEve && !fixedEveHere && !onLv) eveningExtra += 1;        // فوق الثابت → مسائي إضافي (×2)
+    const worksEve = fixedEveHere || assignedEve;
+    if (!worksEve) {
       ["am","pm"].forEach(per => {
         const slot = getSlot(doctor, di, per);
         if (!slot) return;                                       // الفراغ لا يُحسب
@@ -774,9 +774,10 @@ function doctorSessions(doctor, dates, nightData, coverages, leaves) {
     prevNextAm.forEach(id => { if (id===doctor.id) covers += 1; });
     dind.forEach(x => { if (x.coverDoctorId===doctor.id) covers += 1; });
   });
-  const care = direct + covers + evening*2;   // الرعاية = عيادات نهارية (ص/ظ ×1) + تغطيات نهارية + المسائي (×2). لا يُستثنى أي مسائي.
-  const total = care + support;               // إجمالي العمل = الرعاية + الدعم (إدارة/لجان)
-  return { direct, care, carePoints:care, daytimeCare:direct, eveningCare:evening*2, total, support, supportive:support, full:total, attended:direct, covers, evening, eveningFixed, eveningExtra, absentCovered };
+  const evening = eveningFixed + eveningExtra;
+  const care = direct + covers + eveningFixed*2 + eveningExtra*2;   // الرعاية = نهاري + تغطيات + (مسائي ثابت + إضافي)×2
+  const total = care + support;
+  return { direct, care, carePoints:care, daytimeCare:direct, eveningCare:evening*2, fixedCare:eveningFixed*2, extraEveCare:eveningExtra*2, total, support, supportive:support, full:total, attended:direct, covers, evening, eveningFixed, eveningExtra, absentCovered };
 }
 
 // Workload per doctor for a month, by ACTUAL worked periods.
@@ -1743,6 +1744,7 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
               {[0,1,2,3,4].map(di=><div key={di} style={{ border:`1px solid ${C.line2}`, borderRadius:8, overflow:"hidden", textAlign:"center" }}>
                 <div style={{ background:"var(--surface2)", fontSize:9, fontWeight:700, color:C.sub, padding:"3px 0" }}>{DAYS[di]}</div>
                 {["am","pm"].map(p=>{ const sl=getSlot(d,di,p); const dir=DIRECT_SLOTS.includes(sl); return <div key={p} style={{ fontSize:9, padding:"4px 1px", color:dir?C.primary:C.muted, background:dir?"var(--primarySoft)":"var(--surface)", fontWeight:dir?700:400 }}>{SLOT_AR[sl]||"—"}</div>; })}
+                {(()=>{ const fx=(d.sched?.[di]?.eve)||((d.nightDays||[]).includes(di)?"clinic":""); return <div style={{ fontSize:9, padding:"4px 1px", color:fx?"var(--eve)":C.muted, background:fx?"#ECEAFE":"var(--surface)", fontWeight:fx?700:400 }}>{fx?"🌙":"—"}</div>; })()}
               </div>)}
             </div>
             <div style={{ background:"var(--surface2)", borderRadius:10, padding:"9px 11px" }}>
@@ -1770,9 +1772,9 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
 function DoctorsPage({ doctors, leaves, today, fd, setDoctors, showToast, logAudit }) {
   const [open, setOpen] = useState(null);
   const [newName, setNewName] = useState("");
-  const addDoc = () => { if(!newName.trim()){showToast("أدخل الاسم","warn");return;} const id=uid(); setDoctors(ds=>[...ds,{ id, name:newName.trim(), color:PALETTE[ds.length%PALETTE.length], nightDays:[], blockedDays:[], rank:"specialist", adminPosition:"none", sched:{0:{am:"",pm:""},1:{am:"",pm:""},2:{am:"",pm:""},3:{am:"",pm:""},4:{am:"",pm:""}} }]); setNewName(""); setOpen(id); logAudit&&logAudit(`إضافة طبيب: ${newName.trim()}`); };
+  const addDoc = () => { if(!newName.trim()){showToast("أدخل الاسم","warn");return;} const id=uid(); setDoctors(ds=>[...ds,{ id, name:newName.trim(), color:PALETTE[ds.length%PALETTE.length], nightDays:[], blockedDays:[], rank:"specialist", adminPosition:"none", sched:{0:{am:"",pm:"",eve:""},1:{am:"",pm:"",eve:""},2:{am:"",pm:"",eve:""},3:{am:"",pm:"",eve:""},4:{am:"",pm:"",eve:""}} }]); setNewName(""); setOpen(id); logAudit&&logAudit(`إضافة طبيب: ${newName.trim()}`); };
   const upd = (id,patch) => setDoctors(ds=>ds.map(d=>d.id===id?{...d,...patch}:d));
-  const setSlot = (id,di,p,v) => setDoctors(ds=>ds.map(d=>{ if(d.id!==id)return d; const sched={...d.sched}; sched[di]={...sched[di],[p]:v}; return {...d,sched}; }));
+  const setSlot = (id,di,p,v) => setDoctors(ds=>ds.map(d=>{ if(d.id!==id)return d; const sched={...d.sched}; sched[di]={...sched[di],[p]:v}; const patch={...d,sched}; if(p==="eve"){ patch.nightDays=[0,1,2,3,4].filter(x=>sched[x]&&sched[x].eve); } return patch; }));
   const del = id => { const dn=fd(id)?.name||""; setDoctors(ds=>ds.filter(d=>d.id!==id)); logAudit&&logAudit(`حذف طبيب: د.${dn}`); };
 
   return <div className="fade">
@@ -1814,11 +1816,8 @@ function DoctorsPage({ doctors, leaves, today, fd, setDoctors, showToast, logAud
               <div><label style={label}>المنصب الإداري (هدف الرعاية = ١٠ − SS)</label><select value={normPos(d.adminPosition,d)} onChange={e=>upd(d.id,{adminPosition:e.target.value})} style={sIn}>{ADMIN_POS.map(pp=><option key={pp.code} value={pp.code}>{pp.code} · {pp.ar} — SS {pp.ss} دعم · DS {10-pp.ss} رعاية</option>)}</select></div>
               <div><label style={label}>اللون</label><div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>{PALETTE.map(c=><button key={c} onClick={()=>upd(d.id,{color:c})} style={{ width:22, height:22, borderRadius:"50%", background:c, border:d.color===c?"2px solid #1e293b":"2px solid #fff" }} />)}</div></div>
             </div>
-            <label style={label}>الأيام المسائية الثابتة</label>
-            <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:12 }}>
-              {[0,1,2,3,4].map(di=>{ const on=(d.nightDays||[]).includes(di); return <button key={di} onClick={()=>upd(d.id,{nightDays:on?(d.nightDays||[]).filter(x=>x!==di):[...(d.nightDays||[]),di]})} style={{ border:`1px solid ${on?C.primary:C.line}`, background:on?C.primary:"var(--surface)", color:on?"#fff":C.text, borderRadius:16, padding:"5px 12px", fontSize:12 }}>{DAYS[di]}</button>; })}
-            </div>
-            <label style={label}>جدول العيادات الأسبوعي (صباح / مساء)</label>
+            <label style={label}>جدول العيادات الأسبوعي (صباح / ظهر / مساء)</label>
+            <div style={{ fontSize:10.5, color:C.muted, marginBottom:6 }}>🌙 خانة «مساء» = عيادة مسائية ثابتة تُحسب ضمن الرعاية (فترتين). الأيام المسائية الثابتة تُشتق منها تلقائياً.</div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6, marginBottom:8 }}>
               {[0,1,2,3,4].map(di=><div key={di} style={{ minWidth:0 }}>
                 <div style={{ fontSize:10.5, fontWeight:700, color:C.sub, textAlign:"center", marginBottom:4 }}>{DAYS[di]}</div>
@@ -1828,6 +1827,15 @@ function DoctorsPage({ doctors, leaves, today, fd, setDoctors, showToast, logAud
                     <select value={v} onChange={e=>setSlot(d.id,di,p,e.target.value)} style={{ width:"100%", border:`1px solid ${v?st.fg+"55":C.line}`, background:st.bg, color:st.fg, borderRadius:8, padding:"6px 2px", fontSize:11, fontWeight:v?700:400 }}>{SLOT_OPTS.map(([sv,l])=><option key={sv} value={sv}>{l}</option>)}</select>
                   </div>
                 ); })}
+                <div style={{ marginBottom:5 }}>
+                  <div style={{ fontSize:8.5, color:C.muted, marginBottom:2, textAlign:"center" }}>عيادة المساء</div>
+                  {(()=>{ const ev=(d.sched?.[di]?.eve)||((d.nightDays||[]).includes(di)?"clinic":""); return (
+                    <select value={ev} onChange={e=>setSlot(d.id,di,"eve",e.target.value)} style={{ width:"100%", border:`1px solid ${ev?"#C7BEFB":C.line}`, background:ev?"#ECEAFE":"var(--surface)", color:ev?"var(--eve)":C.text, borderRadius:8, padding:"6px 2px", fontSize:11, fontWeight:ev?700:400 }}>
+                      <option value="">—</option>
+                      <option value="clinic">🌙 مسائي ثابت</option>
+                    </select>
+                  ); })()}
+                </div>
               </div>)}
             </div>
             <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:12 }}>
@@ -1953,7 +1961,7 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
           </div>
           <div style={{ fontSize:12.5, fontWeight:700, marginBottom:6 }}>🏥 جدول العيادات</div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:4, marginBottom:16 }}>
-            {[0,1,2,3,4].map(di=><div key={di} style={{ border:`1px solid ${C.line2}`, borderRadius:8, overflow:"hidden", textAlign:"center" }}><div style={{ background:"var(--surface2)", fontSize:9, fontWeight:700, color:C.sub, padding:"3px 0" }}>{DAYS[di]}</div>{["am","pm"].map(p=>{ const sl=getSlot(sd,di,p); const dir=DIRECT_SLOTS.includes(sl); return <div key={p} style={{ fontSize:9, padding:"4px 1px", color:dir?C.primary:C.muted, background:dir?"var(--primarySoft)":"var(--surface)", fontWeight:dir?700:400 }}>{SLOT_AR[sl]||"—"}</div>; })}</div>)}
+            {[0,1,2,3,4].map(di=><div key={di} style={{ border:`1px solid ${C.line2}`, borderRadius:8, overflow:"hidden", textAlign:"center" }}><div style={{ background:"var(--surface2)", fontSize:9, fontWeight:700, color:C.sub, padding:"3px 0" }}>{DAYS[di]}</div>{["am","pm"].map(p=>{ const sl=getSlot(sd,di,p); const dir=DIRECT_SLOTS.includes(sl); return <div key={p} style={{ fontSize:9, padding:"4px 1px", color:dir?C.primary:C.muted, background:dir?"var(--primarySoft)":"var(--surface)", fontWeight:dir?700:400 }}>{SLOT_AR[sl]||"—"}</div>; })}{(()=>{ const fx=(sd.sched?.[di]?.eve)||((sd.nightDays||[]).includes(di)?"clinic":""); return <div style={{ fontSize:9, padding:"4px 1px", color:fx?"var(--eve)":C.muted, background:fx?"#ECEAFE":"var(--surface)", fontWeight:fx?700:400 }}>{fx?"🌙":"—"}</div>; })()}</div>)}
           </div>
           <div style={{ fontSize:12.5, fontWeight:700, marginBottom:4 }}>🌙 الدوام المسائي ({ev.length})</div>
           <div style={{ fontSize:12, color:C.sub, marginBottom:16 }}>{ev.length?ev.map(dmy).join("، "):"—"}</div>
@@ -1969,7 +1977,7 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
 
 // ════════════════════════════════ SEED (أطباء القسم) ════════════════════════════════
 const _SM = { c:"clinic", v:"virtual", a:"audit", t:"training", d:"admin", x:"" };
-const _mkSched = r => { const s={}; for(let i=0;i<5;i++) s[i]={ pm:_SM[r[i][0]], am:_SM[r[i][1]] }; return s; };
+const _mkSched = r => { const s={}; for(let i=0;i<5;i++) s[i]={ pm:_SM[r[i][0]], am:_SM[r[i][1]], eve:"" }; return s; };
 const _SEED = [
   ["محمد الشهراني",[0],[["c","c"],["x","t"],["c","d"],["d","c"],["c","d"]]],
   ["طارق السرحاني",[],[["x","t"],["c","c"],["x","c"],["c","t"],["c","c"]]],
@@ -1989,7 +1997,7 @@ const _SEED = [
   ["مضر فتيح",[4],[["c","t"],["c","d"],["c","d"],["t","c"],["d","c"]]],
   ["عزيزة دريهم",[4],[["d","v"],["d","d"],["c","d"],["c","c"],["c","c"]]],
 ];
-const SEED_DOCTORS = _SEED.map((e,i)=>({ id:9001+i, name:e[0], color:PALETTE[i%PALETTE.length], nightDays:e[1], blockedDays:[], rank:"specialist", adminPosition:"none", sched:_mkSched(e[2]) }));
+const SEED_DOCTORS = _SEED.map((e,i)=>{ const sched=_mkSched(e[2]); (e[1]||[]).forEach(di=>{ if(sched[di]) sched[di].eve="clinic"; }); return { id:9001+i, name:e[0], color:PALETTE[i%PALETTE.length], nightDays:e[1], blockedDays:[], rank:"specialist", adminPosition:"none", sched }; });
 
 // ════════════════════════════════ NEW MODULES ════════════════════════════════
 const DEFAULT_SETTINGS = { capEvening:8, capLeaveDay:4, restRule:false };
@@ -2210,7 +2218,7 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd }) {
     const cvTbl = cv.length
       ? `<table><thead><tr><th style="width:200px">اليوم والتاريخ</th><th>تفاصيل التغطية</th></tr></thead><tbody>${cv.map(c=>`<tr><td style="font-weight:600">${dmyFull(c.date)}</td><td class="cov-c" style="text-align:start">تم تغطية ${perFull(c.period)} لـ ${c.ownerId?("د."+(fd(c.ownerId)?.name||"—")):"طبيب المسائي"} بـ <b>د.${d.name}</b> بسبب ${coverReasonAr(c.ownerId,c.date,c.reason,leaves)}</td></tr>`).join("")}</tbody></table>`
       : `<p>لا توجد تغطيات في هذه الفترة</p>`;
-    const schedTbl = `<table><thead><tr><th>اليوم</th><th>صباح (٠٨:٠٠–١٢:٠٠)</th><th>ظهر (١٣:٠٠–١٦:٠٠)</th></tr></thead><tbody>${DAYS.map((dn,di)=>`<tr><td style="font-weight:700;background:#f4f8fb;color:${C.primaryD}">${dn}</td><td>${SLOT_AR[(d.sched?.[di]?.am)||""]||"—"}</td><td>${SLOT_AR[(d.sched?.[di]?.pm)||""]||"—"}</td></tr>`).join("")}</tbody></table>`;
+    const schedTbl = `<table><thead><tr><th>اليوم</th><th>صباح (٠٨:٠٠–١٢:٠٠)</th><th>ظهر (١٣:٠٠–١٦:٠٠)</th><th>مساء (١٦:٠٠–٢٣:٠٠)</th></tr></thead><tbody>${DAYS.map((dn,di)=>`<tr><td style="font-weight:700;background:#f4f8fb;color:${C.primaryD}">${dn}</td><td>${SLOT_AR[(d.sched?.[di]?.am)||""]||"—"}</td><td>${SLOT_AR[(d.sched?.[di]?.pm)||""]||"—"}</td><td>${((d.sched?.[di]?.eve)||(d.nightDays||[]).includes(di))?"🌙 مسائي ثابت":"—"}</td></tr>`).join("")}</tbody></table>`;
     const awayTbl = coveredAway.length
       ? `<table><thead><tr><th style="width:200px">اليوم والتاريخ</th><th>من قام بتغطيته</th></tr></thead><tbody>${coveredAway.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(c=>`<tr><td style="font-weight:600">${dmyFull(c.date)}</td><td style="text-align:start">تمت تغطية ${perFull(c.period)} الخاصة به بـ <b>د.${fd(c.coverDoctorId)?.name||"—"}</b> بسبب ${coverReasonAr(d.id,c.date,c.reason,leaves)}</td></tr>`).join("")}</tbody></table>`
       : `<p>لم تُغطَّ عيادته من قِبل أحد في هذه الفترة</p>`;
@@ -2239,11 +2247,11 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd }) {
       : `<div class="alert ok"><h2>✅ لا عيادات مكشوفة ولا تعارضات خلال ${label}</h2></div>`;
     const docs = doctors.map(d=>{
       const sx=doctorSessions(d,dates,nightData,coverages,leaves); const ev=eveOf(d); const cv=covsOf(d); const lv=lvOf(d);
-      const sched = DAYS.map((dn,di)=>`<tr><td class="s">${dn}</td><td>${SLOT_AR[(d.sched?.[di]?.am)||""]||"—"}</td><td>${SLOT_AR[(d.sched?.[di]?.pm)||""]||"—"}</td></tr>`).join("");
+      const sched = DAYS.map((dn,di)=>`<tr><td class="s">${dn}</td><td>${SLOT_AR[(d.sched?.[di]?.am)||""]||"—"}</td><td>${SLOT_AR[(d.sched?.[di]?.pm)||""]||"—"}</td><td>${((d.sched?.[di]?.eve)||(d.nightDays||[]).includes(di))?"🌙 مسائي ثابت":"—"}</td></tr>`).join("");
       const evTbl = ev.length?`<table><thead><tr><th style="width:200px">اليوم والتاريخ</th><th>النوع</th></tr></thead><tbody>${ev.map(dt=>{ const fixed=(d.nightDays||[]).includes(dayIdx(dt)); return `<tr><td style="font-weight:600">${dmyFull(dt)}</td><td>${fixed?"مسائي ثابت":"مسائي / تغطية"}</td></tr>`; }).join("")}</tbody></table>`:`<p>لا يوجد</p>`;
       const cvTbl = cv.length?`<table><thead><tr><th style="width:200px">اليوم والتاريخ</th><th>تفاصيل التغطية</th></tr></thead><tbody>${cv.map(c=>`<tr><td style="font-weight:600">${dmyFull(c.date)}</td><td style="text-align:start">تم تغطية ${perFull(c.period)} لـ ${c.ownerId?("د."+(fd(c.ownerId)?.name||"—")):"طبيب المسائي"} بـ <b>د.${d.name}</b> بسبب ${coverReasonAr(c.ownerId,c.date,c.reason,leaves)}</td></tr>`).join("")}</tbody></table>`:`<p>لا يوجد</p>`;
       const lvTbl = lv.length?`<table><thead><tr><th>من</th><th>إلى</th></tr></thead><tbody>${lv.map(l=>`<tr><td>${dmy(l.start)}</td><td>${dmy(l.end)}</td></tr>`).join("")}</tbody></table>`:`<p>لا يوجد</p>`;
-      return `<div class="pdoc pb"><div class="dhead"><span class="dav">${sn(d.name).slice(0,2)}</span><div><div class="dnm">د.${d.name}</div><div class="dmt">${rankLabel(rankOf(d))} · رعاية ${sx.care} · مسائي ${sx.evening} · تغطيات ${sx.covers}</div></div></div><h2>🏥 الجدول الأسبوعي الثابت</h2><table class="wsched"><thead><tr><th>اليوم</th><th>صباح</th><th>ظهر</th></tr></thead><tbody>${sched}</tbody></table><h2>🌙 الدوام المسائي (${ev.length})</h2>${evTbl}<h2>🔄 التغطيات (${cv.length})</h2>${cvTbl}<h2>🏖 الإجازات (${lv.length})</h2>${lvTbl}</div>`;
+      return `<div class="pdoc pb"><div class="dhead"><span class="dav">${sn(d.name).slice(0,2)}</span><div><div class="dnm">د.${d.name}</div><div class="dmt">${rankLabel(rankOf(d))} · رعاية ${sx.care} · مسائي ثابت ${sx.eveningFixed} · مسائي إضافي ${sx.eveningExtra} · تغطيات ${sx.covers}</div></div></div><h2>🏥 الجدول الأسبوعي الثابت</h2><table class="wsched"><thead><tr><th>اليوم</th><th>صباح</th><th>ظهر</th><th>مساء</th></tr></thead><tbody>${sched}</tbody></table><h2>🌙 الدوام المسائي (${ev.length})</h2>${evTbl}<h2>🔄 التغطيات (${cv.length})</h2>${cvTbl}<h2>🏖 الإجازات (${lv.length})</h2>${lvTbl}</div>`;
     }).join("");
     printDoc(`مراجعة جدول القسم الشامل — ${label}`, reportCSS+issueCSS+review+docs, false);
   };
@@ -2312,7 +2320,7 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd }) {
           <button onClick={()=>printDoctor(d)} style={{ ...sGhost, padding:"7px 12px", fontSize:12 }}>🖨 تقرير</button><button onClick={()=>printDoctorTimetable(d)} style={{ ...sGhost, padding:"7px 12px", fontSize:12 }}>🗓 شهري تفصيلي</button>
         </div>
         <div style={{ display:"flex", flexWrap:"wrap", gap:7, marginBottom:12 }}>
-          {[["رعاية",s.care,C.primary],["دعم",s.support,"#64748b"],["مسائي",s.evening,"var(--eve)"],["تغطيات",s.covers,"var(--primary-d)"],["إجمالي",s.total,"var(--ink)"],["إجازات",lv.length,C.warn]].map(([l,v,col])=>(
+          {[["رعاية",s.care,C.primary],["مسائي ثابت",s.eveningFixed,"var(--eve)"],["مسائي إضافي",s.eveningExtra,"#b45309"],["تغطيات",s.covers,"var(--primary-d)"],["دعم",s.support,"#64748b"],["إجمالي",s.total,"var(--ink)"]].map(([l,v,col])=>(
             <div key={l} style={{ flex:"1 1 64px", background:"var(--surface2)", borderRadius:9, padding:"9px 6px", textAlign:"center" }}><div style={{ fontSize:18, fontWeight:800, color:col }}>{v}</div><div style={{ fontSize:10, color:C.sub, marginTop:2 }}>{l}</div></div>
           ))}
         </div>
@@ -2320,7 +2328,7 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd }) {
         <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:4, marginBottom:10 }}>
           {DAYS.map((dn,di)=>(<div key={di} style={{ textAlign:"center" }}>
             <div style={{ fontSize:9.5, color:C.sub, fontWeight:700, marginBottom:3 }}>{dn}</div>
-            {["am","pm"].map(p=>{ const sl=(d.sched?.[di]?.[p])||""; const st=slotStyle(sl); return <div key={p} style={{ background:st.bg, color:st.fg, fontSize:9.5, fontWeight:700, borderRadius:6, padding:"5px 1px", marginBottom:2 }}>{sl?st.t:"—"}</div>; })}
+            {["am","pm","eve"].map(p=>{ const sl=(d.sched?.[di]?.[p])||(p==="eve"&&(d.nightDays||[]).includes(di)?"clinic":""); const st=p==="eve"?{bg:sl?"#ECEAFE":"var(--surface2)",fg:"var(--eve)",t:"🌙 مسائي"}:slotStyle(sl); return <div key={p} style={{ background:st.bg, color:st.fg, fontSize:9.5, fontWeight:700, borderRadius:6, padding:"5px 1px", marginBottom:2, border:p==="eve"&&sl?"1px solid #C7BEFB":"none" }}>{sl?st.t:"—"}</div>; })}
           </div>))}
         </div>
         {ev.length>0 && <div style={{ fontSize:11.5, marginBottom:5 }}>🌙 مسائي: {ev.map(dt=>dmy(dt)).join("، ")}</div>}
@@ -2445,7 +2453,7 @@ function DoctorPortal({ doctor, doctors, leaves, nightData, coverages, today, fd
       <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:5 }}>
         {DAYS.map((dn,di)=>(<div key={di} style={{ textAlign:"center" }}>
           <div style={{ fontSize:10.5, color:C.sub, fontWeight:700, marginBottom:4 }}>{dn}</div>
-          {["am","pm"].map(p=>{ const sl=(doctor.sched?.[di]?.[p])||""; const st=slotStyle(sl); return <div key={p} style={{ background:st.bg, color:st.fg, fontSize:10.5, fontWeight:700, borderRadius:7, padding:"6px 2px", marginBottom:3 }}>{sl?st.t:"—"}</div>; })}
+          {["am","pm","eve"].map(p=>{ const sl=(doctor.sched?.[di]?.[p])||(p==="eve"&&(doctor.nightDays||[]).includes(di)?"clinic":""); const st=p==="eve"?{bg:sl?"#ECEAFE":"var(--surface2)",fg:"var(--eve)",t:"🌙 مسائي"}:slotStyle(sl); return <div key={p} style={{ background:st.bg, color:st.fg, fontSize:10.5, fontWeight:700, borderRadius:7, padding:"6px 2px", marginBottom:3, border:p==="eve"&&sl?"1px solid #C7BEFB":"none" }}>{sl?st.t:"—"}</div>; })}
         </div>))}
       </div>
     </div>
