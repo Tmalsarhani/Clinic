@@ -1865,7 +1865,7 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
     const annualDays = md.filter(dt=>dayIdx(dt)>=0 && leaves.some(l=>l.doctorId===d.id && l.type==="annual" && dt>=l.start && dt<=l.end)).length;
     const otherLeaveDays = md.filter(dt=>dayIdx(dt)>=0 && leaves.some(l=>l.doctorId===d.id && l.type && l.type!=="annual" && dt>=l.start && dt<=l.end)).length;
     const eff = Math.max(0, workdaysN - annualDays);
-    const target = Math.round(directTarget(d) * (workdaysN? eff/workdaysN : 1) * period.weeks);
+    const target = Math.round(directTarget(d) * eff / 5);   // هدف اليوم = هدف الأسبوع ÷ ٥ × أيام العمل الفعلية (بلا تقريب أسابيع)
     return { d, sess, target, annualDays, otherLeaveDays };
   }).sort((a,b)=>b.sess.care-a.sess.care);
   const worked = overview.filter(o=>o.sess.attended>0||o.sess.covers>0).length;
