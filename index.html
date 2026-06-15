@@ -2096,6 +2096,8 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
           <button onClick={async()=>{ const cf=cloudCfg(); if(!cf){ showToast("احفظ الرابط أولاً","warn"); return; } showToast("جارٍ الاختبار…"); try{ const base=String(cf.dbUrl).replace(/\/+$/,""); const r=await fetch(`${base}/public/schedule.json`,{cache:"no-store"}); if(r.ok) showToast("✓ الاتصال بالقاعدة سليم"); else showToast("القاعدة ردّت بخطأ — تحقق من الرابط والقواعد","warn"); }catch(e){ showToast("تعذّر الاتصال — تحقق من الرابط","err"); } }} style={{ ...sGhost, flex:1, minWidth:120, color:C.accent }}>🔌 اختبار</button>
           <button onClick={()=>{ const link=location.origin+location.pathname.replace(/[^/]*$/,"")+"view.html"; navigator.clipboard&&navigator.clipboard.writeText(link); showToast("✓ نُسخ: "+link); }} style={{ ...sGhost, flex:1, minWidth:140 }}>📋 نسخ رابط العرض</button>
         </div>
+        <button onClick={publishNow} style={{ ...sBtn("var(--primary-d)"), width:"100%", marginTop:10, fontSize:14 }}>🔄 نشر الحالة الحالية الآن للرابط الحي</button>
+        {(()=>{ const t=S.get("v2_published_at"); return t? <div style={{ fontSize:11, color:C.muted, marginTop:8, textAlign:"center" }}>آخر نشر للرابط الحي: <b style={{ color:C.primary }}>{new Date(t).toLocaleString("ar",{dateStyle:"medium",timeStyle:"short"})}</b></div> : <div style={{ fontSize:11, color:C.warn, marginTop:8, textAlign:"center" }}>لم يُنشر بعد — اضغط «نشر الآن» لتحديث الرابط الحي</div>; })()}
         <div style={{ fontSize:11, color:C.muted, marginTop:10, lineHeight:1.8 }}>
           قاعدتك من نوع <b>Realtime Database</b>. الإعداد: (١) من Firebase ← Realtime Database انسخ الرابط أعلى الصفحة (ينتهي بـ <span style={{direction:"ltr",unicodeBidi:"isolate"}}>firebaseio.com</span> أو <span style={{direction:"ltr",unicodeBidi:"isolate"}}>firebasedatabase.app</span>) → (٢) في Rules اجعلها كالأسفل → (٣) ألصق الرابط هنا واحفظ → (٤) ضع نفس الرابط في view.html → (٥) ارفع view.html بجانب index.html.
         </div>
@@ -2594,13 +2596,13 @@ function App() {
     return diff; };
   const diffList = pending ? computeDiff() : [];
   const approve = () => { const diff=computeDiff(); logAudit(`اعتماد رسمي${diff.length?(" — "+diff.join("، ")):""}`,"معتمدة"); const a=snap(); setOfficial(a);
-    if(cloudCfg()){ showToast("✓ تم الاعتماد — جارٍ النشر للرابط الحي…"); cloudPublish(a).then(()=>showToast("✓ نُشر للرابط الحي — الرابط محدَّث للجميع")).catch(()=>showToast("الاعتماد تم، لكن تعذّر النشر للرابط — تحقّق من إعدادات Firebase","warn")); }
+    if(cloudCfg()){ showToast("✓ تم الاعتماد — جارٍ النشر للرابط الحي…"); cloudPublish(a).then(()=>{ S.set("v2_published_at", new Date().toISOString()); showToast("✓ نُشر للرابط الحي — الرابط محدَّث للجميع"); }).catch(()=>showToast("الاعتماد تم، لكن تعذّر النشر للرابط — تحقّق من إعدادات Firebase","warn")); }
     else showToast("✓ تم الاعتماد وتحديث الإحصائيات"); };
-  const publishNow = () => { const a=official||snap(); if(!cloudCfg()){ showToast("فعّل الرابط الحي من الإعدادات أولاً","warn"); setPage("settings"); return; } showToast("جارٍ النشر…"); cloudPublish(a).then(()=>showToast("✓ نُشر — الرابط الحي محدَّث")).catch(e=>showToast("تعذّر النشر — تحقق من الإعدادات","err")); };
+  const publishNow = () => { if(!cloudCfg()){ showToast("فعّل الرابط الحي من الإعدادات أولاً","warn"); setPage("settings"); return; } const a=snap(); showToast("جارٍ النشر…"); cloudPublish(a).then(()=>{ S.set("v2_published_at", new Date().toISOString()); showToast("✓ نُشر — الرابط الحي يعكس الحالة الحالية"); }).catch(e=>showToast("تعذّر النشر — تحقق من الإعدادات","err")); };
   const revert = () => { setDoctors(off.doctors); setLeaves(off.leaves); setNight(off.nightData); setCoverages(off.coverages); setSettings(off.settings||{}); logAudit("تراجع عن التغييرات غير المعتمدة","ملغاة"); showToast("تم التراجع لآخر نسخة معتمدة"); };
   const saveDraft = () => { logAudit("حفظ كمسودة (بانتظار الاعتماد)","مسودة"); showToast("حُفظت كمسودة"); };
 
-  const TABS = [["dashboard","الرئيسية","◧"],["engine","الدوام والتغطيات","🌙"],["leaves","الإجازات","🏖"],["doctors","الأطباء","👨‍⚕️"],["stats","الإحصائيات","📈"],["fairness","مؤشر مساهمة الأطباء","⚖️"],["reports","التقارير","📊"],["alerts","التنبيهات","🔔"],["audit","سجل النشاط","📜"],["settings","الإعدادات","⚙️"], ...(role==="head"?[["users","المستخدمون","👥"]]:[])];
+  const TABS = [["dashboard","الرئيسية","◧"],["engine","الدوام والتغطيات","🌙"],["leaves","الإجازات","🏖"],["doctors","الأطباء","👨‍⚕️"],["stats","الإحصائيات","📈"],["reports","التقارير","📊"],["alerts","التنبيهات","🔔"],["audit","سجل النشاط","📜"],["settings","الإعدادات","⚙️"], ...(role==="head"?[["users","المستخدمون","👥"]]:[])];
   const cur = TABS.find(t=>t[0]===page);
   const subt = { dashboard:"نظرة عامة وتنبيهات", engine:"المحرك — حلول · مسائي · تغطيات", leaves:"تسجيل الإجازات وأثرها", doctors:"بيانات الأطباء وجداولهم", stats:"العبء الوظيفي", fairness:"ترتيب الأطباء حسب المساهمة", reports:"تقارير شهرية قابلة للطباعة", alerts:"تعارضات وحدود وإجازات", audit:"توثيق العمليات", settings:"الحدود والقواعد", users:"حسابات المستخدمين والصلاحيات" };
   const pageEl = <>
@@ -2639,7 +2641,7 @@ function App() {
 
   const tInfo = analyzeDay(today, doctors, leaves, nightData, coverages, null);
   const tabMap = Object.fromEntries(TABS.map(t=>[t[0],t]));
-  const GRP1=["dashboard","engine","leaves","doctors","stats"], GRP2=["fairness","reports","alerts","audit","settings","users"];
+  const GRP1=["dashboard","engine","leaves","doctors","stats"], GRP2=["reports","alerts","audit","settings","users"];
   const renderLink = id => { const t=tabMap[id]; if(!t) return null; const badge = id==="leaves"&&leaves.length ? leaves.length : (id==="engine"&&tInfo.gaps.length ? tInfo.gaps.length : 0); return <button key={id} className={"navlink"+(page===id?" active":"")} onClick={()=>{ setPage(id); setSbOpen(false); }} title={t[1]}><Ico n={id}/><span className="nav-label">{t[1]}</span>{badge?<span className="badge">{badge}</span>:null}</button>; };
   return <div className="shell">
     <aside className={"sidebar"+(collapsed?" collapsed":"")+(sbOpen?" open":"")}>
