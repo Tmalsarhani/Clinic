@@ -2076,26 +2076,25 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
       <div style={{ fontSize:11.5, color:C.muted, marginBottom:10 }}>عند الاعتماد الرسمي تُنشر النسخة المعتمدة تلقائياً، ويظل رابط العرض واحداً ومحدَّثاً دائماً للجميع.</div>
       {(()=>{ const cfg=S.get("v2_cloud")||{}; return <>
         <input defaultValue={cfg.dbUrl||""} id="cl_url" placeholder="رابط Realtime Database (https://xxx-default-rtdb.firebaseio.com)" style={{ ...sIn, marginBottom:8, direction:"ltr", textAlign:"left" }} />
-        <input defaultValue={cfg.token||""} id="cl_token" placeholder="كلمة سر النشر (نفس القيمة الموضوعة في Rules — انظر الأسفل)" style={{ ...sIn, marginBottom:8, direction:"ltr", textAlign:"left" }} />
+        <input defaultValue={cfg.apiKey||""} id="cl_apikey" placeholder="Web API Key (من Project Settings ← General)" style={{ ...sIn, marginBottom:8, direction:"ltr", textAlign:"left" }} />
+        <input defaultValue={cfg.email||""} id="cl_email" placeholder="بريد حساب النشر الإداري (Authentication)" style={{ ...sIn, marginBottom:8, direction:"ltr", textAlign:"left" }} />
+        <input defaultValue={cfg.password||""} id="cl_password" type="password" placeholder="كلمة مرور حساب النشر" style={{ ...sIn, marginBottom:8, direction:"ltr", textAlign:"left" }} />
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-          <button onClick={()=>{ let url=document.getElementById("cl_url").value.trim(); const token=document.getElementById("cl_token").value.trim(); if(!url){ showToast("ألصق رابط قاعدة Realtime","warn"); return; } if(!/^https?:\/\//.test(url)) url="https://"+url; if(!token){ showToast("ضع كلمة سر النشر أيضاً — انظر التعليمات أسفل","warn"); return; } S.set("v2_cloud",{ dbUrl:url, token }); showToast("✓ تم حفظ رابط القاعدة الحية"); }} style={{ ...sBtn(C.primary), flex:1, minWidth:140 }}>💾 حفظ</button>
-          <button onClick={async()=>{ const cf=cloudCfg(); if(!cf){ showToast("احفظ الرابط أولاً","warn"); return; } showToast("جارٍ الاختبار…"); try{ const base=String(cf.dbUrl).replace(/\/+$/,""); const r=await fetch(`${base}/public/schedule.json`,{cache:"no-store"}); if(r.ok) showToast("✓ الاتصال بالقاعدة سليم"); else showToast("القاعدة ردّت بخطأ — تحقق من الرابط والقواعد","warn"); }catch(e){ showToast("تعذّر الاتصال — تحقق من الرابط","err"); } }} style={{ ...sGhost, flex:1, minWidth:120, color:C.accent }}>🔌 اختبار</button>
+          <button onClick={()=>{ let url=document.getElementById("cl_url").value.trim(); const apiKey=document.getElementById("cl_apikey").value.trim(); const email=document.getElementById("cl_email").value.trim(); const password=document.getElementById("cl_password").value; if(!url){ showToast("ألصق رابط قاعدة Realtime","warn"); return; } if(!/^https?:\/\//.test(url)) url="https://"+url; if(!apiKey||!email||!password){ showToast("أكمل Web API Key والبريد وكلمة المرور","warn"); return; } S.set("v2_cloud",{ dbUrl:url, apiKey, email, password }); showToast("✓ تم حفظ إعدادات الرابط الحي"); }} style={{ ...sBtn(C.primary), flex:1, minWidth:140 }}>💾 حفظ</button>
+          <button onClick={async()=>{ const cf=cloudCfg(); if(!cf){ showToast("احفظ الإعدادات أولاً","warn"); return; } showToast("جارٍ الاختبار…"); try{ await getIdToken(cf); const base=String(cf.dbUrl).replace(/\/+$/,""); const r=await fetch(`${base}/public/schedule.json`,{cache:"no-store"}); if(r.ok) showToast("✓ تسجيل الدخول والاتصال بالقاعدة سليم"); else showToast("القاعدة ردّت بخطأ — تحقق من الرابط والقواعد","warn"); }catch(e){ showToast("تعذّر تسجيل الدخول — تحقق من API Key/البريد/كلمة المرور","err"); } }} style={{ ...sGhost, flex:1, minWidth:120, color:C.accent }}>🔌 اختبار</button>
           <button onClick={()=>{ const link=location.origin+location.pathname.replace(/[^/]*$/,"")+"view.html"; navigator.clipboard&&navigator.clipboard.writeText(link); showToast("✓ نُسخ: "+link); }} style={{ ...sGhost, flex:1, minWidth:140 }}>📋 نسخ رابط العرض</button>
         </div>
         <button onClick={publishNow} style={{ ...sBtn("var(--primary-d)"), width:"100%", marginTop:10, fontSize:14 }}>🔄 نشر الحالة الحالية الآن للرابط الحي</button>
         {(()=>{ const t=S.get("v2_published_at"); return t? <div style={{ fontSize:11, color:C.muted, marginTop:8, textAlign:"center" }}>آخر نشر للرابط الحي: <b style={{ color:C.primary }}>{new Date(t).toLocaleString("ar",{dateStyle:"medium",timeStyle:"short"})}</b></div> : <div style={{ fontSize:11, color:C.warn, marginTop:8, textAlign:"center" }}>لم يُنشر بعد — اضغط «نشر الآن» لتحديث الرابط الحي</div>; })()}
-        <div style={{ fontSize:11, color:C.err, marginTop:10, lineHeight:1.8, background:C.dangerSoft||"#FCEBEC", border:`1px solid ${C.err}`, borderRadius:10, padding:"8px 10px" }}>
-          ⚠️ <b>تنبيه أمني مهم:</b> هذا الرابط سيكون ظاهراً في كود view.html العلني على GitHub. القاعدة القديمة (write:true للجميع) كانت تسمح لأي شخص يعرف الرابط بالكتابة أو حذف الجدول. القواعد الجديدة أسفل تشترط تطابق كلمة سر (token) غير موجودة في المستودع العلني — احتفظ بها فقط هنا وفي Rules.
-        </div>
         <div style={{ fontSize:11, color:C.muted, marginTop:10, lineHeight:1.8 }}>
-          الإعداد: (١) من Firebase ← Realtime Database انسخ الرابط أعلى الصفحة → (٢) اختر كلمة سر نشر قوية وضعها في الحقل أعلاه وفي مكانها بالـ Rules أسفل (بدّل YOUR_SECRET_HERE) → (٣) الصق الرابط وكلمة السر هنا واحفظ → (٤) ضع نفس رابط القاعدة (بدون كلمة السر) في view.html → (٥) ارفع الملفين. القراءة تبقى عامة (لصفحة العرض) لكن الكتابة محمية بكلمة السر.
+          الإعداد: (١) من Firebase Console ← Authentication ← Sign-in method ← فعّل Email/Password → (٢) من تبويب Users أنشئ حساباً إدارياً (بريد + كلمة مرور) → (٣) من Project Settings ← General انسخ Web API Key → (٤) من Realtime Database انسخ الرابط أعلى الصفحة، وضع القواعد كالأسفل → (٥) الصق الرابط وWeb API Key والبريد وكلمة المرور هنا واحفظ → (٦) ضع نفس رابط القاعدة (فقط، بلا أي بيانات حساس أخرى) في view.html وارفع الملفين.
         </div>
         <pre style={{ fontSize:10.5, background:"var(--surface2)", border:`1px solid ${C.line}`, borderRadius:10, padding:"10px 12px", marginTop:8, overflowX:"auto", direction:"ltr", textAlign:"left", color:C.text }}>{`{
   "rules": {
     "public": {
       "schedule": {
         ".read": true,
-        ".write": "newData.child('token').val() === 'YOUR_SECRET_HERE'"
+        ".write": "auth != null"
       }
     }
   }
