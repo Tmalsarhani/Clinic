@@ -10,6 +10,7 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
   :root{
     --primary:#0FA39A; --primary-d:#0B7E77; --accent:#14B8A6; --eve:#6D5DF6;
@@ -1129,13 +1130,16 @@ function downloadCSV(filename, rows){
 }
 
 // ════════════════════════════════ ENGINE (الدوام والتغطيات) ════════════════════════════════
-function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight, setCoverages, showToast, logAudit, settings }) {
+function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight, setCoverages, showToast, logAudit, settings, holidays }) {
   const now = new Date();
   const restRule = settings?.restRule!==false;
+  const holidayMap = useMemo(()=>buildHolidayMap(holidays), [holidays]);
+  const holInfo = ds => holidayMap[ds]||null;
   const [mo, setMo] = useState({ y:now.getFullYear(), m:now.getMonth() });
   const [sel, setSel] = useState(null);
   const [picks, setPicks] = useState({});
   const days = useMemo(()=>monthDays(mo.y,mo.m), [mo]);
+  const calDays = useMemo(()=>{ const dim=new Date(mo.y,mo.m+1,0).getDate(); const out=[]; for(let d=1;d<=dim;d++){ const date=`${mo.y}-${String(mo.m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; const wd=new Date(date).getDay(); if(wd>=5) continue; out.push({ date, di:wd, day:d, holiday:holInfo(date) }); } return out; }, [mo,holidayMap]);
   const ana = useMemo(()=>analyzeMonth(mo.y,mo.m,doctors,leaves,nightData,coverages,restRule), [mo,doctors,leaves,nightData,coverages,restRule]);
   const gaps = ana.gaps.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.period.localeCompare(b.period));
   const gapKey = g => `${g.date}|${g.period}|${g.ownerId}`;
@@ -1259,6 +1263,48 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const openPrint = (title, body) => { const now=new Date().toLocaleString("ar",{year:"numeric",month:"long",day:"numeric"}); __PW__(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet"><style>*{box-sizing:border-box}body{font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif;margin:0;color:#334155;background:#f1f5f9;line-height:1.6}.wrap{max-width:1080px;margin:0 auto;padding:22px;background:#fff}.hdr{background:linear-gradient(120deg,${C.primaryD},${C.primary} 70%,${C.accent});color:#fff;padding:20px 24px;border-radius:18px;margin-bottom:18px;display:flex;align-items:center;gap:14px;box-shadow:0 10px 30px rgba(15,118,110,.18)}.hdr .lg{width:46px;height:46px;border-radius:13px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;border:1px solid rgba(255,255,255,.3)}.hdr h1{margin:0;font-size:19px;font-weight:800;letter-spacing:-.3px}.hdr .sub{font-size:11px;opacity:.92;margin-top:3px}h2{font-size:14px;color:${C.primaryD};margin:20px 0 9px;font-weight:800;display:flex;align-items:center;gap:8px}h2::before{content:"";width:9px;height:9px;border-radius:50%;background:${C.accent};display:inline-block}.pb{page-break-before:always}table{width:100%;border-collapse:separate;border-spacing:0;margin-top:6px;border:1px solid #e8eef3;border-radius:13px;overflow:hidden}thead th{background:linear-gradient(135deg,${C.primary},${C.accent});color:#fff;font-weight:700;padding:10px 11px;text-align:center;font-size:12px}tbody td{padding:9px 11px;text-align:center;border-top:1px solid #eef3f8;font-size:12.5px}tbody tr:nth-child(even){background:#f8fbfd}p{font-size:13px;line-height:1.8;color:#475569}.cal{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:8px}.wd{background:linear-gradient(135deg,${C.primary},${C.accent});color:#fff;text-align:center;font-weight:700;padding:8px 0;border-radius:9px;font-size:12.5px;letter-spacing:.3px}.cell{border:1px solid #e8eef3;border-radius:12px;padding:8px 9px;min-height:96px;background:#fff;overflow-wrap:anywhere;word-break:break-word}.cell.empty{border:none;background:transparent}.dnum{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#eef6f8;color:${C.primaryD};font-weight:800;font-size:12px;margin-bottom:7px}.eve{color:#6d28d9;font-weight:700;font-size:11px;margin-bottom:5px;line-height:1.5;background:#f5f3ff;border:1px solid #e9e2fb;border-radius:7px;padding:3px 7px;overflow-wrap:anywhere}.cov{color:#0e7490;font-size:10.5px;margin-bottom:5px;line-height:1.55;background:#effafb;border:1px solid #d7eef1;border-radius:7px;padding:3px 7px;overflow-wrap:anywhere}.dim{color:#cbd5e1;font-size:11px}@media print{body{background:#fff}.wrap{padding:0}.hdr{box-shadow:none}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4 landscape;margin:10mm}}</style></head><body><div class="wrap"><div class="hdr"><div class="lg">ط</div><div><h1>${title}</h1><div class="sub">قسم الأسنان · ${now}</div></div></div>${body}</div><script>setTimeout(function(){window.print();},700);<\/script></body></html>`); };
   const covText = date => { const cv=(nightData[date]||{}).coverages||{}; const a=["am","pm","nextAm"].flatMap(s=>(cv[s]||[]).map(id=>perAr(s)+": "+(fd(id)?.name||""))); const b=coverages.filter(c=>c.date===date).map(c=>perAr(c.period)+": "+(fd(c.coverDoctorId)?.name||"")); return a.concat(b).join(" · ")||"—"; };
   const printSchedule = () => { const off=days.length?days[0].di:0; const head=DAYS.map(d=>`<div class="wd">${d}</div>`).join(""); let cells=""; for(let i=0;i<off;i++) cells+='<div class="cell empty"></div>'; days.forEach(({date,day})=>{ const docs=((nightData[date]||{}).doctors||[]).map(id=>fd(id)?.name).filter(Boolean); const cl=covLines(date); cells+=`<div class="cell"><div class="dnum">${day}</div>${docs.map(n=>`<div class="eve">🌙 د.${n}</div>`).join("")||'<div style="color:#cbd5e1;font-size:11px">—</div>'}${cl.map(t=>`<div class="cov">🔄 ${t}</div>`).join("")}</div>`; }); openPrint(`جدول الدوام والتغطيات — ${MONTHS[mo.m]} ${mo.y}`, `<div class="cal">${head}</div><div class="cal">${cells}</div>`); };
+
+  // ════════ مشاركة عبر البريد: تحميل PDF تلقائياً + فتح إيميل جاهز لكل الأطباء والطاقم ════════
+  const buildScheduleHTML = () => {
+    const off = calDays.length?calDays[0].di:0;
+    const head = DAYS.map(d=>`<div class="wd">${d}</div>`).join("");
+    let cells=""; for(let i=0;i<off;i++) cells+='<div class="cell empty"></div>';
+    calDays.forEach(({date,day,holiday})=>{
+      if(holiday){ cells+=`<div class="cell" style="background:#6d28d9;color:#fff"><div class="dnum" style="background:rgba(255,255,255,.25);color:#fff">${day}</div><div style="font-size:11px;font-weight:800;margin-top:4px">🎉 عطلة رسمية</div><div style="font-size:10px;margin-top:2px">${holiday.name}</div></div>`; return; }
+      const docs=((nightData[date]||{}).doctors||[]).map(id=>fd(id)?.name).filter(Boolean);
+      const cl=covLines(date);
+      cells+=`<div class="cell"><div class="dnum">${day}</div>${docs.map(n=>`<div class="eve">🌙 د.${n}</div>`).join("")||'<div style="color:#cbd5e1;font-size:11px">—</div>'}${cl.map(t=>`<div class="cov">🔄 ${t}</div>`).join("")}</div>`;
+    });
+    const now=new Date().toLocaleString("ar",{year:"numeric",month:"long",day:"numeric"});
+    return `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet"><style>*{box-sizing:border-box}body{font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif;margin:0;color:#334155;background:#fff}.wrap{padding:18px}.hdr{background:linear-gradient(120deg,${C.primaryD},${C.primary} 70%,${C.accent});color:#fff;padding:18px 22px;border-radius:16px;margin-bottom:16px;display:flex;align-items:center;gap:12px}.hdr .lg{width:42px;height:42px;border-radius:12px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800}.hdr h1{margin:0;font-size:18px;font-weight:800}.hdr .sub{font-size:11px;opacity:.92;margin-top:3px}.cal{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:8px}.wd{background:linear-gradient(135deg,${C.primary},${C.accent});color:#fff;text-align:center;font-weight:700;padding:8px 0;border-radius:9px;font-size:12.5px}.cell{border:1px solid #e8eef3;border-radius:12px;padding:8px 9px;min-height:96px;background:#fff}.cell.empty{border:none;background:transparent}.dnum{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#eef6f8;color:${C.primaryD};font-weight:800;font-size:12px;margin-bottom:7px}.eve{color:#6d28d9;font-weight:700;font-size:11px;margin-bottom:5px;line-height:1.5;background:#f5f3ff;border:1px solid #e9e2fb;border-radius:7px;padding:3px 7px}.cov{color:#0e7490;font-size:10.5px;margin-bottom:5px;line-height:1.55;background:#effafb;border:1px solid #d7eef1;border-radius:7px;padding:3px 7px}</style></head><body><div class="wrap"><div class="hdr"><div class="lg">ط</div><div><h1>جدول الدوام والتغطيات — ${MONTHS[mo.m]} ${mo.y}</h1><div class="sub">قسم الأسنان · ${now}</div></div></div><div class="cal">${head}</div><div class="cal">${cells}</div></div></body></html>`;
+  };
+  const downloadSchedulePDF = () => new Promise((resolve,reject)=>{
+    if(typeof html2pdf==="undefined"){ reject(new Error("no-html2pdf")); return; }
+    const iframe=document.createElement("iframe");
+    iframe.style.cssText="position:fixed;left:-9999px;top:0;width:1400px;height:2000px;border:0;";
+    document.body.appendChild(iframe);
+    iframe.onload=()=>{
+      setTimeout(()=>{
+        const opt={ margin:8, filename:`جدول-${MONTHS[mo.m]}-${mo.y}.pdf`, image:{type:"jpeg",quality:0.98}, html2canvas:{scale:2}, jsPDF:{unit:"mm",format:"a4",orientation:"landscape"} };
+        html2pdf().set(opt).from(iframe.contentDocument.body).save().then(()=>{ document.body.removeChild(iframe); resolve(); }).catch(err=>{ document.body.removeChild(iframe); reject(err); });
+      },500); // مهلة بسيطة لتحميل الخط
+    };
+    iframe.srcdoc=buildScheduleHTML();
+  });
+  const emailScheduleAll = () => {
+    const docEmails=(doctors||[]).map(d=>(d.email||"").trim()).filter(e=>e && e.includes("@"));
+    const staffEmails=String(settings?.staffEmails||"").split(/[\n,;]+/).map(e=>e.trim()).filter(e=>e && e.includes("@"));
+    const allEmails=[...new Set([...docEmails,...staffEmails])];
+    if(!allEmails.length){ showToast("لا توجد إيميلات محفوظة — أضفها من صفحة الأطباء أو الإعدادات","warn"); return; }
+    const liveLink = location.origin+location.pathname.replace(/[^/]*$/,"")+"view.html";
+    showToast("جارٍ تجهيز PDF…");
+    downloadSchedulePDF().then(()=>{
+      const subject=`جدول ${MONTHS[mo.m]} ${mo.y} — قسم الأسنان`;
+      const body=`السلام عليكم،\n\nمرفق جدول الدوام والتغطيات لشهر ${MONTHS[mo.m]} ${mo.y}.\n\nالرابط الحي المباشر (محدَّث دائماً): ${liveLink}\n\n⚠️ الرجاء إرفاق ملف PDF الذي تم تحميله الآن قبل الإرسال.\n\nقسم الأسنان`;
+      window.location.href=`mailto:?bcc=${encodeURIComponent(allEmails.join(","))}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      showToast(`✓ تم تحميل PDF — أرفقه في نافذة الإيميل التي فُتحت (${allEmails.length} مستلم)`);
+    }).catch(()=>{ showToast("تعذّر إنشاء PDF — تحقق من الاتصال بالإنترنت","err"); });
+  };
   const printDays = () => { const body=days.map(({date,di})=>{ const docs=((nightData[date]||{}).doctors||[]).map(id=>fd(id)?.name).filter(Boolean).join("، ")||"—"; const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const g=r.gaps.map(x=>`عيادة ${fd(x.ownerId)?.name} (${perAr(x.period)})`).join("، "); return `<h2>${dmy(date)} ${DAYS[di]}</h2><p>المسائي: ${docs}<br>التغطيات: ${covText(date)}${g?`<br><span style="color:#be123c">عيادات مكشوفة: ${g}</span>`:""}</p>`; }).join(""); openPrint(`تقرير الأيام — ${MONTHS[mo.m]} ${mo.y}`, body); };
   const printDoctors = () => {
     const md = days.map(x=>x.date);
@@ -1296,9 +1342,9 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     printDoc(`تقرير الأطباء — ${MONTHS[mo.m]} ${mo.y}`, extra+cards);
   };
 
-  const _calOff = () => days.length?days[0].di:0;
+  const _calOff = () => calDays.length?calDays[0].di:0;
   const _calHead = () => DAYS.map(d=>`<div class="wd">${d}</div>`).join("");
-  const _buildCal = render => { const off=_calOff(); let cells=""; for(let i=0;i<off;i++) cells+='<div class="cell empty"></div>'; days.forEach(({date,day})=>{ cells+=`<div class="cell"><div class="dnum">${day}</div>${render(date)}</div>`; }); return `<div class="cal">${_calHead()}</div><div class="cal">${cells}</div>`; };
+  const _buildCal = render => { const off=_calOff(); let cells=""; for(let i=0;i<off;i++) cells+='<div class="cell empty"></div>'; calDays.forEach(({date,day,holiday})=>{ if(holiday){ cells+=`<div class="cell" style="background:#6d28d9;color:#fff"><div class="dnum" style="background:rgba(255,255,255,.25);color:#fff">${day}</div><div style="font-size:11px;font-weight:800;margin-top:4px">🎉 عطلة رسمية</div><div style="font-size:10.5px;margin-top:2px">${holiday.name}</div></div>`; return; } cells+=`<div class="cell"><div class="dnum">${day}</div>${render(date)}</div>`; }); return `<div class="cal">${_calHead()}</div><div class="cal">${cells}</div>`; };
   const _eveCal = () => _buildCal(date=>{ const docs=((nightData[date]||{}).doctors||[]).map(id=>fd(id)?.name).filter(Boolean); const req=((nightData[date]||{}).eveningSlots!=null?(nightData[date].eveningSlots):needOf(date))||0; const empty=Math.max(0,req-docs.length); return docs.map(n=>`<div class="eve">🌙 د.${n}</div>`).join("") + (empty>0?`<div class="eve" style="background:#fff7ed;border-color:#fed7aa;color:#b45309">🌙 ${empty} عيادة فارغة</div>`:"") || '<div class="dim">—</div>'; });
   const _covCal = () => _buildCal(date=>{ const cl=covLines(date); return cl.map(t=>`<div class="cov">🔄 ${t}</div>`).join("")||'<div class="dim">—</div>'; });
   const printEveCal = () => openPrint(`تقويم المسائي — ${MONTHS[mo.m]} ${mo.y}`, `<h2>🌙 الجدول المسائي</h2>${_eveCal()}`);
@@ -1315,7 +1361,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   });
   const statusOf = date => { const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const nd=nightData[date]||{}; return ((nd.doctors||[]).length && r.gaps.length===0 && r.conflicts.length===0) ? "done":"pending"; };
   const listDays = filled.filter(d=>{ if(sFilter!=="all" && statusOf(d.date)!==sFilter) return false; if(search){ const q=search.trim(); const nd=nightData[d.date]||{}; const names=(nd.doctors||[]).map(id=>fd(id)?.name||"").join(" ")+" "+coverages.filter(c=>c.date===d.date).map(c=>fd(c.coverDoctorId)?.name||"").join(" "); if(!names.includes(q)&&!d.date.includes(q)) return false; } return true; });
-  const offset = days.length?days[0].di:0;
+  const offset = calDays.length?calDays[0].di:0;
   const covLines = date => { const nd=nightData[date]||{}; const cv=nd.coverages||{}; const out=[]; const di0=dayIdx(date); const ndi=dayIdx(nextWork(date)); ["am","pm","nextAm"].forEach(slot=>{ (cv[slot]||[]).forEach(cid=>{ const cdr=fd(cid); if(!cdr) return; const sl=slot==="nextAm"?"am":slot; const sdi=slot==="nextAm"?ndi:di0; const owner=(nd.doctors||[]).map(id=>fd(id)).find(o=>o&&isClinic(getSlot(o,sdi,sl))); out.push(`تم تغطية ${perFull(slot)} لـ ${owner?("د."+owner.name):"طبيب المسائي"} بـ د.${cdr.name} بسبب دوام مسائي`); }); }); coverages.filter(c=>c.date===date).forEach(c=>{ const cdr=fd(c.coverDoctorId); const ad=c.absentId?fd(c.absentId):null; if(cdr) out.push(`تم تغطية ${perFull(c.period)} لـ ${ad?("د."+ad.name):"—"} بـ د.${cdr.name} بسبب ${coverReasonAr(c.absentId,date,c.reason,leaves)}`); }); return out; };
 
   const clearDayCovs = date => { if(!date){showToast("اختر يوماً","warn");return;} setCoverages(cs=>cs.filter(c=>c.date!==date)); setNight(n=>{ if(!n[date])return n; const nn={...n}; nn[date]={...nn[date],coverages:{am:[],pm:[],nextAm:[]}}; return nn; }); logAudit&&logAudit(`مسح تغطيات يوم ${dmy(date)}`); showToast("تم مسح تغطيات اليوم"); };
@@ -1372,6 +1418,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
               <button onClick={()=>{ setExportOpen(false); printSchedule(); }} style={{ display:"block", width:"100%", textAlign:"start", background:"none", border:"none", borderRadius:10, padding:"9px 11px", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:600, color:C.text }}>🖨 طباعة الجدول</button>
               <button onClick={()=>{ setExportOpen(false); printDays(); }} style={{ display:"block", width:"100%", textAlign:"start", background:"none", border:"none", borderRadius:10, padding:"9px 11px", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:600, color:C.text }}>📅 تقرير الأيام</button>
               <button onClick={()=>{ setExportOpen(false); printDoctors(); }} style={{ display:"block", width:"100%", textAlign:"start", background:"none", border:"none", borderRadius:10, padding:"9px 11px", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:600, color:C.text }}>👨‍⚕️ تقرير الأطباء</button>
+              <div style={{ height:1, background:C.line2, margin:"4px 6px" }} />
+              <button onClick={()=>{ setExportOpen(false); emailScheduleAll(); }} style={{ display:"block", width:"100%", textAlign:"start", background:"none", border:"none", borderRadius:10, padding:"9px 11px", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:700, color:C.primaryD }}>📧 مشاركة عبر البريد (PDF + الرابط الحي)</button>
             </div>
           </>}
         </div>
@@ -1504,7 +1552,17 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
               <div className="cal-grid2" style={{ marginBottom:8 }}>{DAYS.map(d=><div key={"mh"+d} className="wd">{d}</div>)}</div>
               <div className="cal-grid2">
                 {Array.from({length:offset},(_,i)=><div key={"me"+i} />)}
-                {days.map(({date,di,day})=>{ const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const reqEve=(nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0; const emptyEve=Math.max(0,reqEve-docs.length); const lines=covLines(date); const st=r.gaps.length?"bad":emptyEve>0?"warn":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; return (
+                {calDays.map(({date,di,day,holiday})=>{ if(holiday){ const isT=date===today; return (
+                  <div key={"m"+date} className="cell" style={{ background:"linear-gradient(135deg,#6d28d9,#8b5cf6)", color:"#fff", border:"none" }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                      <span className="dn" style={{ background:"rgba(255,255,255,.25)", color:"#fff" }}>{day}</span>
+                      <span style={{ fontSize:14 }}>🎉</span>
+                    </div>
+                    <div style={{ fontSize:11.5, fontWeight:800, marginTop:6, lineHeight:1.5 }}>عطلة رسمية</div>
+                    <div style={{ fontSize:11, marginTop:2, opacity:.95, lineHeight:1.5, wordBreak:"break-word" }}>{holiday.name}</div>
+                    {holiday.onCall!=null && <div style={{ fontSize:10.5, marginTop:5, background:"rgba(255,255,255,.2)", borderRadius:7, padding:"3px 7px", display:"inline-block" }}>🩺 مناوب: د.{fd(holiday.onCall)?.name||"—"}</div>}
+                  </div>
+                ); } const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const reqEve=(nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0; const emptyEve=Math.max(0,reqEve-docs.length); const lines=covLines(date); const st=r.gaps.length?"bad":emptyEve>0?"warn":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; return (
                   <div key={"m"+date} className={"cell "+st+(dragCell===date?" drag":"")}
                     style={emptyEve>0?{ outline:`2px dashed ${C.warn}`, outlineOffset:-2, background:"var(--warnSoft)" }:undefined}
                     onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }}
@@ -1535,7 +1593,17 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
             <div className="cal-grid2" style={{ marginBottom:8 }}>{DAYS.map(d=><div key={d} className="wd">{d}</div>)}</div>
             <div className="cal-grid2">
               {Array.from({length:offset},(_,i)=><div key={"e"+i} />)}
-              {days.map(({date,di,day})=>{ const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const reqEve=(nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0; const emptyEve=Math.max(0,reqEve-docs.length); const st=r.gaps.length?"bad":emptyEve>0?"warn":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; return (
+              {calDays.map(({date,di,day,holiday})=>{ if(holiday){ return (
+                <div key={date} className="cell" style={{ background:"linear-gradient(135deg,#6d28d9,#8b5cf6)", color:"#fff", border:"none" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <span className="dn" style={{ background:"rgba(255,255,255,.25)", color:"#fff" }}>{day}</span>
+                    <span style={{ fontSize:14 }}>🎉</span>
+                  </div>
+                  <div style={{ fontSize:11.5, fontWeight:800, marginTop:6, lineHeight:1.5 }}>عطلة رسمية</div>
+                  <div style={{ fontSize:11, marginTop:2, opacity:.95, lineHeight:1.5, wordBreak:"break-word" }}>{holiday.name}</div>
+                  {holiday.onCall!=null && <div style={{ fontSize:10.5, marginTop:5, background:"rgba(255,255,255,.2)", borderRadius:7, padding:"3px 7px", display:"inline-block" }}>🩺 مناوب: د.{fd(holiday.onCall)?.name||"—"}</div>}
+                </div>
+              ); } const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const reqEve=(nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0; const emptyEve=Math.max(0,reqEve-docs.length); const st=r.gaps.length?"bad":emptyEve>0?"warn":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; return (
                 <div key={date} className={"cell "+st+(dragCell===date?" drag":"")}
                   style={emptyEve>0?{ outline:`2px dashed ${C.warn}`, outlineOffset:-2, background:"var(--warnSoft)" }:undefined}
                   onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }}
@@ -1567,7 +1635,16 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
             <div className="cal-grid2" style={{ marginBottom:8 }}>{DAYS.map(d=><div key={"ch"+d} className="wd">{d}</div>)}</div>
             <div className="cal-grid2">
               {Array.from({length:offset},(_,i)=><div key={"ce"+i} />)}
-              {days.map(({date,di,day})=>{ const lines=covLines(date); const isT=date===today; return (
+              {calDays.map(({date,di,day,holiday})=>{ if(holiday){ return (
+                <div key={"cov"+date} className="cell" style={{ background:"linear-gradient(135deg,#6d28d9,#8b5cf6)", color:"#fff", border:"none" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <span className="dn" style={{ background:"rgba(255,255,255,.25)", color:"#fff" }}>{day}</span>
+                    <span style={{ fontSize:14 }}>🎉</span>
+                  </div>
+                  <div style={{ fontSize:11.5, fontWeight:800, marginTop:6, lineHeight:1.5 }}>عطلة رسمية</div>
+                  <div style={{ fontSize:11, marginTop:2, opacity:.95, lineHeight:1.5, wordBreak:"break-word" }}>{holiday.name}</div>
+                </div>
+              ); } const lines=covLines(date); const isT=date===today; return (
                 <div key={"cov"+date} className="cell" style={{ cursor:"pointer" }} onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                     <span className="dn" style={isT?{ background:C.primaryD, color:"#fff" }:undefined}>{day}</span>
@@ -1823,6 +1900,7 @@ function DoctorsPage({ doctors, leaves, today, fd, setDoctors, showToast, logAud
           {isOpen && <div style={{ padding:"4px 14px 14px", borderTop:`1px solid ${C.line2}` }}>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:12 }}>
               <div><label style={label}>الاسم</label><input value={d.name} onChange={e=>upd(d.id,{name:e.target.value})} style={sIn} /></div>
+              <div><label style={label}>البريد الإلكتروني</label><input type="email" value={d.email||""} onChange={e=>upd(d.id,{email:e.target.value})} placeholder="doctor@example.com" style={{ ...sIn, direction:"ltr", textAlign:"left" }} /></div>
               <div><label style={label}>الدرجة</label><select value={rankOf(d)} onChange={e=>upd(d.id,{rank:e.target.value})} style={sIn}><option value="specialist">أخصائي</option><option value="consultant">استشاري</option></select></div>
               <div><label style={label}>المنصب الإداري (هدف الرعاية = ١٠ − SS)</label><select value={normPos(d.adminPosition,d)} onChange={e=>upd(d.id,{adminPosition:e.target.value})} style={sIn}>{ADMIN_POS.map(pp=><option key={pp.code} value={pp.code}>{pp.code} · {pp.ar} — SS {pp.ss} دعم · DS {10-pp.ss} رعاية</option>)}</select></div>
               <div><label style={label}>اللون</label><div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>{PALETTE.map(c=><button key={c} onClick={()=>upd(d.id,{color:c})} style={{ width:22, height:22, borderRadius:"50%", background:c, border:d.color===c?"2px solid #1e293b":"2px solid #fff" }} />)}</div></div>
@@ -2077,6 +2155,11 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
         قاعدة الراحة بعد المسائي (تغطية عيادة صباح اليوم التالي تلقائياً للطبيب المناوب)
       </label>
       <div style={{ fontSize:11, color:C.muted, marginTop:8, lineHeight:1.7 }}>عند التفعيل: عيادة صباح اليوم التالي لأي طبيب أخذ مناوبة مسائية تُعتبر "عيادة مكشوفة تحتاج تغطية" تلقائياً في قسم الحلول المطلوبة والتنبيهات. عند الإلغاء: لا يُطلب تغطيتها تلقائياً (يبقى بإمكانك تغطيتها يدوياً إن احتجت).</div>
+    </div>
+    <div style={{ ...card(), padding:16, marginBottom:12 }}>
+      <label style={label}>📧 بريد الطاقم الإضافي (غير الأطباء)</label>
+      <div style={{ fontSize:11.5, color:C.muted, marginBottom:10 }}>إيميلات إضافية تُدرج تلقائياً عند مشاركة الجدول (مثل رئيس القسم، السكرتارية، الإدارة). إيميلات الأطباء أنفسهم تُدار من صفحة "الأطباء". ضع كل بريد في سطر مستقل.</div>
+      <textarea value={s.staffEmails||""} onChange={e=>set("staffEmails",e.target.value)} placeholder={"admin@clinic.com\nsecretary@clinic.com"} rows={3} style={{ ...sIn, direction:"ltr", textAlign:"left", resize:"vertical", fontFamily:"monospace", fontSize:12.5 }} />
     </div>
     <div style={{ ...card(), padding:16, marginBottom:12 }}>
       <label style={label}>🔗 الرابط الحي للجدول</label>
@@ -2608,7 +2691,7 @@ function App() {
   const subt = { dashboard:"نظرة عامة وتنبيهات", engine:"المحرك — حلول · مسائي · تغطيات", leaves:"تسجيل الإجازات وأثرها", doctors:"بيانات الأطباء وجداولهم", stats:"العبء الوظيفي", fairness:"ترتيب الأطباء حسب المساهمة", reports:"تقارير شهرية قابلة للطباعة", alerts:"تعارضات وحدود وإجازات", audit:"توثيق العمليات", settings:"الحدود والقواعد", users:"حسابات المستخدمين والصلاحيات" };
   const pageEl = <>
       {page==="dashboard" && <Dashboard doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} onGoto={setPage} settings={settings} />}
-      {page==="engine" && <EnginePage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setNight={setNight} setCoverages={setCoverages} showToast={showToast} logAudit={logAudit} settings={settings} />}
+      {page==="engine" && <EnginePage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setNight={setNight} setCoverages={setCoverages} showToast={showToast} logAudit={logAudit} settings={settings} holidays={holidays} />}
       {page==="leaves" && <LeavesPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setLeaves={setLeaves} setCoverages={setCoverages} setNight={setNight} showToast={showToast} logAudit={logAudit} />}
       {page==="doctors" && <DoctorsPage doctors={doctors} leaves={leaves} today={today} fd={fd} setDoctors={setDoctors} showToast={showToast} logAudit={logAudit} />}
       {page==="stats" && <StatsPage doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} />}
