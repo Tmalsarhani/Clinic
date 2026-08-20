@@ -91,6 +91,7 @@ const LEAVE_AR={annual:"إجازة سنوية",sick:"إجازة مرضية",emer
 const perFull=p=>p==="am"?"العيادة الصباحية":p==="pm"?"عيادة الظهر":p==="nextAm"?"عيادة صباح الغد":(p||"");
 let DATA=null; let cur=new Date(); cur.setDate(1);
 const $=id=>document.getElementById(id);
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function dmy(ds){const p=ds.split("-");return p[2]+"/"+(+p[1]);}
 function covReason(ownerId,date,reason,leaves){ if(reason==="evening"||ownerId==null) return "دوام مسائي"; if(reason==="post_evening") return "راحة بعد دوام مسائي (أمس)"; if(reason==="absence") return "غياب"; const lv=(leaves||[]).find(l=>l.doctorId===ownerId&&date>=l.start&&date<=l.end); if(lv) return LEAVE_AR[lv.type]||"إجازة"; if(reason==="leave") return "إجازة"; return reason||"غياب"; }
 function sn(n){ n=(n||"").trim(); const p=n.split(/\s+/); return ((p[0]||"")[0]||"")+((p[1]||"")[0]||""); }
@@ -103,9 +104,9 @@ function renderList(y,m,fd){
     rows.push(`<div class="card"><div class="day">
       <div class="dn"><b>${d}</b><span>${WDAY[wd]}</span></div>
       <div class="body">
-        ${docs.length?`<div class="chips">${docs.map(x=>`<span class="chip">🌙 د.${x.name}</span>`).join("")}</div>`:""}
-        ${covs.map(c=>`<div class="cov">🔄 تم تغطية ${perFull(c.period)} لـ د.${fd(c.absentId)?.name||"—"} بـ د.${fd(c.coverDoctorId)?.name||"—"} بسبب ${covReason(c.absentId,c.date,c.reason,DATA.leaves)}</div>`).join("")}
-        ${nightCovs.map(x=>`<div class="cov">🔄 تم تغطية ${perFull(x.sl)} لطبيب المسائي بـ د.${x.name} بسبب دوام مسائي</div>`).join("")}
+        ${docs.length?`<div class="chips">${docs.map(x=>`<span class="chip">🌙 د.${esc(x.name)}</span>`).join("")}</div>`:""}
+        ${covs.map(c=>`<div class="cov">🔄 تم تغطية ${esc(perFull(c.period))} لـ د.${esc(fd(c.absentId)?.name||"—")} بـ د.${esc(fd(c.coverDoctorId)?.name||"—")} بسبب ${esc(covReason(c.absentId,c.date,c.reason,DATA.leaves))}</div>`).join("")}
+        ${nightCovs.map(x=>`<div class="cov">🔄 تم تغطية ${esc(perFull(x.sl))} لطبيب المسائي بـ د.${esc(x.name)} بسبب دوام مسائي</div>`).join("")}
       </div></div></div>`);
   });
   return rows.length?rows.join(""):`<div class="state">لا يوجد دوام مسائي أو تغطيات معتمدة في ${MONTHS[m]} ${y}</div>`;
@@ -121,12 +122,12 @@ function renderGrid(y,m,fd){
   dayData(y,m,fd).forEach(({d,date,docs,covs,nightCovs})=>{
     const lines=[];
     covs.slice().sort((a,b)=>ord.indexOf(a.period)-ord.indexOf(b.period)).forEach(c=>{
-      lines.push(`<div class="gcov"><span class="per">${pS(c.period)}</span>د.${fn(fd(c.coverDoctorId)?.name)} <span class="ar">◂</span> د.${fn(fd(c.absentId)?.name)}</div>`);
+      lines.push(`<div class="gcov"><span class="per">${esc(pS(c.period))}</span>د.${esc(fn(fd(c.coverDoctorId)?.name))} <span class="ar">◂</span> د.${esc(fn(fd(c.absentId)?.name))}</div>`);
     });
     nightCovs.slice().sort((a,b)=>ord.indexOf(a.sl)-ord.indexOf(b.sl)).forEach(x=>{
-      lines.push(`<div class="gcov"><span class="per">${pS(x.sl)}</span>د.${fn(x.name)} <span class="ar">◂</span> مسائي</div>`);
+      lines.push(`<div class="gcov"><span class="per">${esc(pS(x.sl))}</span>د.${esc(fn(x.name))} <span class="ar">◂</span> مسائي</div>`);
     });
-    cells+=`<div class="gc"><div class="gnum">${d}</div>${docs.map(x=>`<div class="gchip">🌙 د.${fn(x.name)}</div>`).join("")}${lines.length?`<div class="gcovs">${lines.join("")}</div>`:""}</div>`;
+    cells+=`<div class="gc"><div class="gnum">${d}</div>${docs.map(x=>`<div class="gchip">🌙 د.${esc(fn(x.name))}</div>`).join("")}${lines.length?`<div class="gcovs">${lines.join("")}</div>`:""}</div>`;
   });
   return `<div class="grid">${head}${cells}</div>`;
 }
@@ -139,16 +140,16 @@ function renderByDoctor(y,m,fd){
     const eves=dd.filter(x=>x.docs.some(p=>p.id===doc.id)).map(x=>`${WDAY[x.wd]} ${dmy(x.date)}`);
     const covLines=[];
     dd.forEach(x=>{
-      x.covs.filter(c=>c.coverDoctorId===doc.id).forEach(c=>covLines.push(`${WDAY[x.wd]} ${dmy(x.date)} — ${perFull(c.period)} لـ د.${fd(c.absentId)?.name||"—"} (${covReason(c.absentId,c.date,c.reason,DATA.leaves)})`));
+      x.covs.filter(c=>c.coverDoctorId===doc.id).forEach(c=>covLines.push(`${WDAY[x.wd]} ${dmy(x.date)} — ${esc(perFull(c.period))} لـ د.${esc(fd(c.absentId)?.name||"—")} (${esc(covReason(c.absentId,c.date,c.reason,DATA.leaves))})`));
       ["am","pm","nextAm"].forEach(sl=>{ if(((x.nightCovs||[]).some(n=>n.sl===sl))){} });
       const cv=( (DATA.nightData||{})[x.date]||{}).coverages||{};
-      ["am","pm","nextAm"].forEach(sl=>{ (cv[sl]||[]).forEach(id=>{ if(id===doc.id) covLines.push(`${WDAY[x.wd]} ${dmy(x.date)} — ${perFull(sl)} لطبيب المسائي (دوام مسائي)`); }); });
+      ["am","pm","nextAm"].forEach(sl=>{ (cv[sl]||[]).forEach(id=>{ if(id===doc.id) covLines.push(`${WDAY[x.wd]} ${dmy(x.date)} — ${esc(perFull(sl))} لطبيب المسائي (دوام مسائي)`); }); });
     });
     if(!eves.length && !covLines.length) return;
     const covHtml = covLines.length ? (`<div class="line"><b>التغطيات:</b></div>` + covLines.map(l=>`<div class="line">• ${l}</div>`).join("")) : "";
-    const eveHtml = eves.length ? `<div class="line"><b>المسائي:</b> ${eves.join("، ")}</div>` : "";
+    const eveHtml = eves.length ? `<div class="line"><b>المسائي:</b> ${esc(eves.join("، "))}</div>` : "";
     blocks.push(`<div class="dr">
-      <div class="h"><div class="av">${sn(doc.name)}</div><div class="nm">د.${doc.name}</div></div>
+      <div class="h"><div class="av">${esc(sn(doc.name))}</div><div class="nm">د.${esc(doc.name)}</div></div>
       <div class="mini"><span class="tag" style="background:#ECEAFE;color:var(--eve)">🌙 مسائي ${eves.length}</span><span class="tag" style="background:#EFFAFB;color:var(--primaryD)">🔄 تغطيات ${covLines.length}</span></div>
       ${eveHtml}${covHtml}
     </div>`);
