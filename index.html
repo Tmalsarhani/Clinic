@@ -575,7 +575,7 @@ function detectConflicts(doctors, leaves, nightData, coverages) {
 // "evening" = the night shift itself. A doctor's own daytime clinic still needs cover when
 //   they take an evening shift OR cover OR are absent (per user rule #1).
 // ══════════════════════════════════════════════════════
-function analyzeDay(date, doctors, leaves, nightData, coverages, loadMap) {
+function analyzeDay(date, doctors, leaves, nightData, coverages, loadMap, restRule=true) {
   const di = dayIdx(date);
   if (di < 0) return { gaps:[], conflicts:[], periods:{} };
   const fd = id => doctors.find(d=>d.id===id);
@@ -635,7 +635,7 @@ function analyzeDay(date, doctors, leaves, nightData, coverages, loadMap) {
       const ownerEvening = eveningBusy.has(d.id);                   // took evening shift OR evening coverage
       const ownerAbsent  = !!absentReason[d.id] && !closed;          // absent/leave-open
       const ownerCovering = (occupied[per][d.id]||[]).some(r=>r.includes("تغطية")); // busy covering elsewhere same period
-      const postEveningRest = per==="am" && prevEveningDocs.includes(d.id) && !ownerEvening && !ownerAbsent; // عمل مساءً أمس → عيادته صباح اليوم تحتاج تغطية
+      const postEveningRest = restRule && per==="am" && prevEveningDocs.includes(d.id) && !ownerEvening && !ownerAbsent; // عمل مساءً أمس → عيادته صباح اليوم تحتاج تغطية (حسب إعداد قاعدة الراحة)
       const mustCover = (ownerEvening || ownerAbsent || ownerCovering || postEveningRest) && !closed;
       // who is assigned to cover THIS owner's clinic this period?
       const coversForOwner = [];
@@ -847,13 +847,13 @@ function makeLoadLabeler(loadMap) {
 }
 
 // Analyze every filled day in a month → aggregate gaps + conflicts
-function analyzeMonth(year, monthIdx, doctors, leaves, nightData, coverages) {
+function analyzeMonth(year, monthIdx, doctors, leaves, nightData, coverages, restRule=true) {
   const load = computeLoadMap(year, monthIdx, doctors, nightData, coverages, leaves);
   const inM = ds => { const [y,m]=ds.split("-"); return +y===year && +m===monthIdx+1; };
   const allGaps=[], allConflicts=[];
   const dates = new Set([...Object.keys(nightData||{}), ...(coverages||[]).map(c=>c.date)].filter(inM));
   [...dates].sort().forEach(date=>{
-    const r = analyzeDay(date, doctors, leaves, nightData, coverages, load);
+    const r = analyzeDay(date, doctors, leaves, nightData, coverages, load, restRule);
     allGaps.push(...r.gaps); allConflicts.push(...r.conflicts);
   });
   return { gaps:allGaps, conflicts:allConflicts, load };
@@ -981,10 +981,11 @@ function Ring({ pct }){ const r=54, circ=2*Math.PI*r; const [off,setOff]=useStat
     <defs><linearGradient id="gaugeGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={C.primary}/><stop offset="1" stopColor={C.eve}/></linearGradient></defs>
   </svg>
 ); }
-function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto }) {
+function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto, settings }) {
   const now = new Date();
   const [gaugeMonth, setGaugeMonth] = useState(0); // 0 = هذا الشهر، 1 = الشهر القادم
-  const ana = useMemo(()=>analyzeMonth(now.getFullYear(), now.getMonth(), doctors, leaves, nightData, coverages), [doctors,leaves,nightData,coverages]);
+  const restRule = settings?.restRule!==false;
+  const ana = useMemo(()=>analyzeMonth(now.getFullYear(), now.getMonth(), doctors, leaves, nightData, coverages, restRule), [doctors,leaves,nightData,coverages,restRule]);
   const eveningCount = Object.keys(nightData).filter(d=>{const[y,m]=d.split("-");return +y===now.getFullYear()&&+m===now.getMonth()+1;}).reduce((a,d)=>a+((nightData[d].doctors||[]).length?1:0),0);
   const stats = [
     { k:"الأطباء", v:doctors.length, c:C.primary, go:"doctors", i:"👨‍⚕️" },
@@ -1006,6 +1007,7 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto })
   const todayInfo = dayInfo(today);
   const eveningSlots = md.reduce((a,d)=>a+(((nightData[d]||{}).doctors||[]).length),0);
   const covMonth = coverages.filter(c=>{ const[y,m]=c.date.split("-"); return +y===now.getFullYear()&&+m===now.getMonth()+1; }).length;
+  const leavesMonth = leaves.filter(l=> l.start<=md[md.length-1] && l.end>=md[0]).length;
   const gapDays=new Set(ana.gaps.map(g=>g.date)), confDays=new Set(ana.conflicts.map(c=>c.date));
   let okN=0,warnN=0,badN=0;
   md.forEach(d=>{ const active=((nightData[d]||{}).doctors||[]).length>0 || coverages.some(c=>c.date===d) || gapDays.has(d) || confDays.has(d); if(!active) return; if(gapDays.has(d)) badN++; else if(confDays.has(d)) warnN++; else okN++; });
@@ -1013,7 +1015,7 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto })
 
   // ── حالة الشهر: يدعم عرض هذا الشهر أو الشهر القادم (الجدول عادة يُعتمد قبل دخول الشهر) ──
   const gaugeDate = new Date(now.getFullYear(), now.getMonth()+gaugeMonth, 1);
-  const gaugeAna = useMemo(()=>analyzeMonth(gaugeDate.getFullYear(), gaugeDate.getMonth(), doctors, leaves, nightData, coverages), [doctors,leaves,nightData,coverages,gaugeMonth]);
+  const gaugeAna = useMemo(()=>analyzeMonth(gaugeDate.getFullYear(), gaugeDate.getMonth(), doctors, leaves, nightData, coverages, restRule), [doctors,leaves,nightData,coverages,gaugeMonth,restRule]);
   const gaugeMd = monthDays(gaugeDate.getFullYear(), gaugeDate.getMonth()).map(x=>x.date);
   const gaugeGapDays=new Set(gaugeAna.gaps.map(g=>g.date)), gaugeConfDays=new Set(gaugeAna.conflicts.map(c=>c.date));
   let gOkN=0,gWarnN=0,gBadN=0;
@@ -1035,8 +1037,8 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto })
     <div className="grid g4" style={{ marginBottom:18 }}>
       <div className="card stat"><div className="spine" style={{ background:C.primary }}></div><div className="ic" style={{ background:"var(--primarySoft)", color:C.primaryD }}><Ico n="doctors"/></div><div className="num"><CountUp n={doctors.length}/></div><div className="lbl">إجمالي الأطباء</div><span className="delta mut">{doctors.length} نشط</span></div>
       <div className="card stat"><div className="spine" style={{ background:C.eve }}></div><div className="ic" style={{ background:"var(--eveSoft)", color:C.eve }}><Ico n="engine"/></div><div className="num"><CountUp n={eveningSlots}/></div><div className="lbl">العيادات المسائية / الشهر</div></div>
-      <div className="card stat"><div className="spine" style={{ background:C.ok }}></div><div className="ic" style={{ background:"var(--okSoft)", color:C.ok }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M20 6L9 17l-5-5"/></svg></div><div className="num"><CountUp n={covMonth}/></div><div className="lbl">التغطيات الحالية</div></div>
-      <div className="card stat"><div className="spine" style={{ background:C.warn }}></div><div className="ic" style={{ background:"var(--warnSoft)", color:C.warn }}><Ico n="leaves"/></div><div className="num"><CountUp n={leaves.length}/></div><div className="lbl">طلبات الإجازات</div>{badN>0&&<span className="delta down">{badN} شاغر</span>}</div>
+      <div className="card stat"><div className="spine" style={{ background:C.ok }}></div><div className="ic" style={{ background:"var(--okSoft)", color:C.ok }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M20 6L9 17l-5-5"/></svg></div><div className="num"><CountUp n={covMonth}/></div><div className="lbl">التغطيات هذا الشهر</div><span className="delta mut">{coverages.length} إجمالي الكل</span></div>
+      <div className="card stat"><div className="spine" style={{ background:C.warn }}></div><div className="ic" style={{ background:"var(--warnSoft)", color:C.warn }}><Ico n="leaves"/></div><div className="num"><CountUp n={leavesMonth}/></div><div className="lbl">إجازات هذا الشهر</div><span className="delta mut">{leaves.length} إجمالي الكل</span></div>
     </div>
 
     <div className="grid g3" style={{ marginBottom:18 }}>
@@ -1127,13 +1129,14 @@ function downloadCSV(filename, rows){
 }
 
 // ════════════════════════════════ ENGINE (الدوام والتغطيات) ════════════════════════════════
-function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight, setCoverages, showToast, logAudit }) {
+function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight, setCoverages, showToast, logAudit, settings }) {
   const now = new Date();
+  const restRule = settings?.restRule!==false;
   const [mo, setMo] = useState({ y:now.getFullYear(), m:now.getMonth() });
   const [sel, setSel] = useState(null);
   const [picks, setPicks] = useState({});
   const days = useMemo(()=>monthDays(mo.y,mo.m), [mo]);
-  const ana = useMemo(()=>analyzeMonth(mo.y,mo.m,doctors,leaves,nightData,coverages), [mo,doctors,leaves,nightData,coverages]);
+  const ana = useMemo(()=>analyzeMonth(mo.y,mo.m,doctors,leaves,nightData,coverages,restRule), [mo,doctors,leaves,nightData,coverages,restRule]);
   const gaps = ana.gaps.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.period.localeCompare(b.period));
   const gapKey = g => `${g.date}|${g.period}|${g.ownerId}`;
   const monthDates = days.map(x=>x.date);
@@ -1256,7 +1259,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const openPrint = (title, body) => { const now=new Date().toLocaleString("ar",{year:"numeric",month:"long",day:"numeric"}); __PW__(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet"><style>*{box-sizing:border-box}body{font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif;margin:0;color:#334155;background:#f1f5f9;line-height:1.6}.wrap{max-width:1080px;margin:0 auto;padding:22px;background:#fff}.hdr{background:linear-gradient(120deg,${C.primaryD},${C.primary} 70%,${C.accent});color:#fff;padding:20px 24px;border-radius:18px;margin-bottom:18px;display:flex;align-items:center;gap:14px;box-shadow:0 10px 30px rgba(15,118,110,.18)}.hdr .lg{width:46px;height:46px;border-radius:13px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;border:1px solid rgba(255,255,255,.3)}.hdr h1{margin:0;font-size:19px;font-weight:800;letter-spacing:-.3px}.hdr .sub{font-size:11px;opacity:.92;margin-top:3px}h2{font-size:14px;color:${C.primaryD};margin:20px 0 9px;font-weight:800;display:flex;align-items:center;gap:8px}h2::before{content:"";width:9px;height:9px;border-radius:50%;background:${C.accent};display:inline-block}.pb{page-break-before:always}table{width:100%;border-collapse:separate;border-spacing:0;margin-top:6px;border:1px solid #e8eef3;border-radius:13px;overflow:hidden}thead th{background:linear-gradient(135deg,${C.primary},${C.accent});color:#fff;font-weight:700;padding:10px 11px;text-align:center;font-size:12px}tbody td{padding:9px 11px;text-align:center;border-top:1px solid #eef3f8;font-size:12.5px}tbody tr:nth-child(even){background:#f8fbfd}p{font-size:13px;line-height:1.8;color:#475569}.cal{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:8px}.wd{background:linear-gradient(135deg,${C.primary},${C.accent});color:#fff;text-align:center;font-weight:700;padding:8px 0;border-radius:9px;font-size:12.5px;letter-spacing:.3px}.cell{border:1px solid #e8eef3;border-radius:12px;padding:8px 9px;min-height:96px;background:#fff;overflow-wrap:anywhere;word-break:break-word}.cell.empty{border:none;background:transparent}.dnum{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#eef6f8;color:${C.primaryD};font-weight:800;font-size:12px;margin-bottom:7px}.eve{color:#6d28d9;font-weight:700;font-size:11px;margin-bottom:5px;line-height:1.5;background:#f5f3ff;border:1px solid #e9e2fb;border-radius:7px;padding:3px 7px;overflow-wrap:anywhere}.cov{color:#0e7490;font-size:10.5px;margin-bottom:5px;line-height:1.55;background:#effafb;border:1px solid #d7eef1;border-radius:7px;padding:3px 7px;overflow-wrap:anywhere}.dim{color:#cbd5e1;font-size:11px}@media print{body{background:#fff}.wrap{padding:0}.hdr{box-shadow:none}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4 landscape;margin:10mm}}</style></head><body><div class="wrap"><div class="hdr"><div class="lg">ط</div><div><h1>${title}</h1><div class="sub">قسم الأسنان · ${now}</div></div></div>${body}</div><script>setTimeout(function(){window.print();},700);<\/script></body></html>`); };
   const covText = date => { const cv=(nightData[date]||{}).coverages||{}; const a=["am","pm","nextAm"].flatMap(s=>(cv[s]||[]).map(id=>perAr(s)+": "+(fd(id)?.name||""))); const b=coverages.filter(c=>c.date===date).map(c=>perAr(c.period)+": "+(fd(c.coverDoctorId)?.name||"")); return a.concat(b).join(" · ")||"—"; };
   const printSchedule = () => { const off=days.length?days[0].di:0; const head=DAYS.map(d=>`<div class="wd">${d}</div>`).join(""); let cells=""; for(let i=0;i<off;i++) cells+='<div class="cell empty"></div>'; days.forEach(({date,day})=>{ const docs=((nightData[date]||{}).doctors||[]).map(id=>fd(id)?.name).filter(Boolean); const cl=covLines(date); cells+=`<div class="cell"><div class="dnum">${day}</div>${docs.map(n=>`<div class="eve">🌙 د.${n}</div>`).join("")||'<div style="color:#cbd5e1;font-size:11px">—</div>'}${cl.map(t=>`<div class="cov">🔄 ${t}</div>`).join("")}</div>`; }); openPrint(`جدول الدوام والتغطيات — ${MONTHS[mo.m]} ${mo.y}`, `<div class="cal">${head}</div><div class="cal">${cells}</div>`); };
-  const printDays = () => { const body=days.map(({date,di})=>{ const docs=((nightData[date]||{}).doctors||[]).map(id=>fd(id)?.name).filter(Boolean).join("، ")||"—"; const r=analyzeDay(date,doctors,leaves,nightData,coverages,null); const g=r.gaps.map(x=>`عيادة ${fd(x.ownerId)?.name} (${perAr(x.period)})`).join("، "); return `<h2>${dmy(date)} ${DAYS[di]}</h2><p>المسائي: ${docs}<br>التغطيات: ${covText(date)}${g?`<br><span style="color:#be123c">عيادات مكشوفة: ${g}</span>`:""}</p>`; }).join(""); openPrint(`تقرير الأيام — ${MONTHS[mo.m]} ${mo.y}`, body); };
+  const printDays = () => { const body=days.map(({date,di})=>{ const docs=((nightData[date]||{}).doctors||[]).map(id=>fd(id)?.name).filter(Boolean).join("، ")||"—"; const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const g=r.gaps.map(x=>`عيادة ${fd(x.ownerId)?.name} (${perAr(x.period)})`).join("، "); return `<h2>${dmy(date)} ${DAYS[di]}</h2><p>المسائي: ${docs}<br>التغطيات: ${covText(date)}${g?`<br><span style="color:#be123c">عيادات مكشوفة: ${g}</span>`:""}</p>`; }).join(""); openPrint(`تقرير الأيام — ${MONTHS[mo.m]} ${mo.y}`, body); };
   const printDoctors = () => {
     const md = days.map(x=>x.date);
     const reasonAr = r => r==="leave"?"إجازة":r==="absence"?"غياب":(r||"");
@@ -1310,13 +1313,13 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     const hasLeave = leaves.some(l=>d.date>=l.start && d.date<=l.end);
     return hasNight || hasCov || hasLeave;
   });
-  const statusOf = date => { const r=analyzeDay(date,doctors,leaves,nightData,coverages,null); const nd=nightData[date]||{}; return ((nd.doctors||[]).length && r.gaps.length===0 && r.conflicts.length===0) ? "done":"pending"; };
+  const statusOf = date => { const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const nd=nightData[date]||{}; return ((nd.doctors||[]).length && r.gaps.length===0 && r.conflicts.length===0) ? "done":"pending"; };
   const listDays = filled.filter(d=>{ if(sFilter!=="all" && statusOf(d.date)!==sFilter) return false; if(search){ const q=search.trim(); const nd=nightData[d.date]||{}; const names=(nd.doctors||[]).map(id=>fd(id)?.name||"").join(" ")+" "+coverages.filter(c=>c.date===d.date).map(c=>fd(c.coverDoctorId)?.name||"").join(" "); if(!names.includes(q)&&!d.date.includes(q)) return false; } return true; });
   const offset = days.length?days[0].di:0;
   const covLines = date => { const nd=nightData[date]||{}; const cv=nd.coverages||{}; const out=[]; const di0=dayIdx(date); const ndi=dayIdx(nextWork(date)); ["am","pm","nextAm"].forEach(slot=>{ (cv[slot]||[]).forEach(cid=>{ const cdr=fd(cid); if(!cdr) return; const sl=slot==="nextAm"?"am":slot; const sdi=slot==="nextAm"?ndi:di0; const owner=(nd.doctors||[]).map(id=>fd(id)).find(o=>o&&isClinic(getSlot(o,sdi,sl))); out.push(`تم تغطية ${perFull(slot)} لـ ${owner?("د."+owner.name):"طبيب المسائي"} بـ د.${cdr.name} بسبب دوام مسائي`); }); }); coverages.filter(c=>c.date===date).forEach(c=>{ const cdr=fd(c.coverDoctorId); const ad=c.absentId?fd(c.absentId):null; if(cdr) out.push(`تم تغطية ${perFull(c.period)} لـ ${ad?("د."+ad.name):"—"} بـ د.${cdr.name} بسبب ${coverReasonAr(c.absentId,date,c.reason,leaves)}`); }); return out; };
 
   const clearDayCovs = date => { if(!date){showToast("اختر يوماً","warn");return;} setCoverages(cs=>cs.filter(c=>c.date!==date)); setNight(n=>{ if(!n[date])return n; const nn={...n}; nn[date]={...nn[date],coverages:{am:[],pm:[],nextAm:[]}}; return nn; }); logAudit&&logAudit(`مسح تغطيات يوم ${dmy(date)}`); showToast("تم مسح تغطيات اليوم"); };
-  const daySummary = date => { const r=analyzeDay(date,doctors,leaves,nightData,coverages,null); const eve=((nightData[date]||{}).doctors||[]).length; const covered=coverages.filter(c=>c.date===date).length + Object.values((nightData[date]||{}).coverages||{}).reduce((a,arr)=>a+(arr?arr.length:0),0); return { gaps:r.gaps.length, conflicts:r.conflicts.length, eve, covered }; };
+  const daySummary = date => { const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const eve=((nightData[date]||{}).doctors||[]).length; const covered=coverages.filter(c=>c.date===date).length + Object.values((nightData[date]||{}).coverages||{}).reduce((a,arr)=>a+(arr?arr.length:0),0); return { gaps:r.gaps.length, conflicts:r.conflicts.length, eve, covered }; };
   const weekDays = (()=>{ const t=new Date(wkRef); const sun=new Date(t); sun.setDate(t.getDate()-t.getDay()); const out=[]; for(let i=0;i<5;i++){ const d=new Date(sun); d.setDate(sun.getDate()+i); out.push(d.toISOString().split("T")[0]); } return out; })();
   const shiftWeek = dir => setWkRef(r=>{ const d=new Date(r); d.setDate(d.getDate()+dir*7); return d.toISOString().split("T")[0]; });
 
@@ -1456,7 +1459,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
             <div style={{ flex:1, textAlign:"center", fontWeight:700, fontSize:13 }}>{dmy(weekDays[0])} – {dmy(weekDays[4])}</div>
             <button onClick={()=>shiftWeek(1)} style={{ ...sGhost, padding:"6px 12px", fontSize:12 }}>التالي ›</button>
           </div>
-          {weekDays.map(date=>{ const di=dayIdx(date); const sm=daySummary(date); const docs=((nightData[date]||{}).doctors||[]).map(id=>fd(id)?.name).filter(Boolean); const cls=covLines(date); return (
+          {weekDays.map(date=>{ const di=dayIdx(date); const sm=daySummary(date); const docs=((nightData[date]||{}).doctors||[]).map(id=>fd(id)).filter(Boolean); const cls=covLines(date); return (
             <div key={date} style={{ ...card(), padding:13, marginBottom:10, borderInlineStart:`4px solid ${sm.conflicts?C.err:sm.gaps?C.warn:C.accent}` }}>
               <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
                 <div style={{ flex:1, fontWeight:700, fontSize:13.5 }}>{DAYS[di]} <span style={{ color:C.muted, fontWeight:400, fontSize:12 }}>{dmy(date)}</span></div>
@@ -1469,7 +1472,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                 <span style={{ fontSize:11, fontWeight:700, background:"var(--eveSoft)", color:"var(--eve)", borderRadius:20, padding:"3px 11px" }}>مسائي {sm.eve}</span>
                 {sm.conflicts>0 && <span style={{ fontSize:11, fontWeight:700, background:"var(--dangerSoft)", color:"#b91c1c", borderRadius:20, padding:"3px 11px" }}>⛔ تعارض {sm.conflicts}</span>}
               </div>
-              {docs.length>0 && <div style={{ fontSize:11.5, color:C.text, marginTop:7 }}>🌙 {docs.map(n=>"د."+n).join("، ")}</div>}
+              {docs.length>0 && <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:7 }}>{docs.map(d=><span key={d.id} style={{ display:"inline-flex", alignItems:"center", gap:5, background:d.color+"14", color:d.color, border:`1px solid ${d.color}30`, borderRadius:20, padding:"3px 9px", fontSize:11.5, fontWeight:700 }}>🌙 د.{d.name}<button onClick={()=>toggleEvening(date,d.id)} title="إزالة" style={{ background:"none", border:"none", color:"inherit", opacity:.65, cursor:"pointer", fontSize:13, lineHeight:1, padding:0 }}>×</button></span>)}</div>}
               {cls.length>0 && <div style={{ fontSize:11, color:C.sub, marginTop:4 }}>{cls.map((t,i)=><div key={i}>🔄 {t}</div>)}</div>}
             </div>
           ); })}
@@ -1501,7 +1504,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
               <div className="cal-grid2" style={{ marginBottom:8 }}>{DAYS.map(d=><div key={"mh"+d} className="wd">{d}</div>)}</div>
               <div className="cal-grid2">
                 {Array.from({length:offset},(_,i)=><div key={"me"+i} />)}
-                {days.map(({date,di,day})=>{ const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null); const reqEve=(nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0; const emptyEve=Math.max(0,reqEve-docs.length); const lines=covLines(date); const st=r.gaps.length?"bad":emptyEve>0?"warn":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; return (
+                {days.map(({date,di,day})=>{ const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const reqEve=(nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0; const emptyEve=Math.max(0,reqEve-docs.length); const lines=covLines(date); const st=r.gaps.length?"bad":emptyEve>0?"warn":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; return (
                   <div key={"m"+date} className={"cell "+st+(dragCell===date?" drag":"")}
                     style={emptyEve>0?{ outline:`2px dashed ${C.warn}`, outlineOffset:-2, background:"var(--warnSoft)" }:undefined}
                     onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }}
@@ -1512,7 +1515,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                       <span className="dn" style={isT?{ background:C.primary, color:"#fff" }:undefined}>{day}</span>
                       {st && <span style={{ width:9, height:9, borderRadius:"50%", background:st==="bad"?C.err:st==="warn"?C.warn:C.ok }} />}
                     </div>
-                    {docs.map(d=><div key={d.id} className="cchip"><span className="d" style={{ background:d.color }}></span>د.{d.name}</div>)}
+                    {docs.map(d=><div key={d.id} className="cchip" style={{ display:"inline-flex", alignItems:"center", gap:5 }}><span className="d" style={{ background:d.color }}></span>د.{d.name}<button onClick={e=>{ e.stopPropagation(); toggleEvening(date,d.id); }} title="إزالة" style={{ background:"none", border:"none", color:"inherit", opacity:.6, cursor:"pointer", fontSize:13, lineHeight:1, padding:"0 0 0 2px" }}>×</button></div>)}
                     {emptyEve>0 && <div style={{ display:"inline-flex", alignItems:"center", gap:4, marginTop:4, background:"#fff", border:`1px solid ${C.warn}`, color:C.warn, borderRadius:20, padding:"2px 8px", fontSize:10.5, fontWeight:800 }}>🌙 {emptyEve} فارغة</div>}
                     {lines.map((t,i)=><div key={i} style={{ fontSize:10.5, color:"var(--primary-d)", background:"#EFFAFB", border:"1px solid #D7EEF1", borderRadius:7, padding:"4px 7px", marginTop:4, lineHeight:1.55, whiteSpace:"normal", wordBreak:"break-word" }}>🔄 {t}</div>)}
                   </div>
@@ -1532,7 +1535,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
             <div className="cal-grid2" style={{ marginBottom:8 }}>{DAYS.map(d=><div key={d} className="wd">{d}</div>)}</div>
             <div className="cal-grid2">
               {Array.from({length:offset},(_,i)=><div key={"e"+i} />)}
-              {days.map(({date,di,day})=>{ const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null); const reqEve=(nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0; const emptyEve=Math.max(0,reqEve-docs.length); const st=r.gaps.length?"bad":emptyEve>0?"warn":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; return (
+              {days.map(({date,di,day})=>{ const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const reqEve=(nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0; const emptyEve=Math.max(0,reqEve-docs.length); const st=r.gaps.length?"bad":emptyEve>0?"warn":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; return (
                 <div key={date} className={"cell "+st+(dragCell===date?" drag":"")}
                   style={emptyEve>0?{ outline:`2px dashed ${C.warn}`, outlineOffset:-2, background:"var(--warnSoft)" }:undefined}
                   onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }}
@@ -1543,7 +1546,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                     <span className="dn" style={isT?{ background:C.primary, color:"#fff" }:undefined}>{day}</span>
                     {st && <span style={{ width:9, height:9, borderRadius:"50%", background:st==="bad"?C.err:st==="warn"?C.warn:C.ok }} />}
                   </div>
-                  {docs.map(d=><div key={d.id} className="cchip"><span className="d" style={{ background:d.color }}></span>د.{d.name}</div>)}
+                  {docs.map(d=><div key={d.id} className="cchip" style={{ display:"inline-flex", alignItems:"center", gap:5 }}><span className="d" style={{ background:d.color }}></span>د.{d.name}<button onClick={e=>{ e.stopPropagation(); toggleEvening(date,d.id); }} title="إزالة" style={{ background:"none", border:"none", color:"inherit", opacity:.6, cursor:"pointer", fontSize:13, lineHeight:1, padding:"0 0 0 2px" }}>×</button></div>)}
                   {emptyEve>0 && <div style={{ display:"inline-flex", alignItems:"center", gap:4, marginTop:4, background:"#fff", border:`1px solid ${C.warn}`, color:C.warn, borderRadius:20, padding:"2px 8px", fontSize:10.5, fontWeight:800 }}>🌙 {emptyEve} فارغة</div>}
                 </div>
               ); })}
@@ -1615,7 +1618,10 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                       </div>
                     ); } return (
                       <div key={"e"+i} style={{ display:"inline-flex", flexDirection:"column", gap:5, border:`2px dashed ${C.warn}`, background:"var(--warnSoft)", borderRadius:12, padding:"8px 10px", minWidth:175 }}>
-                        <span style={{ fontSize:11, fontWeight:700, color:C.warn }}>🌙 عيادة مسائية فارغة</span>
+                        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                          <span style={{ flex:1, fontSize:11, fontWeight:700, color:C.warn }}>🌙 عيادة مسائية فارغة</span>
+                          <button onClick={()=>decDay(date,reqN-1)} title="إلغاء هذه العيادة" style={{ background:"none", border:"none", color:C.warn, cursor:"pointer", fontSize:15, lineHeight:1, padding:0 }}>×</button>
+                        </div>
                         <select value="" onChange={e=>{ const v=+e.target.value; if(v) toggleEvening(date,v); }} style={{ ...sIn, padding:"7px 9px", fontSize:12.5 }}>
                           <option value="">اختر طبيباً…</option>
                           {optList.map(({d,note})=><option key={d.id} value={d.id}>د.{d.name} — {note}</option>)}
@@ -2005,7 +2011,7 @@ const _SEED = [
 const SEED_DOCTORS = _SEED.map((e,i)=>{ const sched=_mkSched(e[2]); (e[1]||[]).forEach(di=>{ if(sched[di]) sched[di].eve="clinic"; }); return { id:9001+i, name:e[0], color:PALETTE[i%PALETTE.length], nightDays:e[1], blockedDays:[], rank:"specialist", adminPosition:"none", sched }; });
 
 // ════════════════════════════════ NEW MODULES ════════════════════════════════
-const DEFAULT_SETTINGS = { capEvening:8, capLeaveDay:4, restRule:false };
+const DEFAULT_SETTINGS = { capEvening:8, capLeaveDay:4, restRule:true };
 function showPrintOverlay(docHtml){
   const prev=document.getElementById("__printOverlay"); if(prev) prev.remove();
   const ov=document.createElement("div"); ov.id="__printOverlay";
@@ -2067,9 +2073,10 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
     {field("capLeaveDay","حدّ المُجازين في اليوم","ينبّه عند تساوي/تجاوز عدد المُجازين في يوم عمل هذا الحد.")}
     <div style={{ ...card(), padding:16, marginBottom:12 }}>
       <label style={{ ...label, marginBottom:0, display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}>
-        <input type="checkbox" checked={!!s.restRule} onChange={e=>set("restRule",e.target.checked)} style={{ width:18, height:18 }} />
-        قاعدة الراحة بعد المسائي (تجنّب عيادة صباح اليوم التالي)
+        <input type="checkbox" checked={s.restRule!==false} onChange={e=>set("restRule",e.target.checked)} style={{ width:18, height:18 }} />
+        قاعدة الراحة بعد المسائي (تغطية عيادة صباح اليوم التالي تلقائياً للطبيب المناوب)
       </label>
+      <div style={{ fontSize:11, color:C.muted, marginTop:8, lineHeight:1.7 }}>عند التفعيل: عيادة صباح اليوم التالي لأي طبيب أخذ مناوبة مسائية تُعتبر "عيادة مكشوفة تحتاج تغطية" تلقائياً في قسم الحلول المطلوبة والتنبيهات. عند الإلغاء: لا يُطلب تغطيتها تلقائياً (يبقى بإمكانك تغطيتها يدوياً إن احتجت).</div>
     </div>
     <div style={{ ...card(), padding:16, marginBottom:12 }}>
       <label style={label}>🔗 الرابط الحي للجدول</label>
@@ -2081,7 +2088,7 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
         <input defaultValue={cfg.password||""} id="cl_password" type="password" placeholder="كلمة مرور حساب النشر" style={{ ...sIn, marginBottom:8, direction:"ltr", textAlign:"left" }} />
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
           <button onClick={()=>{ let url=document.getElementById("cl_url").value.trim(); const apiKey=document.getElementById("cl_apikey").value.trim(); const email=document.getElementById("cl_email").value.trim(); const password=document.getElementById("cl_password").value; if(!url){ showToast("ألصق رابط قاعدة Realtime","warn"); return; } if(!/^https?:\/\//.test(url)) url="https://"+url; if(!apiKey||!email||!password){ showToast("أكمل Web API Key والبريد وكلمة المرور","warn"); return; } S.set("v2_cloud",{ dbUrl:url, apiKey, email, password }); showToast("✓ تم حفظ إعدادات الرابط الحي"); }} style={{ ...sBtn(C.primary), flex:1, minWidth:140 }}>💾 حفظ</button>
-          <button onClick={async()=>{ const cf=cloudCfg(); if(!cf){ showToast("احفظ الإعدادات أولاً","warn"); return; } showToast("جارٍ الاختبار…"); try{ await getIdToken(cf); const base=String(cf.dbUrl).replace(/\/+$/,""); const r=await fetch(`${base}/public/schedule.json`,{cache:"no-store"}); if(r.ok) showToast("✓ تسجيل الدخول والاتصال بالقاعدة سليم"); else showToast("القاعدة ردّت بخطأ — تحقق من الرابط والقواعد","warn"); }catch(e){ showToast("تعذّر تسجيل الدخول — تحقق من API Key/البريد/كلمة المرور","err"); } }} style={{ ...sGhost, flex:1, minWidth:120, color:C.accent }}>🔌 اختبار</button>
+          <button onClick={async()=>{ const cf=cloudCfg(); if(!cf){ showToast("احفظ الإعدادات أولاً","warn"); return; } showToast("جارٍ الاختبار…"); try{ await getIdToken(cf); const base=String(cf.dbUrl).replace(/\/+$/,""); const r=await fetch(`${base}/public/schedule.json`,{cache:"no-store"}); if(r.ok) showToast("✓ تسجيل الدخول والاتصال بالقاعدة سليم"); else showToast("القاعدة ردّت بخطأ — تحقق من الرابط والقواعد","warn"); }catch(e){ showToast("تعذّر تسجيل الدخول: "+String(e.message||e).slice(0,180),"err"); } }} style={{ ...sGhost, flex:1, minWidth:120, color:C.accent }}>🔌 اختبار</button>
           <button onClick={()=>{ const link=location.origin+location.pathname.replace(/[^/]*$/,"")+"view.html"; navigator.clipboard&&navigator.clipboard.writeText(link); showToast("✓ نُسخ: "+link); }} style={{ ...sGhost, flex:1, minWidth:140 }}>📋 نسخ رابط العرض</button>
         </div>
         <button onClick={publishNow} style={{ ...sBtn("var(--primary-d)"), width:"100%", marginTop:10, fontSize:14 }}>🔄 نشر الحالة الحالية الآن للرابط الحي</button>
@@ -2176,7 +2183,7 @@ function AlertsPage({ doctors, leaves, nightData, coverages, today, fd, settings
   const s = { ...DEFAULT_SETTINGS, ...settings };
   const now = new Date(today);
   const al = [];
-  const ana = analyzeMonth(now.getFullYear(), now.getMonth(), doctors, leaves, nightData, coverages);
+  const ana = analyzeMonth(now.getFullYear(), now.getMonth(), doctors, leaves, nightData, coverages, s.restRule!==false);
   ana.conflicts.forEach(c=> al.push({ sev:"err", t:c.text, go:"engine" }));
   ana.gaps.forEach(g=>{ const o=fd(g.ownerId); al.push({ sev:"warn", t:`عيادة ${o?"د."+o.name:""} مكشوفة ${dmy(g.date)} (${g.period==="am"?"صباحاً":"ظهراً"})`, go:"engine" }); });
   leaves.forEach(l=>{ const du=Math.round((new Date(l.start)-now)/864e5); if(du>0&&du<=3){ const d=fd(l.doctorId); if(d) al.push({ sev:"warn", t:`إجازة د.${d.name} تبدأ بعد ${du} ${du===1?"يوم":"أيام"}`, go:"leaves" }); } });
@@ -2202,7 +2209,8 @@ function AlertsPage({ doctors, leaves, nightData, coverages, today, fd, settings
   </div>;
 }
 
-function ReportsPage({ doctors, leaves, nightData, coverages, today, fd }) {
+function ReportsPage({ doctors, leaves, nightData, coverages, today, fd, settings }) {
+  const restRule = settings?.restRule!==false;
   const [scope,setScope] = useState("month");
   const [ref,setRef]     = useState(today);
   const [sel,setSel]     = useState("all");
@@ -2271,7 +2279,7 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd }) {
   const printAll = () => { if(!shown.length) return; printDoc(`تقرير الأطباء — ${label}`, reportCSS+shown.map((d,i)=>`<div class="pdoc ${i>0?"pb":""}">${docReportBody(d)}</div>`).join(""), false); };
   const printDepartment = () => {
     const gaps=[], conflicts=[];
-    dates.forEach(dt=>{ const r=analyzeDay(dt,doctors,leaves,nightData,coverages,null); (r.gaps||[]).forEach(g=>gaps.push({ date:dt, di:(g.di!=null?g.di:new Date(dt).getDay()), ownerId:g.ownerId, period:g.period, reason:g.reason||"" })); (r.conflicts||[]).forEach(c=>conflicts.push({ date:dt, text:c.text||c.reason||"تعارض" })); });
+    dates.forEach(dt=>{ const r=analyzeDay(dt,doctors,leaves,nightData,coverages,null,restRule); (r.gaps||[]).forEach(g=>gaps.push({ date:dt, di:(g.di!=null?g.di:new Date(dt).getDay()), ownerId:g.ownerId, period:g.period, reason:g.reason||"" })); (r.conflicts||[]).forEach(c=>conflicts.push({ date:dt, text:c.text||c.reason||"تعارض" })); });
     gaps.sort((a,b)=>a.date.localeCompare(b.date));
     const issueCSS = `<style>.alert{border-radius:14px;padding:14px 16px;margin-bottom:14px}.alert.bad{background:#fef2f2;border:1px solid #fecaca}.alert.ok{background:#ecfdf5;border:1px solid #bbf7d0}.alert h2{margin:0 0 8px;border:none;padding:0}.alert.bad h2{color:#b91c1c}.alert.bad h2::before{background:#ef4444}.alert.ok h2{color:#15803d}.alert.ok h2::before{background:#16a34a}.wsched td.s{background:#f4f8fb;font-weight:700;color:${C.primaryD}}</style>`;
     const gapRows = gaps.map(g=>`<tr><td>${dmy(g.date)}</td><td>${DAYS[g.di]||""}</td><td style="font-weight:700">د.${fd(g.ownerId)?.name||"—"}</td><td>${perTxt(g.period)}</td><td style="text-align:start">${g.reason}</td></tr>`).join("");
@@ -2568,7 +2576,7 @@ function App() {
   useEffect(()=>{ if(official) S.set("v2_official",official); },[official]);
   const today = new Date().toISOString().split("T")[0];
   const fd = id => doctors.find(d=>d.id===id);
-  const showToast = (msg,kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null),2200); };
+  const showToast = (msg,kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null), kind==="err"?6000:2200); };
   const currentUser = users.find(u=>u.id===(session&&session.userId)) || null;
   const role = currentUser && currentUser.role;
   const logout = () => { setSession(null); setPage("dashboard"); };
@@ -2599,13 +2607,13 @@ function App() {
   const cur = TABS.find(t=>t[0]===page);
   const subt = { dashboard:"نظرة عامة وتنبيهات", engine:"المحرك — حلول · مسائي · تغطيات", leaves:"تسجيل الإجازات وأثرها", doctors:"بيانات الأطباء وجداولهم", stats:"العبء الوظيفي", fairness:"ترتيب الأطباء حسب المساهمة", reports:"تقارير شهرية قابلة للطباعة", alerts:"تعارضات وحدود وإجازات", audit:"توثيق العمليات", settings:"الحدود والقواعد", users:"حسابات المستخدمين والصلاحيات" };
   const pageEl = <>
-      {page==="dashboard" && <Dashboard doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} onGoto={setPage} />}
-      {page==="engine" && <EnginePage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setNight={setNight} setCoverages={setCoverages} showToast={showToast} logAudit={logAudit} />}
+      {page==="dashboard" && <Dashboard doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} onGoto={setPage} settings={settings} />}
+      {page==="engine" && <EnginePage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setNight={setNight} setCoverages={setCoverages} showToast={showToast} logAudit={logAudit} settings={settings} />}
       {page==="leaves" && <LeavesPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setLeaves={setLeaves} setCoverages={setCoverages} setNight={setNight} showToast={showToast} logAudit={logAudit} />}
       {page==="doctors" && <DoctorsPage doctors={doctors} leaves={leaves} today={today} fd={fd} setDoctors={setDoctors} showToast={showToast} logAudit={logAudit} />}
       {page==="stats" && <StatsPage doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} />}
       {page==="fairness" && <FairnessPage doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} />}
-      {page==="reports" && <ReportsPage doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} />}
+      {page==="reports" && <ReportsPage doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} settings={settings} />}
       {page==="alerts" && <AlertsPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} settings={settings} onGoto={setPage} />}
       {page==="audit" && <AuditPage audit={audit} />}
       {page==="settings" && <SettingsPage settings={settings} setSettings={setSettings} showToast={showToast} holidays={holidays} setHolidays={setHolidays} doctors={doctors} publishNow={publishNow} />}
@@ -2635,7 +2643,7 @@ function App() {
     </div>
   ); }
 
-  const tInfo = analyzeDay(today, doctors, leaves, nightData, coverages, null);
+  const tInfo = analyzeDay(today, doctors, leaves, nightData, coverages, null, settings?.restRule!==false);
   const tabMap = Object.fromEntries(TABS.map(t=>[t[0],t]));
   const GRP1=["dashboard","engine","leaves","doctors","stats"], GRP2=["reports","alerts","audit","settings","users"];
   const renderLink = id => { const t=tabMap[id]; if(!t) return null; const badge = id==="leaves"&&leaves.length ? leaves.length : (id==="engine"&&tInfo.gaps.length ? tInfo.gaps.length : 0); return <button key={id} className={"navlink"+(page===id?" active":"")} onClick={()=>{ setPage(id); setSbOpen(false); }} title={t[1]}><Ico n={id}/><span className="nav-label">{t[1]}</span>{badge?<span className="badge">{badge}</span>:null}</button>; };
