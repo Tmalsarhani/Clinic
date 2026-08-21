@@ -1136,7 +1136,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const restRule = settings?.restRule!==false;
   const holidayMap = useMemo(()=>buildHolidayMap(holidays), [holidays]);
   const holInfo = ds => holidayMap[ds]||null;
-  const [mo, setMo] = useState({ y:now.getFullYear(), m:now.getMonth() });
+  const [mo, setMo] = useState(()=>{ const s=S.get("v2_lastmo"); return (s && typeof s.y==="number" && typeof s.m==="number") ? s : { y:now.getFullYear(), m:now.getMonth() }; });
+  useEffect(()=>S.set("v2_lastmo", mo), [mo]);
   const [sel, setSel] = useState(null);
   const [picks, setPicks] = useState({});
   const days = useMemo(()=>monthDays(mo.y,mo.m), [mo]);
@@ -1188,7 +1189,10 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const setReq = (date,n) => { const val=Math.max(0,n); setDayReq(r=>({ ...r, [date]:val })); setNight(nd=> nd[date] ? {...nd, [date]:{...nd[date], eveningSlots:val}} : nd); };
   const decDay = (date,target) => { const assigned=(nightData[date]?.doctors)||[]; if(target>=0 && assigned.length>target){ setTrimPick({date,target}); } else { setReq(date,target); } };
   const removeForTrim = (date,docId,target) => { toggleEvening(date,docId); setReq(date,target); setTrimPick(null); logAudit&&logAudit(`إزالة د.${fd(docId)?.name||""} من مسائي ${dmy(date)} (تخفيض العدد المطلوب)`); showToast("تم تحديث اليوم"); };
-  const needOf = date => (dayReq[date]!=null?dayReq[date]:reqPerDay);
+  const monthPrefix = `${mo.y}-${String(mo.m+1).padStart(2,"0")}`;
+  const monthConfigured = useMemo(()=> days.some(d=>dayReq[d.date]!=null) || Object.keys(nightData).some(k=>k.startsWith(monthPrefix)), [days,dayReq,nightData,monthPrefix]);
+  const needOf = date => (dayReq[date]!=null ? dayReq[date] : (monthConfigured ? reqPerDay : 0));
+  useEffect(()=>{ if(!monthConfigured) setShowSetup(true); }, [mo.y, mo.m]);
   const createEmpty = () => { setNight(nd=>{ const n={...nd}; days.forEach(({date})=>{ const need=needOf(date); if(need>0){ n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:[], eveningSlots:need }; } }); return n; }); logAudit&&logAudit("إنشاء جدول مسائي فارغ حسب عدد العيادات"); showToast("تم إنشاء جدول فارغ — اختر الأطباء أو وزّع تلقائياً"); setShowSetup(false); };
   const distributeFixed = () => { setNight(nd=>{ const n={...nd}; days.forEach(({date,di})=>{ const need=needOf(date); if(need<=0) return; const cur=(n[date]?.doctors)?[...n[date].doctors]:[]; doctors.filter(d=>(d.nightDays||[]).includes(di) && !onLeave(d,date,leaves) && !(d.blockedDays||[]).includes(di) && !cur.includes(d.id)).forEach(d=>{ if(cur.length<need) cur.push(d.id); }); n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur, eveningSlots:need }; }); return n; }); logAudit&&logAudit("توزيع الأطباء أصحاب الأيام الثابتة"); showToast("تم وضع أصحاب الأيام الثابتة — والباقي فارغ"); };
   const fillRef = React.useRef({ leftover:0, report:null });
@@ -1248,7 +1252,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     if(smartStep===2){ showToast("🚀 إكمال ذكي: تعبئة المتفرّغين…"); fillAvailable(); const t=setTimeout(()=>setSmartStep(3),700); return ()=>clearTimeout(t); }
     if(smartStep===3){ showToast("🚀 إكمال ذكي: تغطية الشواغر…"); coverAll(); setSmartStep(0); }
   },[smartStep]);
-  const smartComplete = () => { if(smartStep!==0){ showToast("جارٍ التنفيذ بالفعل…","warn"); return; } showToast("🚀 إكمال ذكي: توزيع أصحاب الأيام الثابتة…"); setSmartStep(1); };
+  const smartComplete = () => { if(smartStep!==0){ showToast("جارٍ التنفيذ بالفعل…","warn"); return; } if(!monthConfigured){ setShowSetup(true); showToast("حدّد أولاً عدد العيادات المطلوب لكل يوم بالأسفل، ثم اضغط «إنشاء جدول فارغ» أو الزر الذكي","warn"); return; } showToast("🚀 إكمال ذكي: توزيع أصحاب الأيام الثابتة…"); setSmartStep(1); };
 
   // individual coverage form
   const [cf, setCf] = useState({ absentId:"", date:"", period:"am", coverId:"" });
@@ -1387,12 +1391,19 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const weekDays = (()=>{ const t=new Date(wkRef); const sun=new Date(t); sun.setDate(t.getDate()-t.getDay()); const out=[]; for(let i=0;i<5;i++){ const d=new Date(sun); d.setDate(sun.getDate()+i); out.push(d.toISOString().split("T")[0]); } return out; })();
   const shiftWeek = dir => setWkRef(r=>{ const d=new Date(r); d.setDate(d.getDate()+dir*7); return d.toISOString().split("T")[0]; });
 
+  const isCurMonth = mo.y===now.getFullYear() && mo.m===now.getMonth();
   return <div className="fade">
     {/* month nav */}
     <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
       <button onClick={()=>setMo(p=>({y:p.m===0?p.y-1:p.y,m:(p.m+11)%12}))} style={{ ...sGhost, width:38, padding:"9px 0" }}>‹</button>
-      <div style={{ flex:1, textAlign:"center", fontWeight:700, fontSize:16 }}>{MONTHS[mo.m]} {mo.y}</div>
+      <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:9 }}>
+        <div style={{ textAlign:"center", fontWeight:800, fontSize:18 }}>{MONTHS[mo.m]} {mo.y}</div>
+        {isCurMonth
+          ? <span style={{ fontSize:11, fontWeight:800, background:"var(--okSoft)", color:C.ok, borderRadius:20, padding:"3px 10px" }}>● الشهر الحالي</span>
+          : <span style={{ fontSize:11, fontWeight:800, background:"var(--primarySoft)", color:C.primaryD, borderRadius:20, padding:"3px 10px" }}>📅 تحضير مسبق — ليس الشهر الحالي</span>}
+      </div>
       <button onClick={()=>setMo(p=>({y:p.m===11?p.y+1:p.y,m:(p.m+1)%12}))} style={{ ...sGhost, width:38, padding:"9px 0" }}>›</button>
+      {!isCurMonth && <button onClick={()=>setMo({y:now.getFullYear(),m:now.getMonth()})} title="العودة للشهر الحالي" style={{ ...sGhost, padding:"9px 12px", fontSize:12, fontWeight:700 }}>اليوم</button>}
     </div>
 
     {/* Toolbar: أدوات التوزيع السريعة + التصدير — بطاقة واحدة مختصرة */}
@@ -1460,6 +1471,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           <label style={{ fontSize:11.5, color:C.sub, display:"inline-flex", alignItems:"center", gap:6 }}>الافتراضي<input type="number" min="0" max="10" value={reqPerDay} onChange={e=>setReqPerDay(Math.max(0,+e.target.value||0))} style={{ width:44, border:`1px solid ${C.line}`, borderRadius:7, padding:"4px", textAlign:"center" }} /></label>
         </div>
         <div style={{ fontSize:11, color:C.muted, marginBottom:10 }}>حدّد لكل يوم عدد العيادات المسائية ثم اضغط «إنشاء جدول فارغ». تبقى الخانات فارغة لتختار الأطباء يدوياً، أو «توزيع الأيام الثابتة» ثم «إكمال المسائي بالمتاح».</div>
+        {!monthConfigured && <div style={{ background:"var(--primarySoft)", border:`1px solid ${C.primary}`, borderRadius:10, padding:"9px 11px", marginBottom:10, fontSize:12, color:C.primaryD, fontWeight:600 }}>👋 هذا الشهر جديد ولم يُحدَّد له شيء بعد — راجع الأعداد أدناه (أو غيّرها) ثم اختر طريقة التوزيع.</div>}
         <div style={{ display:"flex", flexDirection:"column", gap:5, maxHeight:360, overflowY:"auto" }}>
           {days.map(({date,di,day})=>{ const v=dayReq[date]!=null?dayReq[date]:reqPerDay; const assignedDocs=((nightData[date]?.doctors)||[]).map(id=>fd(id)).filter(Boolean); return (
             <div key={date}>
@@ -1920,13 +1932,18 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
 }
 
 // ════════════════════════════════ DOCTORS ════════════════════════════════
-function DoctorsPage({ doctors, leaves, today, fd, setDoctors, showToast, logAudit }) {
+function DoctorsPage({ doctors, leaves, nightData, coverages, today, fd, setDoctors, showToast, logAudit }) {
   const [open, setOpen] = useState(null);
   const [newName, setNewName] = useState("");
   const addDoc = () => { if(!newName.trim()){showToast("أدخل الاسم","warn");return;} const id=uid(); setDoctors(ds=>[...ds,{ id, name:newName.trim(), color:PALETTE[ds.length%PALETTE.length], nightDays:[], blockedDays:[], rank:"specialist", adminPosition:"none", sched:{0:{am:"",pm:"",eve:""},1:{am:"",pm:"",eve:""},2:{am:"",pm:"",eve:""},3:{am:"",pm:"",eve:""},4:{am:"",pm:"",eve:""}} }]); setNewName(""); setOpen(id); logAudit&&logAudit(`إضافة طبيب: ${newName.trim()}`); };
   const upd = (id,patch) => setDoctors(ds=>ds.map(d=>d.id===id?{...d,...patch}:d));
   const setSlot = (id,di,p,v) => setDoctors(ds=>ds.map(d=>{ if(d.id!==id)return d; const sched={...d.sched}; sched[di]={...sched[di],[p]:v}; const patch={...d,sched}; if(p==="eve"){ patch.nightDays=[0,1,2,3,4].filter(x=>sched[x]&&sched[x].eve); } return patch; }));
   const del = id => { const dn=fd(id)?.name||""; setDoctors(ds=>ds.filter(d=>d.id!==id)); logAudit&&logAudit(`حذف طبيب: د.${dn}`); };
+  const [y,m]=today.split("-"); const monthPre=`${y}-${m}`;
+  const eveCountThisMonth = id => Object.keys(nightData||{}).filter(dt=>dt.startsWith(monthPre) && ((nightData[dt]||{}).doctors||[]).includes(id)).length;
+  const covCountThisMonth = id => (coverages||[]).filter(c=>c.coverDoctorId===id && String(c.date).startsWith(monthPre)).length;
+  const activeLeaveOf = id => (leaves||[]).find(l=>l.doctorId===id && today>=l.start && today<=l.end);
+  const nextLeaveOf = id => (leaves||[]).filter(l=>l.doctorId===id && l.start>today).sort((a,b)=>a.start.localeCompare(b.start))[0];
 
   return <div className="fade">
     <div style={{ ...card(), padding:14, marginBottom:16, display:"flex", gap:8 }}>
@@ -1934,11 +1951,16 @@ function DoctorsPage({ doctors, leaves, today, fd, setDoctors, showToast, logAud
       <button onClick={addDoc} style={sBtn(C.primary)}>إضافة</button>
     </div>
     {doctors.length===0 ? <Empty icon="👨‍⚕️" title="لا أطباء بعد" hint="أضف أول طبيب من الأعلى" /> :
-      <div className="grid-cards">{doctors.map(d=>{ const isOpen=open===d.id; return (
+      <div style={{ display:"flex", flexDirection:"column", gap:14 }}>{doctors.map(d=>{ const isOpen=open===d.id; const onLeave=activeLeaveOf(d.id); const nextLv=nextLeaveOf(d.id); const eveN=eveCountThisMonth(d.id); const covN=covCountThisMonth(d.id); return (
         <div key={d.id} style={{ ...card(), overflow:"hidden", borderInlineStart:`4px solid ${d.color}` }}>
-          <div onClick={()=>setOpen(isOpen?null:d.id)} style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px", cursor:"pointer" }}>
+          <div onClick={()=>setOpen(isOpen?null:d.id)} style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px", cursor:"pointer", flexWrap:"wrap" }}>
             <Avatar doc={d} size={34}/>
-            <div style={{ flex:1 }}><div style={{ fontWeight:700, fontSize:14 }}>{d.name}</div><div style={{ fontSize:11, color:C.sub }}>{rankLabel(rankOf(d))} · هدف الرعاية {directTarget(d)}</div></div>
+            <div style={{ flex:1, minWidth:140 }}><div style={{ fontWeight:700, fontSize:14, display:"flex", alignItems:"center", gap:7 }}>{d.name}{onLeave && <span style={{ fontSize:10, fontWeight:800, background:"var(--warnSoft)", color:C.warn, borderRadius:20, padding:"2px 8px" }}>🏖 في إجازة الآن</span>}</div><div style={{ fontSize:11, color:C.sub }}>{rankLabel(rankOf(d))} · هدف الرعاية {directTarget(d)}</div></div>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              <span style={{ fontSize:10.5, fontWeight:700, background:"var(--eveSoft)", color:"var(--eve)", borderRadius:20, padding:"3px 10px" }}>🌙 {eveN} هذا الشهر</span>
+              {covN>0 && <span style={{ fontSize:10.5, fontWeight:700, background:"var(--primarySoft)", color:C.primaryD, borderRadius:20, padding:"3px 10px" }}>🔄 {covN} تغطية</span>}
+              {!onLeave && nextLv && <span style={{ fontSize:10.5, fontWeight:700, background:"var(--surface2)", color:C.sub, borderRadius:20, padding:"3px 10px" }}>🏖 إجازة قادمة {dmy(nextLv.start)}</span>}
+            </div>
             <Kebab items={[
               { icon:"✏️", label:isOpen?"إغلاق التعديل":"تعديل", onClick:()=>setOpen(isOpen?null:d.id) },
               { icon:"🗑", label:"حذف الطبيب", danger:true, onClick:()=>{ if(confirm(`حذف د.${d.name}؟`)) del(d.id); } },
@@ -2756,7 +2778,7 @@ function App() {
       {page==="dashboard" && <Dashboard doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} onGoto={setPage} settings={settings} />}
       {page==="engine" && <EnginePage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setNight={setNight} setCoverages={setCoverages} showToast={showToast} logAudit={logAudit} settings={settings} holidays={holidays} />}
       {page==="leaves" && <LeavesPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setLeaves={setLeaves} setCoverages={setCoverages} setNight={setNight} showToast={showToast} logAudit={logAudit} />}
-      {page==="doctors" && <DoctorsPage doctors={doctors} leaves={leaves} today={today} fd={fd} setDoctors={setDoctors} showToast={showToast} logAudit={logAudit} />}
+      {page==="doctors" && <DoctorsPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setDoctors={setDoctors} showToast={showToast} logAudit={logAudit} />}
       {page==="stats" && <StatsPage doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} />}
       {page==="fairness" && <FairnessPage doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} />}
       {page==="reports" && <ReportsPage doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} settings={settings} />}
