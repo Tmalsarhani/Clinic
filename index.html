@@ -219,17 +219,18 @@ html[data-theme="dark"] .tog{ background:var(--primary); } html[data-theme="dark
 
 /* ===== interactive calendar ===== */
 .cal-wrap{ display:grid; grid-template-columns:1fr; gap:16px; align-items:start; }
-.cal-grid2{ display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
-.wd{ text-align:center; font-size:12px; font-weight:600; color:var(--muted); padding-bottom:2px; }
-.cell{ min-height:106px; border-radius:13px; border:1px solid var(--line); background:var(--surface2); padding:8px; display:flex; flex-direction:column; gap:4px; transition:.16s; cursor:pointer; position:relative; }
+.cal-grid2{ display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+.wd{ text-align:center; font-size:14px; font-weight:800; color:var(--muted); padding-bottom:4px; }
+.cell{ min-height:150px; border-radius:14px; border:1px solid var(--line); background:var(--surface2); padding:10px; display:flex; flex-direction:column; gap:5px; transition:.16s; position:relative; }
 .cell:hover{ border-color:var(--primary); box-shadow:0 0 0 3px var(--primarySoft); }
 .cell.ok{ background:var(--okSoft); border-color:transparent; }
 .cell.warn{ background:var(--warnSoft); border-color:transparent; }
 .cell.bad{ background:var(--dangerSoft); border-color:transparent; }
 .cell.drag{ border:2px dashed var(--primary); background:var(--primarySoft); box-shadow:0 0 0 3px var(--primarySoft); }
-.cell .dn{ font-size:12.5px; font-weight:700; color:var(--ink); min-width:24px; height:24px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:var(--surface); padding:0 5px; }
-.cchip{ display:flex; align-items:center; gap:5px; background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:3px 7px; font-size:10.5px; font-weight:600; color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.04); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.cchip .d{ width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.cell.dim{ opacity:.32; filter:grayscale(.4); }
+.cell .dn{ font-size:15px; font-weight:800; color:var(--ink); min-width:28px; height:28px; border-radius:9px; display:flex; align-items:center; justify-content:center; background:var(--surface); padding:0 6px; }
+.cchip{ display:flex; align-items:center; gap:5px; background:var(--surface); border:1px solid var(--line); border-radius:9px; padding:5px 9px; font-size:12.5px; font-weight:700; color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.04); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cchip .d{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
 .cpool{ background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:14px; box-shadow:var(--shadow); position:sticky; top:84px; }
 .cpool h3{ font-size:13px; font-weight:700; color:var(--ink); margin:0 0 3px; }
 .cpool .hint{ font-size:11px; color:var(--muted); margin:0 0 12px; line-height:1.5; }
@@ -1240,6 +1241,15 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     },60);
   };
 
+  // ── إكمال ذكي للشهر: تنفيذ الخطوات الثلاث تلقائياً بضغطة واحدة (توزيع الثابتين → إكمال بالمتاح → تغطية الشواغر) ──
+  const [smartStep, setSmartStep] = useState(0); // 0=خامل، 1..3=قيد التنفيذ
+  useEffect(()=>{
+    if(smartStep===1){ distributeFixed(); const t=setTimeout(()=>setSmartStep(2),200); return ()=>clearTimeout(t); }
+    if(smartStep===2){ showToast("🚀 إكمال ذكي: تعبئة المتفرّغين…"); fillAvailable(); const t=setTimeout(()=>setSmartStep(3),700); return ()=>clearTimeout(t); }
+    if(smartStep===3){ showToast("🚀 إكمال ذكي: تغطية الشواغر…"); coverAll(); setSmartStep(0); }
+  },[smartStep]);
+  const smartComplete = () => { if(smartStep!==0){ showToast("جارٍ التنفيذ بالفعل…","warn"); return; } showToast("🚀 إكمال ذكي: توزيع أصحاب الأيام الثابتة…"); setSmartStep(1); };
+
   // individual coverage form
   const [cf, setCf] = useState({ absentId:"", date:"", period:"am", coverId:"" });
   const submitCov = () => { if(!cf.date||!cf.coverId){showToast("أكمل الحقول","warn");return;} addCovIndiv({ absentId:cf.absentId?+cf.absentId:null, date:cf.date, period:cf.period, coverDoctorId:+cf.coverId, reason:"absence" }); setCf({absentId:"",date:"",period:"am",coverId:""}); };
@@ -1247,12 +1257,20 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   // filters / view / tools
   const [search,setSearch] = useState("");
   const [sFilter,setSFilter] = useState("all");
+  const dayMatches = (date, docNames, status) => {
+    if(search.trim()){ const q=search.trim().toLowerCase(); const hit = dmy(date).includes(q) || docNames.some(n=>n.toLowerCase().includes(q)); if(!hit) return false; }
+    if(sFilter==="pending") return status==="bad"||status==="warn";
+    if(sFilter==="done") return status==="ok";
+    return true;
+  };
+  const quickAddOptions = (date, di, assignedIds) => doctors.filter(d=>!assignedIds.includes(d.id) && !(d.blockedDays||[]).includes(di)).map(d=>{ const lv=onLeave(d,date,leaves); const fixedHere=(d.nightDays||[]).includes(di); const fixedAny=(d.nightDays||[]).length>0; const rank=lv?3:fixedHere?0:fixedAny?2:1; const note=lv?"إجازة":fixedHere?"ثابت هذا اليوم":fixedAny?"له مسائي ثابت يوم آخر":"متاح"; return { d, rank, note }; }).filter(x=>x.rank<3).sort((a,b)=>a.rank-b.rank||a.d.name.localeCompare(b.d.name,"ar"));
   const [view,setView] = useState("calendar");
   const [dragDoc,setDragDoc] = useState(null);
   const [dragCell,setDragCell] = useState(null);
   const assignEvening = (date,id) => { ensureDay(date); setNight(nd=>{ const d={...(nd[date]||{doctors:[],coverages:{am:[],pm:[],nextAm:[]}})}; if((d.doctors||[]).includes(id)) return nd; d.doctors=[...(d.doctors||[]),id]; return {...nd,[date]:d}; }); logAudit&&logAudit(`تعيين د.${fd(id)?.name||""} مسائياً ${dmy(date)}`); showToast(`تم تعيين د.${fd(id)?.name||""} مسائياً ${dmy(date)}`); };
   const [clrOpen,setClrOpen] = useState(false);
   const [exportOpen,setExportOpen] = useState(false);
+  const [manualOpen,setManualOpen] = useState(false);
   const [calMode,setCalMode] = useState("split"); // split | merged
   const [wkRef,setWkRef] = useState(today);
   const pre = `${mo.y}-${String(mo.m+1).padStart(2,"0")}`;
@@ -1380,11 +1398,12 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     {/* Toolbar: أدوات التوزيع السريعة + التصدير — بطاقة واحدة مختصرة */}
     <div style={{ ...card(), padding:14, marginBottom:14 }}>
       <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:9, letterSpacing:.3 }}>⚙️ أدوات التوزيع السريعة</div>
+      <button onClick={smartComplete} disabled={smartStep!==0} style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, width:"100%", padding:"12px 14px", marginBottom:4, borderRadius:12, border:"none", cursor:smartStep!==0?"default":"pointer", fontWeight:800, fontSize:14, color:"#fff", background:`linear-gradient(120deg,${C.primaryD},${C.primary} 60%,${C.accent})`, opacity:smartStep!==0?.75:1, boxShadow:"0 8px 22px rgba(15,118,110,.25)" }}>
+        {smartStep!==0 ? <>⏳ جارٍ الإكمال الذكي — خطوة {smartStep} من 3…</> : <>🚀 إكمال ذكي للشهر بضغطة واحدة</>}
+      </button>
+      <div style={{ fontSize:10.5, color:C.muted, marginBottom:9, textAlign:"center" }}>ينفّذ تلقائياً: توزيع الثابتين ← تعبئة المتفرّغين ← تغطية الشواغر — بنفس القواعد والتأكيدات المعتادة</div>
       <div style={{ display:"flex", flexWrap:"wrap", gap:7 }}>
         <button onClick={()=>setShowSetup(s=>!s)} style={sBtn(C.primary)}>🗓 إنشاء جدول مسائي</button>
-        <button onClick={distributeFixed} style={sGhost}>⚡ توزيع حسب الأيام الثابتة</button>
-        <button onClick={fillAvailable} style={sBtn("var(--eve)")}>🌙 إكمال المسائي بالمتاح</button>
-        <button onClick={coverAll} style={sBtn("var(--primary-d)")}>🩺 تغطية العيادات المكشوفة</button>
         <label style={{ ...sGhost, display:"inline-flex", alignItems:"center", gap:6, cursor:"pointer", position:"relative", overflow:"hidden" }}>➕ إضافة يوم<input type="date" onChange={e=>{ if(e.target.value&&dayIdx(e.target.value)>=0){ ensureDay(e.target.value); setSel(e.target.value); setMo({y:+e.target.value.split("-")[0],m:+e.target.value.split("-")[1]-1}); setView("list"); } }} style={{ position:"absolute", inset:0, width:"100%", height:"100%", opacity:0, cursor:"pointer" }} value="" /></label>
         <div style={{ position:"relative", display:"inline-block" }}>
           <button onClick={()=>{ setClrOpen(o=>!o); setExportOpen(false); }} style={{ ...sGhost, color:C.err }}>🗑 مسح ▾</button>
@@ -1423,6 +1442,14 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
             </div>
           </>}
         </div>
+      </div>
+      <div style={{ marginTop:8 }}>
+        <button onClick={()=>setManualOpen(o=>!o)} style={{ display:"flex", alignItems:"center", gap:6, background:"none", border:"none", cursor:"pointer", color:C.muted, fontSize:11.5, fontWeight:700, padding:"4px 2px" }}>⚖ خطوات يدوية (للتحكم الدقيق) {manualOpen?"▲":"▼"}</button>
+        {manualOpen && <div style={{ display:"flex", flexWrap:"wrap", gap:7, marginTop:6, paddingTop:10, borderTop:`1px dashed ${C.line2}` }}>
+          <button onClick={distributeFixed} style={sGhost}>⚡ توزيع حسب الأيام الثابتة</button>
+          <button onClick={fillAvailable} style={sBtn("var(--eve)")}>🌙 إكمال المسائي بالمتاح</button>
+          <button onClick={coverAll} style={sBtn("var(--primary-d)")}>🩺 تغطية العيادات المكشوفة</button>
+        </div>}
       </div>
     </div>
 
@@ -1464,6 +1491,9 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     )}
 
     {/* Section 1: resolution */}
+    {gaps.length===0 && ana.conflicts.length===0 ? (
+      <div style={{ display:"flex", alignItems:"center", gap:8, background:"var(--okSoft)", color:C.ok, borderRadius:12, padding:"9px 14px", marginBottom:14, fontWeight:700, fontSize:12.5 }}>✓ لا عيادات مكشوفة ولا تعارضات هذا الشهر</div>
+    ) : (
     <div style={{ ...card(), padding:16, marginBottom:14 }}>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:gaps.length?12:0, flexWrap:"wrap" }}>
         <div style={{ flex:1, fontSize:15, fontWeight:700, minWidth:130 }}>🩺 الحلول المطلوبة {gaps.length>0 && <span style={{ color:C.warn }}>({gaps.length})</span>}</div>
@@ -1472,8 +1502,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
       {ana.conflicts.length>0 && ana.conflicts.map((c,i)=>(
         <div key={"c"+i} style={{ background:"var(--dangerSoft)", border:`1px solid #fecdd3`, borderRadius:10, padding:"9px 11px", marginBottom:7, fontSize:12.5, color:C.err, fontWeight:600 }}>⛔ {c.text}</div>
       ))}
-      {gaps.length===0 && ana.conflicts.length===0 ? <div style={{ background:"var(--okSoft)", color:C.ok, borderRadius:10, padding:"12px", textAlign:"center", fontWeight:700, fontSize:13 }}>✓ لا عيادات مكشوفة هذا الشهر</div> :
-        gaps.map(g=>{ const av=availForGap(g); const best=av.find(a=>a.status==="free"); const pl=pickList(g.ownerId,g.di,g.date,g.period); const own=fd(g.ownerId); return (
+      {gaps.map(g=>{ const av=availForGap(g); const best=av.find(a=>a.status==="free"); const pl=pickList(g.ownerId,g.di,g.date,g.period); const own=fd(g.ownerId); return (
           <div key={gapKey(g)} style={{ background:"var(--warnSoft)", border:"1px solid #fde9c8", borderRadius:10, padding:"10px 11px", marginBottom:7 }}>
             <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:8 }}>
               <div style={{ flex:1, fontSize:12.5, color:"#7c5410", minWidth:140 }}><b>{dmy(g.date)} {DAYS[g.di]}</b> — عيادة د.{own?own.name:"؟"} ({perAr(g.period)}) <span style={{ fontSize:10.5, color:C.muted }}>· {g.reason}</span></div>
@@ -1483,6 +1512,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           </div>
         ); })}
     </div>
+    )}
 
     {/* Section 2: evening schedule */}
     <div style={{ ...card(), padding:16, marginBottom:14 }}>
@@ -1507,8 +1537,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
             <div style={{ flex:1, textAlign:"center", fontWeight:700, fontSize:13 }}>{dmy(weekDays[0])} – {dmy(weekDays[4])}</div>
             <button onClick={()=>shiftWeek(1)} style={{ ...sGhost, padding:"6px 12px", fontSize:12 }}>التالي ›</button>
           </div>
-          {weekDays.map(date=>{ const di=dayIdx(date); const sm=daySummary(date); const docs=((nightData[date]||{}).doctors||[]).map(id=>fd(id)).filter(Boolean); const cls=covLines(date); return (
-            <div key={date} style={{ ...card(), padding:13, marginBottom:10, borderInlineStart:`4px solid ${sm.conflicts?C.err:sm.gaps?C.warn:C.accent}` }}>
+          {weekDays.map(date=>{ const di=dayIdx(date); const sm=daySummary(date); const docs=((nightData[date]||{}).doctors||[]).map(id=>fd(id)).filter(Boolean); const cls=covLines(date); const wst=sm.gaps?"bad":sm.conflicts?"warn":"ok"; const wmatch=dayMatches(date,docs.map(x=>x.name),wst); return (
+            <div key={date} style={{ ...card(), padding:13, marginBottom:10, borderInlineStart:`4px solid ${sm.conflicts?C.err:sm.gaps?C.warn:C.accent}`, opacity:wmatch?1:.35 }}>
               <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
                 <div style={{ flex:1, fontWeight:700, fontSize:13.5 }}>{DAYS[di]} <span style={{ color:C.muted, fontWeight:400, fontSize:12 }}>{dmy(date)}</span></div>
                 <button onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }} style={{ ...sGhost, padding:"5px 11px", fontSize:11.5 }}>فتح</button>
@@ -1562,20 +1592,25 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                     <div style={{ fontSize:11, marginTop:2, opacity:.95, lineHeight:1.5, wordBreak:"break-word" }}>{holiday.name}</div>
                     {holiday.onCall!=null && <div style={{ fontSize:10.5, marginTop:5, background:"rgba(255,255,255,.2)", borderRadius:7, padding:"3px 7px", display:"inline-block" }}>🩺 مناوب: د.{fd(holiday.onCall)?.name||"—"}</div>}
                   </div>
-                ); } const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const reqEve=(nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0; const emptyEve=Math.max(0,reqEve-docs.length); const lines=covLines(date); const st=r.gaps.length?"bad":emptyEve>0?"warn":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; return (
-                  <div key={"m"+date} className={"cell "+st+(dragCell===date?" drag":"")}
+                ); } const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const reqEve=(nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0; const emptyEve=Math.max(0,reqEve-docs.length); const lines=covLines(date); const st=r.gaps.length?"bad":emptyEve>0?"warn":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; const match=dayMatches(date,docs.map(x=>x.name),st); return (
+                  <div key={"m"+date} className={"cell "+st+(dragCell===date?" drag":"")+(match?"":" dim")}
                     style={emptyEve>0?{ outline:`2px dashed ${C.warn}`, outlineOffset:-2, background:"var(--warnSoft)" }:undefined}
-                    onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }}
                     onDragOver={e=>{ e.preventDefault(); if(dragCell!==date) setDragCell(date); }}
                     onDragLeave={()=>setDragCell(c=>c===date?null:c)}
                     onDrop={e=>{ e.preventDefault(); setDragCell(null); const id=+e.dataTransfer.getData("text"); if(id) assignEvening(date,id); }}>
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                       <span className="dn" style={isT?{ background:C.primary, color:"#fff" }:undefined}>{day}</span>
-                      {st && <span style={{ width:9, height:9, borderRadius:"50%", background:st==="bad"?C.err:st==="warn"?C.warn:C.ok }} />}
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        {st && <span style={{ width:9, height:9, borderRadius:"50%", background:st==="bad"?C.err:st==="warn"?C.warn:C.ok }} />}
+                        <button onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }} title="التفاصيل الكاملة لليوم" style={{ background:"rgba(0,0,0,.05)", border:"none", borderRadius:7, width:22, height:22, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:C.sub, fontSize:12 }}>⋯</button>
+                      </div>
                     </div>
-                    {docs.map(d=><div key={d.id} className="cchip" style={{ display:"inline-flex", alignItems:"center", gap:5 }}><span className="d" style={{ background:d.color }}></span>د.{d.name}<button onClick={e=>{ e.stopPropagation(); toggleEvening(date,d.id); }} title="إزالة" style={{ background:"none", border:"none", color:"inherit", opacity:.6, cursor:"pointer", fontSize:13, lineHeight:1, padding:"0 0 0 2px" }}>×</button></div>)}
-                    {emptyEve>0 && <div style={{ display:"inline-flex", alignItems:"center", gap:4, marginTop:4, background:"#fff", border:`1px solid ${C.warn}`, color:C.warn, borderRadius:20, padding:"2px 8px", fontSize:10.5, fontWeight:800 }}>🌙 {emptyEve} فارغة</div>}
-                    {lines.map((t,i)=><div key={i} style={{ fontSize:10.5, color:"var(--primary-d)", background:"#EFFAFB", border:"1px solid #D7EEF1", borderRadius:7, padding:"4px 7px", marginTop:4, lineHeight:1.55, whiteSpace:"normal", wordBreak:"break-word" }}>🔄 {t}</div>)}
+                    {docs.map(d=><div key={d.id} className="cchip"><span className="d" style={{ background:d.color }}></span>د.{d.name}<button onClick={()=>toggleEvening(date,d.id)} title="إزالة" style={{ background:"none", border:"none", color:"inherit", opacity:.6, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 0 0 2px" }}>×</button></div>)}
+                    {emptyEve>0 && <select onChange={e=>{ const v=+e.target.value; if(v) assignEvening(date,v); }} defaultValue="" style={{ marginTop:2, width:"100%", fontSize:11.5, fontWeight:700, color:C.warn, background:"#fff", border:`1.5px dashed ${C.warn}`, borderRadius:9, padding:"7px 8px" }}>
+                      <option value="">+ إضافة طبيب ({emptyEve} فارغ)</option>
+                      {quickAddOptions(date,di,docs.map(x=>x.id)).map(({d,note})=><option key={d.id} value={d.id}>د.{d.name} — {note}</option>)}
+                    </select>}
+                    {lines.map((t,i)=><div key={i} style={{ fontSize:11, color:"var(--primary-d)", background:"#EFFAFB", border:"1px solid #D7EEF1", borderRadius:7, padding:"5px 8px", marginTop:2, lineHeight:1.55, whiteSpace:"normal", wordBreak:"break-word" }}>🔄 {t}</div>)}
                   </div>
                 ); })}
               </div>
@@ -1603,19 +1638,24 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                   <div style={{ fontSize:11, marginTop:2, opacity:.95, lineHeight:1.5, wordBreak:"break-word" }}>{holiday.name}</div>
                   {holiday.onCall!=null && <div style={{ fontSize:10.5, marginTop:5, background:"rgba(255,255,255,.2)", borderRadius:7, padding:"3px 7px", display:"inline-block" }}>🩺 مناوب: د.{fd(holiday.onCall)?.name||"—"}</div>}
                 </div>
-              ); } const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const reqEve=(nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0; const emptyEve=Math.max(0,reqEve-docs.length); const st=r.gaps.length?"bad":emptyEve>0?"warn":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; return (
-                <div key={date} className={"cell "+st+(dragCell===date?" drag":"")}
+              ); } const nd=nightData[date]||{}; const docs=(nd.doctors||[]).map(id=>fd(id)).filter(Boolean); const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const reqEve=(nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0; const emptyEve=Math.max(0,reqEve-docs.length); const st=r.gaps.length?"bad":emptyEve>0?"warn":r.conflicts.length?"warn":docs.length?"ok":""; const isT=date===today; const match=dayMatches(date,docs.map(x=>x.name),st); return (
+                <div key={date} className={"cell "+st+(dragCell===date?" drag":"")+(match?"":" dim")}
                   style={emptyEve>0?{ outline:`2px dashed ${C.warn}`, outlineOffset:-2, background:"var(--warnSoft)" }:undefined}
-                  onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }}
                   onDragOver={e=>{ e.preventDefault(); if(dragCell!==date) setDragCell(date); }}
                   onDragLeave={()=>setDragCell(c=>c===date?null:c)}
                   onDrop={e=>{ e.preventDefault(); setDragCell(null); const id=+e.dataTransfer.getData("text"); if(id) assignEvening(date,id); }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                     <span className="dn" style={isT?{ background:C.primary, color:"#fff" }:undefined}>{day}</span>
-                    {st && <span style={{ width:9, height:9, borderRadius:"50%", background:st==="bad"?C.err:st==="warn"?C.warn:C.ok }} />}
+                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      {st && <span style={{ width:9, height:9, borderRadius:"50%", background:st==="bad"?C.err:st==="warn"?C.warn:C.ok }} />}
+                      <button onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }} title="التفاصيل الكاملة لليوم" style={{ background:"rgba(0,0,0,.05)", border:"none", borderRadius:7, width:22, height:22, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:C.sub, fontSize:12 }}>⋯</button>
+                    </div>
                   </div>
-                  {docs.map(d=><div key={d.id} className="cchip" style={{ display:"inline-flex", alignItems:"center", gap:5 }}><span className="d" style={{ background:d.color }}></span>د.{d.name}<button onClick={e=>{ e.stopPropagation(); toggleEvening(date,d.id); }} title="إزالة" style={{ background:"none", border:"none", color:"inherit", opacity:.6, cursor:"pointer", fontSize:13, lineHeight:1, padding:"0 0 0 2px" }}>×</button></div>)}
-                  {emptyEve>0 && <div style={{ display:"inline-flex", alignItems:"center", gap:4, marginTop:4, background:"#fff", border:`1px solid ${C.warn}`, color:C.warn, borderRadius:20, padding:"2px 8px", fontSize:10.5, fontWeight:800 }}>🌙 {emptyEve} فارغة</div>}
+                  {docs.map(d=><div key={d.id} className="cchip"><span className="d" style={{ background:d.color }}></span>د.{d.name}<button onClick={()=>toggleEvening(date,d.id)} title="إزالة" style={{ background:"none", border:"none", color:"inherit", opacity:.6, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 0 0 2px" }}>×</button></div>)}
+                  {emptyEve>0 && <select onChange={e=>{ const v=+e.target.value; if(v) assignEvening(date,v); }} defaultValue="" style={{ marginTop:2, width:"100%", fontSize:11.5, fontWeight:700, color:C.warn, background:"#fff", border:`1.5px dashed ${C.warn}`, borderRadius:9, padding:"7px 8px" }}>
+                    <option value="">+ إضافة طبيب ({emptyEve} فارغ)</option>
+                    {quickAddOptions(date,di,docs.map(x=>x.id)).map(({d,note})=><option key={d.id} value={d.id}>د.{d.name} — {note}</option>)}
+                  </select>}
                 </div>
               ); })}
             </div>
@@ -1644,11 +1684,14 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                   <div style={{ fontSize:11.5, fontWeight:800, marginTop:6, lineHeight:1.5 }}>عطلة رسمية</div>
                   <div style={{ fontSize:11, marginTop:2, opacity:.95, lineHeight:1.5, wordBreak:"break-word" }}>{holiday.name}</div>
                 </div>
-              ); } const lines=covLines(date); const isT=date===today; return (
-                <div key={"cov"+date} className="cell" style={{ cursor:"pointer" }} onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }}>
+              ); } const lines=covLines(date); const isT=date===today; const match=dayMatches(date,[],lines.length>0?"warn":"ok"); return (
+                <div key={"cov"+date} className={"cell"+(match?"":" dim")}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                     <span className="dn" style={isT?{ background:C.primaryD, color:"#fff" }:undefined}>{day}</span>
-                    {lines.length>0 && <span style={{ fontSize:10, fontWeight:800, color:"#fff", background:C.primaryD, borderRadius:20, padding:"1px 8px" }}>{lines.length}</span>}
+                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      {lines.length>0 && <span style={{ fontSize:10, fontWeight:800, color:"#fff", background:C.primaryD, borderRadius:20, padding:"1px 8px" }}>{lines.length}</span>}
+                      <button onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }} title="إدارة التغطيات لليوم" style={{ background:"rgba(0,0,0,.05)", border:"none", borderRadius:7, width:22, height:22, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:C.sub, fontSize:12 }}>⋯</button>
+                    </div>
                   </div>
                   {lines.length===0 ? <div style={{ fontSize:11, color:C.muted, marginTop:6 }}>—</div> :
                     lines.map((t,i)=><div key={i} style={{ fontSize:10.5, color:"var(--primary-d)", background:"#EFFAFB", border:"1px solid #D7EEF1", borderRadius:7, padding:"4px 7px", marginTop:4, lineHeight:1.55, whiteSpace:"normal", wordBreak:"break-word" }}>🔄 {t}</div>)}
@@ -1770,6 +1813,8 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
   const sorted = leaves.slice().sort((a,b)=>b.start.localeCompare(a.start));
   const [open,setOpen] = useState(()=>new Set());
   const toggle = id => setOpen(o=>{ const n=new Set(o); n.has(id)?n.delete(id):n.add(id); return n; });
+  const [openMonths,setOpenMonths] = useState(()=>new Set([today.slice(0,7)]));
+  const toggleMonth = key => setOpenMonths(o=>{ const n=new Set(o); n.has(key)?n.delete(key):n.add(key); return n; });
 
   return <div className="fade">
     <div style={{ ...card(), padding:16, marginBottom:16 }}>
@@ -1787,7 +1832,22 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
     </div>
 
     {sorted.length===0 ? <Empty icon="🏖" title="لا إجازات مسجّلة" /> :
-      <div className="grid-cards">{sorted.map(l=>{ const d=fd(l.doctorId); if(!d) return null;
+      (()=>{
+        const groups=[]; const byKey={};
+        sorted.forEach(l=>{ const k=l.start.slice(0,7); if(!byKey[k]){ byKey[k]={ key:k, items:[] }; groups.push(byKey[k]); } byKey[k].items.push(l); });
+        const curKey=today.slice(0,7);
+        return groups.map(({key,items})=>{
+          const [y,m]=key.split("-"); const label=`${MONTHS[+m-1]} ${y}`;
+          const isOpen = openMonths.has(key);
+          return <div key={key} style={{ marginBottom:14 }}>
+            <div onClick={()=>toggleMonth(key)} style={{ display:"flex", alignItems:"center", gap:10, cursor:"pointer", padding:"10px 14px", borderRadius:12, background:key===curKey?"var(--primarySoft)":"var(--surface2)", border:`1px solid ${key===curKey?C.primary:C.line}`, marginBottom:isOpen?10:0 }}>
+              <span style={{ fontWeight:800, fontSize:14, color:key===curKey?C.primaryD:C.text }}>{label}</span>
+              {key===curKey && <span style={{ fontSize:10, fontWeight:700, background:C.primary, color:"#fff", borderRadius:20, padding:"2px 8px" }}>الحالي</span>}
+              <span style={{ fontSize:11.5, color:C.muted }}>{items.length} إجازة</span>
+              <span style={{ flex:1 }} />
+              <span style={{ color:C.muted, fontSize:12 }}>{isOpen?"▲":"▼"}</span>
+            </div>
+            {isOpen && <div className="grid-cards">{items.map(l=>{ const d=fd(l.doctorId); if(!d) return null;
         // impact
         const clinics=[],carried=[],evening=[];
         const s=new Date(l.start),e=new Date(l.end);
@@ -1798,7 +1858,7 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
           coverages.forEach(cv=>{ if(cv.date===ds&&cv.coverDoctorId===d.id) carried.push({ds,p:cv.period}); });
         }
         const uncovered = l.clinicClosed!==false?0:clinics.filter(c=>!c.cov).length;
-        const isOpen = open.has(l.id);
+        const isOpenCard = open.has(l.id);
         const chip = l.clinicClosed!==false ? {t:"العيادة مغلقة", bg:"var(--surface2)", fg:C.sub}
           : uncovered>0 ? {t:`مكشوف ${uncovered}`, bg:"var(--dangerSoft)", fg:C.err}
           : {t:"مغطّاة ✓", bg:"var(--okSoft)", fg:C.ok};
@@ -1816,9 +1876,9 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
                 { icon:"🗑", label:"حذف الإجازة", danger:true, onClick:()=>{ if(confirm("حذف هذه الإجازة؟")) del(l.id); } },
               ]} />
             </span>
-            <span style={{ color:C.muted, fontSize:11 }}>{isOpen?"▲":"▼"}</span>
+            <span style={{ color:C.muted, fontSize:11 }}>{isOpenCard?"▲":"▼"}</span>
           </div>
-          {isOpen && (()=>{ 
+          {isOpenCard && (()=>{ 
             const md = monthDays(+l.start.split("-")[0], +l.start.split("-")[1]-1).map(x=>x.date);
             const loadOf = id => doctorSessions(doctors.find(x=>x.id===id), md, nightData, coverages, leaves).total;
             const pickFor = (wi,ds,period) => getAvailable(doctors,[d.id],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
@@ -1853,6 +1913,9 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
           </div>; })()}
         </div>;
       })}</div>}
+          </div>;
+        });
+      })()}
   </div>;
 }
 
@@ -2752,9 +2815,14 @@ function App() {
       <div className="topbar">
         <button className="icobtn menubtn" onClick={()=>setSbOpen(true)} title="القائمة"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
         <button className="icobtn" onClick={()=>setCollapsed(c=>!c)} title="تصغير القائمة"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 4v16M4 8l-3 4 3 4"/></svg></button>
-        <div style={{ flex:1, minWidth:0 }}>
-          <h1 style={{ margin:0, fontSize:17, fontWeight:700, color:"var(--ink)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{cur?cur[1]:""}</h1>
-          <p style={{ margin:"1px 0 0", fontSize:12, color:C.muted, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{subt[page]}</p>
+        <div style={{ flex:1, minWidth:0, display:"flex", alignItems:"center", gap:9 }}>
+          <div style={{ minWidth:0 }}>
+            <h1 style={{ margin:0, fontSize:17, fontWeight:700, color:"var(--ink)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{cur?cur[1]:""}</h1>
+            <p style={{ margin:"1px 0 0", fontSize:12, color:C.muted, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{subt[page]}</p>
+          </div>
+          {pending && <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} title="لديك تغييرات غير معتمدة — اضغط للانتقال للأعلى" style={{ display:"inline-flex", alignItems:"center", gap:5, background:"var(--warnSoft)", border:`1px solid ${C.warn}`, color:C.warn, borderRadius:20, padding:"4px 10px", fontSize:11, fontWeight:800, cursor:"pointer", flexShrink:0, fontFamily:"inherit" }}>
+            <span style={{ width:7, height:7, borderRadius:"50%", background:C.warn, display:"inline-block" }} />غير معتمد
+          </button>}
         </div>
         <div className="qstats">
           <span className="qchip"><i className="dot" style={{ background:C.ok }}></i>تغطيات <b>{coverages.length}</b></span>
@@ -2770,7 +2838,7 @@ function App() {
         <button className="icobtn" onClick={logout} title="تسجيل الخروج" style={{ color:C.err, borderColor:"#fecaca" }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></button>
       </div>
       <div className="content">
-        {pending && <div style={{ position:"sticky", top:74, zIndex:20, background:"var(--warnSoft)", border:`1px solid ${C.warn}`, borderRadius:14, padding:"12px 14px", marginBottom:14, boxShadow:"0 8px 22px rgba(224,152,43,.18)" }}>
+        {pending && <div style={{ background:"var(--warnSoft)", border:`1px solid ${C.warn}`, borderRadius:14, padding:"12px 14px", marginBottom:14, boxShadow:"0 8px 22px rgba(224,152,43,.18)" }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom: diffList.length?9:0 }}>
             <span style={{ fontSize:13, fontWeight:800, color:C.warn }}>🟡 تغييرات غير معتمدة</span>
             <span style={{ fontSize:11.5, color:C.sub }}>الإحصائيات تعرض آخر نسخة معتمدة حتى الاعتماد</span>
@@ -2789,17 +2857,6 @@ function App() {
       </div>
     </div>
     <div className={"scrim2"+(sbOpen?" show":"")} onClick={()=>setSbOpen(false)} />
-    {pending && role!=="doctor" && <div style={{ position:"fixed", insetInlineStart:18, bottom:18, zIndex:60, display:"flex", flexDirection:"column", alignItems:"flex-start", gap:8 }}>
-      <div style={{ display:"flex", alignItems:"center", gap:8, background:"var(--warnSoft)", color:C.warn, border:`1px solid ${C.warn}`, borderRadius:20, padding:"5px 13px", fontSize:12, fontWeight:800, boxShadow:"0 6px 18px rgba(224,152,43,.25)" }}>
-        🟡 لديك تغييرات غير معتمدة
-      </div>
-      {canApprove
-        ? <button onClick={approve} style={{ display:"inline-flex", alignItems:"center", gap:9, background:`linear-gradient(135deg, ${C.primaryD}, ${C.primary})`, color:"#fff", border:"none", borderRadius:16, padding:"13px 22px", fontSize:14.5, fontWeight:800, fontFamily:"inherit", cursor:"pointer", boxShadow:"0 12px 30px rgba(15,163,154,.4)" }}>
-            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M20 6L9 17l-5-5"/></svg>
-            اعتماد رسمي{cloudCfg()?" + نشر للرابط الحي":""}
-          </button>
-        : <div style={{ background:"var(--surface)", border:`1px solid ${C.warn}`, color:C.warn, borderRadius:14, padding:"10px 16px", fontSize:12.5, fontWeight:700, boxShadow:C.shadow }}>بانتظار اعتماد رئيس القسم</div>}
-    </div>}
     <Toast toast={toast} />
   </div>;
 }
