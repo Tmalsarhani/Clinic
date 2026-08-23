@@ -1208,6 +1208,11 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
         const usage={}, thisMoUsage={}; doctors.forEach(d=>{ usage[d.id]=0; thisMoUsage[d.id]=0; });
         priorYearDates.forEach(dt=>((nd[dt]||{}).doctors||[]).forEach(id=>usage[id]=(usage[id]||0)+1));
         monthDates.forEach(dt=>((n[dt]||{}).doctors||[]).forEach(id=>{ usage[id]=(usage[id]||0)+1; thisMoUsage[id]=(thisMoUsage[id]||0)+1; }));
+        // ── كسر التعادل بالتناوب لا بالأبجدية: عند تساوي كل معايير العدالة أعلاه، من المهم عدم اختيار نفس الطبيب دائماً بسبب ترتيب اسمه ──
+        // (كان الترتيب الأبجدي يفوز في كل تعادل، فيتكرر نفس الاسم كل شهر) — الآن يُفضَّل مَن مرّت عليه مدة أطول منذ آخر مناوبة له
+        const lastAssigned={}; doctors.forEach(d=>lastAssigned[d.id]=null);
+        Object.keys(nd).sort().forEach(dt=>{ ((nd[dt]||{}).doctors||[]).forEach(id=>{ lastAssigned[id]=dt; }); });
+        const recency = d => lastAssigned[d.id] ? new Date(lastAssigned[d.id]).getTime() : -Infinity; // لم يُناوب من قبل = أولوية قصوى
         days.forEach(({date,di})=>{
           const need=needOf(date); if(need<=0) return;
           const cur=(n[date]?.doctors)?[...n[date].doctors]:[];
@@ -1217,14 +1222,15 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           const mornFreeNext = d => nDi<0 ? true : !DIRECT_SLOTS.includes(getSlot(d,nDi,"am")); // صباح الغد فارغ؟
           const base = d => !((d.nightDays||[]).length>0)                              // أصحاب المسائي الثابت لا يدخلون الإضافي
                           && !cur.includes(d.id) && !onLeave(d,date,leaves) && !(d.blockedDays||[]).includes(di);
-          const rank = (a,b)=> (usage[a.id]-usage[b.id])                               // ① الأقل مناوبات (هذا الشهر + الشهر الماضي معاً)
+          const rank = (a,b)=> (usage[a.id]-usage[b.id])                               // ① الأقل مناوبات (هذه السنة)
                             || ((mornFreeNext(a)?0:1)-(mornFreeNext(b)?0:1))            // ② يُفضّل من صباح غده فارغ
                             || ((loadMap[a.id]||0)-(loadMap[b.id]||0))                  // ③ الأقل عبئاً نهارياً
+                            || (recency(a)-recency(b))                                  // ④ من مرّت عليه مدة أطول منذ آخر مناوبة (لا الأبجدية)
                             || a.name.localeCompare(b.name,"ar");
           const freeT = doctors.filter(d=>base(d)&&!prevEve.includes(d.id)).sort(rank);                      // متاح (لم يعمل مساء أمس)
           const commT = allowCommitted ? doctors.filter(d=>base(d)&&prevEve.includes(d.id)).sort(rank) : []; // عمل مساء أمس (بموافقة)
           const queue=[...freeT, ...commT];
-          while(cur.length<need && queue.length){ const pk=queue.shift(); cur.push(pk.id); usage[pk.id]++; thisMoUsage[pk.id]++; }
+          while(cur.length<need && queue.length){ const pk=queue.shift(); cur.push(pk.id); usage[pk.id]++; thisMoUsage[pk.id]++; lastAssigned[pk.id]=date; }
           if(cur.length<need) leftover += (need-cur.length);
           n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur, eveningSlots:need };
         });
