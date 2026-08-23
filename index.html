@@ -1146,7 +1146,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const gaps = ana.gaps.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.period.localeCompare(b.period));
   const gapKey = g => `${g.date}|${g.period}|${g.ownerId}`;
   const monthDates = days.map(x=>x.date);
-  const loadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>{ const s=doctorSessions(d, monthDates, nightData, coverages, leaves); m[d.id]=s.total; }); return m; }, [mo,doctors,nightData,coverages,leaves]);
+  const yearDates = useMemo(()=>{ const out=[]; for(let m=0;m<=mo.m;m++) out.push(...monthDays(mo.y,m).map(x=>x.date)); return out; }, [mo.y,mo.m]);
+  const loadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>{ const s=doctorSessions(d, yearDates, nightData, coverages, leaves); m[d.id]=s.total; }); return m; }, [mo,doctors,nightData,coverages,leaves,yearDates]);
   const eveLoadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>m[d.id]=0); monthDates.forEach(dt=>((nightData[dt]||{}).doctors||[]).forEach(id=>{ m[id]=(m[id]||0)+1; })); return m; }, [mo,doctors,nightData]);
   const rankAvail = arr => arr.filter(a=>a.status!=="leave").map(a=>({ ...a, load:loadMap[a.doc.id]||0 })).sort((a,b)=> (a.status==="free"?0:1)-(b.status==="free"?0:1) || a.load-b.load);
   const availForGap = g => rankAvail(getAvailable(doctors,[g.ownerId],g.di,g.date,g.period,leaves,nightData,{},coverages));
@@ -1200,12 +1201,12 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     const planFill = (allowCommitted) => {
       setNight(nd=>{
         const n={...nd}; let leftover=0;
-        // ── عدالة عبر الأشهر: أول ما يُحسب هو عدد مناوبات كل طبيب في الشهر الماضي، فيبدأ منه لا من صفر ──
-        // فالطبيب الذي لم يُناوب الشهر الماضي يُعطى أولوية هذا الشهر تلقائياً (نفس منطق "الأقل عبئاً" لكن ممتد لشهرين)
-        const prevMoDate = new Date(mo.y, mo.m-1, 1);
-        const prevMonthDates = monthDays(prevMoDate.getFullYear(), prevMoDate.getMonth()).map(x=>x.date);
+        // ── عدالة سنوية: يُحسب مجموع مناوبات كل طبيب منذ بداية السنة (يناير) وحتى الشهر الماضي — يبدأ من صفر مع كل سنة جديدة ──
+        // فالطبيب الذي ناوب أقل منذ بداية السنة يُعطى أولوية هذا الشهر تلقائياً (نفس منطق "الأقل عبئاً" لكن على مستوى السنة)
+        const priorMonthsInYear = []; for(let m=0; m<mo.m; m++) priorMonthsInYear.push(m);
+        const priorYearDates = priorMonthsInYear.flatMap(m=>monthDays(mo.y,m).map(x=>x.date));
         const usage={}, thisMoUsage={}; doctors.forEach(d=>{ usage[d.id]=0; thisMoUsage[d.id]=0; });
-        prevMonthDates.forEach(dt=>((nd[dt]||{}).doctors||[]).forEach(id=>usage[id]=(usage[id]||0)+1));
+        priorYearDates.forEach(dt=>((nd[dt]||{}).doctors||[]).forEach(id=>usage[id]=(usage[id]||0)+1));
         monthDates.forEach(dt=>((n[dt]||{}).doctors||[]).forEach(id=>{ usage[id]=(usage[id]||0)+1; thisMoUsage[id]=(thisMoUsage[id]||0)+1; }));
         days.forEach(({date,di})=>{
           const need=needOf(date); if(need<=0) return;
