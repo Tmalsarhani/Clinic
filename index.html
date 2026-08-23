@@ -1200,8 +1200,13 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     const planFill = (allowCommitted) => {
       setNight(nd=>{
         const n={...nd}; let leftover=0;
-        const usage={}; doctors.forEach(d=>usage[d.id]=0);
-        monthDates.forEach(dt=>((n[dt]||{}).doctors||[]).forEach(id=>usage[id]=(usage[id]||0)+1));
+        // ── عدالة عبر الأشهر: أول ما يُحسب هو عدد مناوبات كل طبيب في الشهر الماضي، فيبدأ منه لا من صفر ──
+        // فالطبيب الذي لم يُناوب الشهر الماضي يُعطى أولوية هذا الشهر تلقائياً (نفس منطق "الأقل عبئاً" لكن ممتد لشهرين)
+        const prevMoDate = new Date(mo.y, mo.m-1, 1);
+        const prevMonthDates = monthDays(prevMoDate.getFullYear(), prevMoDate.getMonth()).map(x=>x.date);
+        const usage={}, thisMoUsage={}; doctors.forEach(d=>{ usage[d.id]=0; thisMoUsage[d.id]=0; });
+        prevMonthDates.forEach(dt=>((nd[dt]||{}).doctors||[]).forEach(id=>usage[id]=(usage[id]||0)+1));
+        monthDates.forEach(dt=>((n[dt]||{}).doctors||[]).forEach(id=>{ usage[id]=(usage[id]||0)+1; thisMoUsage[id]=(thisMoUsage[id]||0)+1; }));
         days.forEach(({date,di})=>{
           const need=needOf(date); if(need<=0) return;
           const cur=(n[date]?.doctors)?[...n[date].doctors]:[];
@@ -1211,18 +1216,18 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           const mornFreeNext = d => nDi<0 ? true : !DIRECT_SLOTS.includes(getSlot(d,nDi,"am")); // صباح الغد فارغ؟
           const base = d => !((d.nightDays||[]).length>0)                              // أصحاب المسائي الثابت لا يدخلون الإضافي
                           && !cur.includes(d.id) && !onLeave(d,date,leaves) && !(d.blockedDays||[]).includes(di);
-          const rank = (a,b)=> (usage[a.id]-usage[b.id])                               // ① جولات متساوية: الأقل أخذاً للإضافي
+          const rank = (a,b)=> (usage[a.id]-usage[b.id])                               // ① الأقل مناوبات (هذا الشهر + الشهر الماضي معاً)
                             || ((mornFreeNext(a)?0:1)-(mornFreeNext(b)?0:1))            // ② يُفضّل من صباح غده فارغ
                             || ((loadMap[a.id]||0)-(loadMap[b.id]||0))                  // ③ الأقل عبئاً نهارياً
                             || a.name.localeCompare(b.name,"ar");
           const freeT = doctors.filter(d=>base(d)&&!prevEve.includes(d.id)).sort(rank);                      // متاح (لم يعمل مساء أمس)
           const commT = allowCommitted ? doctors.filter(d=>base(d)&&prevEve.includes(d.id)).sort(rank) : []; // عمل مساء أمس (بموافقة)
           const queue=[...freeT, ...commT];
-          while(cur.length<need && queue.length){ const pk=queue.shift(); cur.push(pk.id); usage[pk.id]++; }
+          while(cur.length<need && queue.length){ const pk=queue.shift(); cur.push(pk.id); usage[pk.id]++; thisMoUsage[pk.id]++; }
           if(cur.length<need) leftover += (need-cur.length);
           n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur, eveningSlots:need };
         });
-        const counts=doctors.filter(d=>!((d.nightDays||[]).length>0)).map(d=>usage[d.id]||0);
+        const counts=doctors.filter(d=>!((d.nightDays||[]).length>0)).map(d=>thisMoUsage[d.id]||0);
         fillRef.current={ leftover, report: counts.length?{min:Math.min(...counts),max:Math.max(...counts)}:null };
         return n;
       });
@@ -1281,6 +1286,16 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const clearEvening = () => { if(!confirm("مسح الجدول المسائي وتغطياته المسائية لهذا الشهر؟\n(تبقى تغطيات الإجازات والإجازات كما هي)")) return; setNight(nd=>{ const n={...nd}; Object.keys(n).forEach(k=>{ if(k.startsWith(pre)) delete n[k]; }); return n; }); setCoverages(cs=>cs.filter(c=>!(String(c.date).startsWith(pre) && (c.reason==="evening"||c.reason==="post_evening")))); logAudit&&logAudit("مسح الجدول المسائي وتغطياته المسائية"); setClrOpen(false); showToast("تم مسح المسائي وتغطياته المسائية"); };
   const clearMonthAll = () => { if(!confirm("مسح كامل الشهر: كل المسائي وكل التغطيات؟\n(الإجازات تبقى محفوظة)")) return; setNight(nd=>{ const n={...nd}; Object.keys(n).forEach(k=>{ if(k.startsWith(pre)) delete n[k]; }); return n; }); setCoverages(cs=>cs.filter(c=>!String(c.date).startsWith(pre))); logAudit&&logAudit("مسح كامل الشهر (مع إبقاء الإجازات)"); setClrOpen(false); showToast("تم مسح كامل الشهر (الإجازات محفوظة)"); };
   const clearMonth = clearMonthAll;
+  const resetMonthFull = () => {
+    if(!confirm("إعادة ضبط الشهر بالكامل: مسح المسائي، التغطيات، والأعداد المخصصة لكل يوم — للبدء من صفر تماماً؟\n(الإجازات تبقى محفوظة)")) return;
+    setNight(nd=>{ const n={...nd}; Object.keys(n).forEach(k=>{ if(k.startsWith(pre)) delete n[k]; }); return n; });
+    setCoverages(cs=>cs.filter(c=>!String(c.date).startsWith(pre)));
+    setDayReq(r=>{ const n={...r}; Object.keys(n).forEach(k=>{ if(k.startsWith(pre)) delete n[k]; }); return n; });
+    logAudit&&logAudit("إعادة ضبط الشهر بالكامل (مسائي + تغطيات + أعداد مخصصة، مع إبقاء الإجازات)");
+    setClrOpen(false);
+    setShowSetup(true);
+    showToast("تم إعادة ضبط الشهر بالكامل — حدّد الأعداد من جديد بالأسفل");
+  };
 
   const openPrint = (title, body) => { const now=new Date().toLocaleString("ar",{year:"numeric",month:"long",day:"numeric"}); __PW__(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet"><style>*{box-sizing:border-box}body{font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif;margin:0;color:#334155;background:#f1f5f9;line-height:1.6}.wrap{max-width:1080px;margin:0 auto;padding:22px;background:#fff}.hdr{background:linear-gradient(120deg,${C.primaryD},${C.primary} 70%,${C.accent});color:#fff;padding:20px 24px;border-radius:18px;margin-bottom:18px;display:flex;align-items:center;gap:14px;box-shadow:0 10px 30px rgba(15,118,110,.18)}.hdr .lg{width:46px;height:46px;border-radius:13px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;border:1px solid rgba(255,255,255,.3)}.hdr h1{margin:0;font-size:19px;font-weight:800;letter-spacing:-.3px}.hdr .sub{font-size:11px;opacity:.92;margin-top:3px}h2{font-size:14px;color:${C.primaryD};margin:20px 0 9px;font-weight:800;display:flex;align-items:center;gap:8px}h2::before{content:"";width:9px;height:9px;border-radius:50%;background:${C.accent};display:inline-block}.pb{page-break-before:always}table{width:100%;border-collapse:separate;border-spacing:0;margin-top:6px;border:1px solid #e8eef3;border-radius:13px;overflow:hidden}thead th{background:linear-gradient(135deg,${C.primary},${C.accent});color:#fff;font-weight:700;padding:10px 11px;text-align:center;font-size:12px}tbody td{padding:9px 11px;text-align:center;border-top:1px solid #eef3f8;font-size:12.5px}tbody tr:nth-child(even){background:#f8fbfd}p{font-size:13px;line-height:1.8;color:#475569}.cal{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:8px}.wd{background:linear-gradient(135deg,${C.primary},${C.accent});color:#fff;text-align:center;font-weight:700;padding:8px 0;border-radius:9px;font-size:12.5px;letter-spacing:.3px}.cell{border:1px solid #e8eef3;border-radius:12px;padding:8px 9px;min-height:96px;background:#fff;overflow-wrap:anywhere;word-break:break-word}.cell.empty{border:none;background:transparent}.dnum{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#eef6f8;color:${C.primaryD};font-weight:800;font-size:12px;margin-bottom:7px}.eve{color:#6d28d9;font-weight:700;font-size:11px;margin-bottom:5px;line-height:1.5;background:#f5f3ff;border:1px solid #e9e2fb;border-radius:7px;padding:3px 7px;overflow-wrap:anywhere}.cov{color:#0e7490;font-size:10.5px;margin-bottom:5px;line-height:1.55;background:#effafb;border:1px solid #d7eef1;border-radius:7px;padding:3px 7px;overflow-wrap:anywhere}.dim{color:#cbd5e1;font-size:11px}@media print{body{background:#fff}.wrap{padding:0}.hdr{box-shadow:none}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4 landscape;margin:10mm}}</style></head><body><div class="wrap"><div class="hdr"><div class="lg">ط</div><div><h1>${title}</h1><div class="sub">قسم الأسنان · ${now}</div></div></div>${body}</div><script>setTimeout(function(){window.print();},700);<\/script></body></html>`); };
   const covText = date => { const cv=(nightData[date]||{}).coverages||{}; const a=["am","pm","nextAm"].flatMap(s=>(cv[s]||[]).map(id=>perAr(s)+": "+(fd(id)?.name||""))); const b=coverages.filter(c=>c.date===date).map(c=>perAr(c.period)+": "+(fd(c.coverDoctorId)?.name||"")); return a.concat(b).join(" · ")||"—"; };
@@ -1433,7 +1448,12 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
               <div style={{ height:1, background:C.line2, margin:"4px 6px" }} />
               <button onClick={clearMonthAll} style={{ display:"block", width:"100%", textAlign:"start", background:"none", border:"none", borderRadius:10, padding:"11px 12px", cursor:"pointer", fontFamily:"inherit" }}>
                 <div style={{ fontSize:13, fontWeight:800, color:C.err }}>🗑 مسح كامل الشهر</div>
-                <div style={{ fontSize:11, color:C.sub, marginTop:2 }}>يحذف كل المسائي وكل التغطيات لهذا الشهر. الإجازات تبقى محفوظة.</div>
+                <div style={{ fontSize:11, color:C.sub, marginTop:2 }}>يحذف كل المسائي وكل التغطيات لهذا الشهر. الإجازات تبقى محفوظة. (الأعداد المخصصة لكل يوم تبقى محفوظة)</div>
+              </button>
+              <div style={{ height:1, background:C.line2, margin:"4px 6px" }} />
+              <button onClick={resetMonthFull} style={{ display:"block", width:"100%", textAlign:"start", background:"none", border:"none", borderRadius:10, padding:"11px 12px", cursor:"pointer", fontFamily:"inherit" }}>
+                <div style={{ fontSize:13, fontWeight:800, color:"#7c2d12" }}>🔄 إعادة ضبط الشهر بالكامل (لإعادة التوزيع من صفر)</div>
+                <div style={{ fontSize:11, color:C.sub, marginTop:2 }}>يمسح المسائي والتغطيات <b>والأعداد المخصصة</b> لكل يوم — يعيد الشهر لحالة "جديد تماماً" ويفتح لوحة تحديد الأعداد تلقائياً. الإجازات تبقى محفوظة.</div>
               </button>
             </div>
           </>}
@@ -2465,8 +2485,73 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd, setting
     }).join("");
     printDoc(`مراجعة جدول القسم الشامل — ${label}`, reportCSS+issueCSS+review+docs, false);
   };
+
+  // ════════ تقارير مركّزة: عدد المناوبات / عدد التغطيات — بكل الأيام، لطبيب معيّن أو كامل القسم ════════
+  const focusCSS = `<style>
+    .sumbar{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 16px}
+    .sumtile{flex:1 1 100px;border-radius:13px;padding:12px 8px;text-align:center;border:1px solid #eef3f8;background:#f4f8fb}
+    .sumtile b{font-size:22px;font-weight:800;display:block;color:${C.primaryD};line-height:1}
+    .sumtile span{font-size:10.5px;color:#64748b;margin-top:4px;display:block}
+    .totrow td{background:#0d1b2a;color:#fff;font-weight:800}
+  </style>`;
+  const printEveningReport = () => {
+    const perDoctorRows = shown.map(d=>{
+      const ev = eveOf(d);
+      const fixedN = ev.filter(dt=>(d.nightDays||[]).includes(dayIdx(dt))).length;
+      const extraN = ev.length - fixedN;
+      return { d, ev, fixedN, extraN };
+    }).sort((a,b)=>b.ev.length-a.ev.length);
+    const totalShifts = perDoctorRows.reduce((a,r)=>a+r.ev.length,0);
+    const summary = `<div class="sumbar">
+      <div class="sumtile"><b>${totalShifts}</b><span>إجمالي المناوبات</span></div>
+      <div class="sumtile"><b>${perDoctorRows.reduce((a,r)=>a+r.fixedN,0)}</b><span>ثابتة</span></div>
+      <div class="sumtile"><b>${perDoctorRows.reduce((a,r)=>a+r.extraN,0)}</b><span>إضافية</span></div>
+      <div class="sumtile"><b>${dates.filter(dt=>((nightData[dt]||{}).doctors||[]).length>0).length}</b><span>أيام فيها مناوبة</span></div>
+    </div>`;
+    const totalsTbl = shown.length>1 ? `<h2>📊 إجمالي المناوبات لكل طبيب (مرتّب تنازلياً)</h2><table><thead><tr><th style="text-align:start">الطبيب</th><th>ثابتة</th><th>إضافية</th><th>الإجمالي</th></tr></thead><tbody>${perDoctorRows.map(r=>`<tr><td style="text-align:start;font-weight:700">د.${r.d.name}</td><td>${r.fixedN}</td><td>${r.extraN}</td><td style="font-weight:800;color:${C.primaryD}">${r.ev.length}</td></tr>`).join("")}<tr class="totrow"><td style="text-align:start">الإجمالي</td><td>${perDoctorRows.reduce((a,r)=>a+r.fixedN,0)}</td><td>${perDoctorRows.reduce((a,r)=>a+r.extraN,0)}</td><td>${totalShifts}</td></tr></tbody></table>` : "";
+    let dayByDay;
+    if(shown.length===1){
+      const r = perDoctorRows[0];
+      dayByDay = r.ev.length ? `<table><thead><tr><th style="width:200px">اليوم والتاريخ</th><th>النوع</th></tr></thead><tbody>${r.ev.map(dt=>{ const fixed=(r.d.nightDays||[]).includes(dayIdx(dt)); return `<tr><td style="font-weight:600">${dmyFull(dt)}</td><td>${fixed?"🌙 مسائي ثابت":"🌙 مسائي إضافي"}</td></tr>`; }).join("")}</tbody></table>` : `<p>لا مناوبات مسائية خلال ${label}</p>`;
+    } else {
+      const rows = dates.map(dt=>{ const docs=((nightData[dt]||{}).doctors||[]).map(id=>fd(id)).filter(Boolean); if(!docs.length) return null; const di=dayIdx(dt); return `<tr><td style="font-weight:600">${dmyFull(dt)}</td><td style="text-align:start">${docs.map(dr=>{ const fixed=(dr.nightDays||[]).includes(di); return `د.${dr.name}${fixed?" (ثابت)":" (إضافي)"}`; }).join("، ")}</td></tr>`; }).filter(Boolean).join("");
+      dayByDay = rows ? `<table><thead><tr><th style="width:170px">اليوم والتاريخ</th><th>الأطباء المناوبون</th></tr></thead><tbody>${rows}</tbody></table>` : `<p>لا مناوبات مسائية خلال ${label}</p>`;
+    }
+    const title = shown.length===1 ? `تقرير المناوبات — د.${shown[0].name} (${label})` : `تقرير المناوبات — كامل القسم (${label})`;
+    printDoc(title, reportCSS+focusCSS+summary+totalsTbl+`<h2>🌙 كل الأيام</h2>`+dayByDay, false);
+  };
+  const printCoverageReport = () => {
+    const perDoctorRows = shown.map(d=>({ d, cv:covsOf(d) })).sort((a,b)=>b.cv.length-a.cv.length);
+    const totalCov = perDoctorRows.reduce((a,r)=>a+r.cv.length,0);
+    const byReason = {};
+    perDoctorRows.forEach(r=>r.cv.forEach(c=>{ const key=coverReasonAr(c.ownerId,c.date,c.reason,leaves); byReason[key]=(byReason[key]||0)+1; }));
+    const summary = `<div class="sumbar">
+      <div class="sumtile"><b>${totalCov}</b><span>إجمالي التغطيات</span></div>
+      <div class="sumtile"><b>${dates.filter(dt=>coverages.some(c=>c.date===dt)||Object.values(((nightData[dt]||{}).coverages)||{}).some(a=>a&&a.length)).length}</b><span>أيام فيها تغطية</span></div>
+      ${Object.entries(byReason).slice(0,2).map(([k,v])=>`<div class="sumtile"><b>${v}</b><span>${k}</span></div>`).join("")}
+    </div>`;
+    const totalsTbl = shown.length>1 ? `<h2>📊 إجمالي التغطيات لكل طبيب (مرتّب تنازلياً)</h2><table><thead><tr><th style="text-align:start">الطبيب</th><th>عدد التغطيات</th></tr></thead><tbody>${perDoctorRows.map(r=>`<tr><td style="text-align:start;font-weight:700">د.${r.d.name}</td><td style="font-weight:800;color:${C.primaryD}">${r.cv.length}</td></tr>`).join("")}<tr class="totrow"><td style="text-align:start">الإجمالي</td><td>${totalCov}</td></tr></tbody></table>` : "";
+    let dayByDay;
+    if(shown.length===1){
+      const r = perDoctorRows[0];
+      dayByDay = r.cv.length ? `<table><thead><tr><th style="width:170px">اليوم والتاريخ</th><th>تفاصيل التغطية</th></tr></thead><tbody>${r.cv.map(c=>`<tr><td style="font-weight:600">${dmyFull(c.date)}</td><td style="text-align:start">تغطية ${perFull(c.period)} لـ ${c.ownerId?("د."+(fd(c.ownerId)?.name||"—")):"طبيب المسائي"} — بسبب ${coverReasonAr(c.ownerId,c.date,c.reason,leaves)}</td></tr>`).join("")}</tbody></table>` : `<p>لا تغطيات خلال ${label}</p>`;
+    } else {
+      const rows = [];
+      dates.forEach(dt=>{
+        const items=[];
+        coverages.filter(c=>c.date===dt).forEach(c=>items.push(`د.${fd(c.coverDoctorId)?.name||"—"} ◂ ${c.absentId?("د."+(fd(c.absentId)?.name||"—")):"—"} (${perAr(c.period)})`));
+        const cv=(nightData[dt]||{}).coverages||{};
+        ["am","pm","nextAm"].forEach(sl=>{ (cv[sl]||[]).forEach(id=>items.push(`د.${fd(id)?.name||"—"} ◂ طبيب المسائي (${perAr(sl)})`)); });
+        if(items.length) rows.push(`<tr><td style="font-weight:600">${dmyFull(dt)}</td><td style="text-align:start">${items.join("<br>")}</td></tr>`);
+      });
+      dayByDay = rows.length ? `<table><thead><tr><th style="width:170px">اليوم والتاريخ</th><th>التغطيات (المغطّي ◂ الغائب)</th></tr></thead><tbody>${rows.join("")}</tbody></table>` : `<p>لا تغطيات خلال ${label}</p>`;
+    }
+    const title = shown.length===1 ? `تقرير التغطيات — د.${shown[0].name} (${label})` : `تقرير التغطيات — كامل القسم (${label})`;
+    printDoc(title, reportCSS+focusCSS+summary+totalsTbl+`<h2>🔄 كل الأيام</h2>`+dayByDay, false);
+  };
+
   const printDoctorTimetable = d => {
-    const [y,m] = anchor.split("-"); const Y=+y, Mo=+m-1;
+    const [y,m] = ref.split("-"); const Y=+y, Mo=+m-1;
     const last = new Date(Y, Mo+1, 0).getDate();
     const WK = ["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
     const TIMES = { am:"08:00–12:00", pm:"13:00–16:00", nextAm:"08:00–12:00 (الغد)", eve:"16:00–23:00" };
@@ -2518,6 +2603,19 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd, setting
         <option value="all">كل الأطباء</option>
         {doctors.map(d=><option key={d.id} value={d.id}>د.{d.name}</option>)}
       </select>
+      <div style={{ fontSize:11, color:C.muted, marginBottom:8 }}>التقارير أدناه تُطبَّق على: <b style={{ color:C.primaryD }}>{sel==="all"?"كامل القسم":("د."+(fd(+sel)?.name||""))}</b> — غيّرها من القائمة أعلاه.</div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
+        <button onClick={printEveningReport} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:5, background:"var(--eveSoft)", border:`1px solid #C7BEFB`, borderRadius:12, padding:"13px 8px", cursor:"pointer", fontFamily:"inherit" }}>
+          <span style={{ fontSize:22 }}>🌙</span>
+          <span style={{ fontSize:12.5, fontWeight:800, color:"var(--eve)" }}>تقرير المناوبات</span>
+          <span style={{ fontSize:10, color:C.sub, textAlign:"center" }}>عدد المناوبات + كل الأيام</span>
+        </button>
+        <button onClick={printCoverageReport} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:5, background:"var(--primarySoft)", border:`1px solid ${C.primary}55`, borderRadius:12, padding:"13px 8px", cursor:"pointer", fontFamily:"inherit" }}>
+          <span style={{ fontSize:22 }}>🔄</span>
+          <span style={{ fontSize:12.5, fontWeight:800, color:C.primaryD }}>تقرير التغطيات</span>
+          <span style={{ fontSize:10, color:C.sub, textAlign:"center" }}>عدد التغطيات + كل الأيام</span>
+        </button>
+      </div>
       <button onClick={printAll} style={{ ...sGhost, width:"100%" }}>🖨 طباعة {sel==="all"?"الكل (كل طبيب بصفحة)":"الطبيب المحدد"}</button>
       <button onClick={printDepartment} style={{ ...sBtn(C.primaryD), width:"100%", marginTop:8 }}>🗂 مراجعة جدول القسم الشامل (تعارضات + عيادات مكشوفة + كل طبيب)</button>
     </div>
