@@ -2055,10 +2055,21 @@ function DoctorsPage({ doctors, leaves, nightData, coverages, today, fd, setDoct
 // ════════════════════════════════ STATS ════════════════════════════════
 function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
   const [mode,setMode] = useState("week");
+  const [monthsN,setMonthsN] = useState(2);
   const [anchor,setAnchor] = useState(today);
   const [sel,setSel] = useState(null);
   const [full,setFull] = useState(false);
-  const period = (()=>{ if(mode==="week"){ const t=new Date(anchor); const sun=new Date(t); sun.setDate(t.getDate()-t.getDay()); const dates=[]; for(let i=0;i<5;i++){ const d=new Date(sun); d.setDate(sun.getDate()+i); dates.push(d.toISOString().split("T")[0]); } return { dates, label:`أسبوع ${dmy(dates[0])} ← ${dmy(dates[4])}`, weeks:1 }; } const [y,m]=anchor.split("-"); const dates=monthDays(+y,+m-1).map(x=>x.date); return { dates, label:`${MONTHS[+m-1]} ${y}`, weeks:Math.max(1,Math.round(dates.length/5)) }; })();
+  const period = (()=>{
+    if(mode==="week"){ const t=new Date(anchor); const sun=new Date(t); sun.setDate(t.getDate()-t.getDay()); const dates=[]; for(let i=0;i<5;i++){ const d=new Date(sun); d.setDate(sun.getDate()+i); dates.push(d.toISOString().split("T")[0]); } return { dates, label:`أسبوع ${dmy(dates[0])} ← ${dmy(dates[4])}`, weeks:1 }; }
+    if(mode==="month"){ const [y,m]=anchor.split("-"); const dates=monthDays(+y,+m-1).map(x=>x.date); return { dates, label:`${MONTHS[+m-1]} ${y}`, weeks:Math.max(1,Math.round(dates.length/5)) }; }
+    // multi: N months ending at anchor's month (inclusive)
+    const [y,m]=anchor.split("-"); const Y=+y, M=+m-1;
+    const startAbs = Y*12+M-(monthsN-1);
+    const startY = Math.floor(startAbs/12), startM = ((startAbs%12)+12)%12;
+    const dates=[]; for(let i=0;i<monthsN;i++){ const abs=startAbs+i; const yy=Math.floor(abs/12), mm=((abs%12)+12)%12; dates.push(...monthDays(yy,mm).map(x=>x.date)); }
+    const label = monthsN===12 ? `${Y} (١٢ شهر)` : `${MONTHS[startM]} ${startY} ← ${MONTHS[M]} ${Y}`;
+    return { dates, label, weeks:Math.max(1,Math.round(dates.length/5)) };
+  })();
   const md = period.dates;
   const workdaysN = md.filter(dt=>dayIdx(dt)>=0).length;
   const overview = doctors.map(d=>{
@@ -2073,7 +2084,7 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
   const absentCov = overview.reduce((a,o)=>a+o.sess.absentCovered,0);
   const totalCov = overview.reduce((a,o)=>a+o.sess.covers,0);
   const totalEve = overview.reduce((a,o)=>a+o.sess.evening,0);
-  const shiftAnchor = n => { const d=new Date(anchor); if(mode==="week") d.setDate(d.getDate()+7*n); else d.setMonth(d.getMonth()+n); setAnchor(d.toISOString().split("T")[0]); };
+  const shiftAnchor = n => { const d=new Date(anchor); if(mode==="week") d.setDate(d.getDate()+7*n); else if(mode==="month") d.setMonth(d.getMonth()+n); else d.setMonth(d.getMonth()+monthsN*n); setAnchor(d.toISOString().split("T")[0]); };
   const loadStatus = (care,target) => { if(!target||target<=0) return { key:"na", color:"#64748b", label:"—" }; const r=care/target; if(r>=1.05) return { key:"over", color:"#064E3B", label:"أكثر من المطلوب" }; if(r>=0.90) return { key:"meets", color:"#16A34A", label:"مطابق للمطلوب" }; if(r>=0.65) return { key:"under", color:"#CA8A04", label:"ناقص" }; return { key:"vlow", color:"#DC2626", label:"ناقص جداً" }; };
   const printWorkload = (list,titleSuffix="") => {
     const css = `<style>.bdg{padding:3px 12px;border-radius:20px;font-size:11px;font-weight:700;color:#fff;display:inline-block}.lgnd{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 12px}.lgnd span{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#475569}.lgnd i{width:14px;height:14px;border-radius:4px;display:inline-block}</style>`;
@@ -2087,8 +2098,9 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
     <div style={{ ...card(), padding:16, marginBottom:14 }}>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, flexWrap:"wrap" }}>
         <div style={{ flex:1, fontSize:15, fontWeight:700 }}>📈 العبء الوظيفي</div>
-        <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden" }}>
+        <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden", flexWrap:"wrap" }}>
           {[["week","أسبوعي"],["month","شهري"]].map(([k,l])=><button key={k} onClick={()=>setMode(k)} style={{ padding:"7px 16px", border:"none", fontSize:12.5, fontWeight:700, background:mode===k?C.primary:"var(--surface)", color:mode===k?"#fff":C.sub }}>{l}</button>)}
+          {[2,3,4,6,12].map(n=><button key={n} onClick={()=>{ setMode("multi"); setMonthsN(n); }} style={{ padding:"7px 13px", border:"none", borderInlineStart:`1px solid ${C.line}`, fontSize:12.5, fontWeight:700, background:(mode==="multi"&&monthsN===n)?C.primary:"var(--surface)", color:(mode==="multi"&&monthsN===n)?"#fff":C.sub }}>{n} أشهر</button>)}
         </div>
       </div>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
@@ -2407,13 +2419,15 @@ function AlertsPage({ doctors, leaves, nightData, coverages, today, fd, settings
 function ReportsPage({ doctors, leaves, nightData, coverages, today, fd, settings }) {
   const restRule = settings?.restRule!==false;
   const [scope,setScope] = useState("month");
+  const [monthsN,setMonthsN] = useState(2);
   const [ref,setRef]     = useState(today);
   const [sel,setSel]     = useState("all");
   const weekDatesOf = r => { const t=new Date(r); const sun=new Date(t); sun.setDate(t.getDate()-t.getDay()); const out=[]; for(let i=0;i<5;i++){ const dd=new Date(sun); dd.setDate(sun.getDate()+i); out.push(dd.toISOString().split("T")[0]); } return out; };
   const rd = new Date(ref);
-  const dates = scope==="week" ? weekDatesOf(ref) : monthDays(rd.getFullYear(), rd.getMonth()).map(x=>x.date);
-  const label = scope==="week" ? `أسبوع ${dmy(dates[0])} – ${dmy(dates[dates.length-1])}` : `${MONTHS[rd.getMonth()]} ${rd.getFullYear()}`;
-  const nav = dir => { const d=new Date(ref); if(scope==="week") d.setDate(d.getDate()+dir*7); else d.setMonth(d.getMonth()+dir); setRef(d.toISOString().split("T")[0]); };
+  const multiRange = (()=>{ const Y=rd.getFullYear(), M=rd.getMonth(); const startAbs=Y*12+M-(monthsN-1); const startY=Math.floor(startAbs/12), startM=((startAbs%12)+12)%12; const dts=[]; for(let i=0;i<monthsN;i++){ const abs=startAbs+i; const yy=Math.floor(abs/12), mm=((abs%12)+12)%12; dts.push(...monthDays(yy,mm).map(x=>x.date)); } return { dates:dts, startY, startM }; })();
+  const dates = scope==="week" ? weekDatesOf(ref) : scope==="month" ? monthDays(rd.getFullYear(), rd.getMonth()).map(x=>x.date) : multiRange.dates;
+  const label = scope==="week" ? `أسبوع ${dmy(dates[0])} – ${dmy(dates[dates.length-1])}` : scope==="month" ? `${MONTHS[rd.getMonth()]} ${rd.getFullYear()}` : (monthsN===12 ? `${rd.getFullYear()} (١٢ شهر)` : `${MONTHS[multiRange.startM]} ${multiRange.startY} ← ${MONTHS[rd.getMonth()]} ${rd.getFullYear()}`);
+  const nav = dir => { const d=new Date(ref); if(scope==="week") d.setDate(d.getDate()+dir*7); else if(scope==="month") d.setMonth(d.getMonth()+dir); else d.setMonth(d.getMonth()+monthsN*dir); setRef(d.toISOString().split("T")[0]); };
   const slotT = (d,di,p)=>{ const sl=(d.sched?.[di]?.[p])||""; return sl?SLOT_AR[sl]||sl:"—"; };
   const perTxt = p => p==="am"?"عيادة الصباح":p==="pm"?"عيادة الظهر":p==="nextAm"?"عيادة صباح الغد":"العيادة المسائية";
   const covsOf = d => { const out=[]; coverages.filter(c=>c.coverDoctorId===d.id&&dates.includes(c.date)).forEach(c=>out.push({date:c.date,period:c.period,ownerId:c.absentId,reason:c.reason})); dates.forEach(dt=>{ const cv=(nightData[dt]||{}).coverages||{}; ["am","pm","nextAm"].forEach(sl=>{ (cv[sl]||[]).forEach(id=>{ if(id===d.id) out.push({date:dt,period:sl,ownerId:null,reason:"evening"}); }); }); }); return out.sort((a,b)=>a.date.localeCompare(b.date)); };
@@ -2597,8 +2611,9 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd, setting
     <div style={{ ...card(), padding:16, marginBottom:14 }}>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
         <div style={{ flex:1, fontSize:15, fontWeight:700 }}>📊 تقارير الأطباء</div>
-        <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden" }}>
+        <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden", flexWrap:"wrap" }}>
           {[["week","أسبوعي"],["month","شهري"]].map(([k,l])=><button key={k} onClick={()=>setScope(k)} style={{ padding:"7px 15px", border:"none", fontSize:12.5, fontWeight:700, background:scope===k?C.primary:"var(--surface)", color:scope===k?"#fff":C.sub }}>{l}</button>)}
+          {[2,3,4,6,12].map(n=><button key={n} onClick={()=>{ setScope("multi"); setMonthsN(n); }} style={{ padding:"7px 12px", border:"none", borderInlineStart:`1px solid ${C.line}`, fontSize:12.5, fontWeight:700, background:(scope==="multi"&&monthsN===n)?C.primary:"var(--surface)", color:(scope==="multi"&&monthsN===n)?"#fff":C.sub }}>{n} أشهر</button>)}
         </div>
       </div>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
