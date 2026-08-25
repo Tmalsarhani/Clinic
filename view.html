@@ -42,10 +42,10 @@ body{margin:0;font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;background
 .vtoggle button.on{background:var(--primary);color:#fff;border-color:var(--primary)}
 .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .wd{background:linear-gradient(135deg,var(--primary),var(--eve));color:#fff;text-align:center;font-weight:700;padding:8px 0;border-radius:9px;font-size:12.5px}
-.gc{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:7px;min-height:90px;display:flex;flex-direction:column;gap:3px}
+.gc{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:7px;min-height:100px;display:flex;flex-direction:column;gap:3px}
 .gc.empty{background:transparent;border:none;min-height:0}
 .gnum{font-weight:800;color:var(--primaryD);font-size:15px;margin-bottom:4px}
-.gchip{background:#ECEAFE;color:var(--eve);border-radius:7px;padding:3px 7px;font-size:12px;font-weight:700;margin-bottom:3px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gchip{background:#ECEAFE;color:var(--eve);border-radius:7px;padding:3px 7px;font-size:11.5px;font-weight:700;margin-bottom:3px;line-height:1.4;white-space:normal;word-break:break-word}
 .gcovs{display:flex;flex-direction:column;gap:3px;margin-top:1px}
 .gcov{font-size:12px;color:var(--primaryD);background:#EFFAFB;border:1px solid #D7EEF1;border-radius:7px;padding:4px 7px;font-weight:600;line-height:1.55;white-space:normal;word-break:break-word}
 .gcov .per{display:inline-block;background:var(--primaryD);color:#fff;border-radius:5px;padding:1px 6px;font-size:11px;font-weight:700;margin-inline-end:4px}
@@ -113,7 +113,6 @@ function renderList(y,m,fd){
 }
 
 function pS(p){ return p==="am"?"صباح":p==="pm"?"ظهر":p==="nextAm"?"صباح الغد":p==="evening"?"مساء":(p||""); }
-function fn(n){ return (n||"").split(/\s+/)[0]; }
 function renderGrid(y,m,fd){
   const head=WDAY.slice(0,5).map(w=>`<div class="wd">${w}</div>`).join("");
   let cells=""; const firstWd=new Date(`${y}-${String(m+1).padStart(2,"0")}-01`).getDay();
@@ -122,12 +121,12 @@ function renderGrid(y,m,fd){
   dayData(y,m,fd).forEach(({d,date,docs,covs,nightCovs})=>{
     const lines=[];
     covs.slice().sort((a,b)=>ord.indexOf(a.period)-ord.indexOf(b.period)).forEach(c=>{
-      lines.push(`<div class="gcov"><span class="per">${esc(pS(c.period))}</span>د.${esc(fn(fd(c.coverDoctorId)?.name))} <span class="ar">◂</span> د.${esc(fn(fd(c.absentId)?.name))}</div>`);
+      lines.push(`<div class="gcov"><span class="per">${esc(pS(c.period))}</span>د.${esc(fd(c.coverDoctorId)?.name)} <span class="ar">◂</span> د.${esc(fd(c.absentId)?.name)}</div>`);
     });
     nightCovs.slice().sort((a,b)=>ord.indexOf(a.sl)-ord.indexOf(b.sl)).forEach(x=>{
-      lines.push(`<div class="gcov"><span class="per">${esc(pS(x.sl))}</span>د.${esc(fn(x.name))} <span class="ar">◂</span> مسائي</div>`);
+      lines.push(`<div class="gcov"><span class="per">${esc(pS(x.sl))}</span>د.${esc(x.name)} <span class="ar">◂</span> مساء</div>`);
     });
-    cells+=`<div class="gc"><div class="gnum">${d}</div>${docs.map(x=>`<div class="gchip">🌙 د.${esc(fn(x.name))}</div>`).join("")}${lines.length?`<div class="gcovs">${lines.join("")}</div>`:""}</div>`;
+    cells+=`<div class="gc"><div class="gnum">${d}</div>${docs.map(x=>`<div class="gchip">🌙 د.${esc(x.name)}</div>`).join("")}${lines.length?`<div class="gcovs">${lines.join("")}</div>`:""}</div>`;
   });
   return `<div class="grid">${head}${cells}</div>`;
 }
