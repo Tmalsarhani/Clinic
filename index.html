@@ -1195,7 +1195,26 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const needOf = date => (dayReq[date]!=null ? dayReq[date] : (monthConfigured ? reqPerDay : 0));
   useEffect(()=>{ if(!monthConfigured) setShowSetup(true); }, [mo.y, mo.m]);
   const createEmpty = () => { setNight(nd=>{ const n={...nd}; days.forEach(({date})=>{ const need=needOf(date); if(need>0){ n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:[], eveningSlots:need }; } }); return n; }); logAudit&&logAudit("إنشاء جدول مسائي فارغ حسب عدد العيادات"); showToast("تم إنشاء جدول فارغ — اختر الأطباء أو وزّع تلقائياً"); setShowSetup(false); };
-  const distributeFixed = () => { setNight(nd=>{ const n={...nd}; days.forEach(({date,di})=>{ const need=needOf(date); if(need<=0) return; const cur=(n[date]?.doctors)?[...n[date].doctors]:[]; doctors.filter(d=>(d.nightDays||[]).includes(di) && !onLeave(d,date,leaves) && !(d.blockedDays||[]).includes(di) && !cur.includes(d.id)).forEach(d=>{ if(cur.length<need) cur.push(d.id); }); n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur, eveningSlots:need }; }); return n; }); logAudit&&logAudit("توزيع الأطباء أصحاب الأيام الثابتة"); showToast("تم وضع أصحاب الأيام الثابتة — والباقي فارغ"); };
+  const distributeFixed = () => { setNight(nd=>{ const n={...nd};
+    // ── عدالة بين أصحاب نفس اليوم الثابت: لو أكثر من طبيب "ثابت" لنفس يوم الأسبوع (مثلاً ٥ أطباء كلهم الأحد) وعدد المطلوب أقل منهم،
+    // كان الفائز دائماً نفس الطبيب (الأول بترتيب القائمة) بلا أي تناوب — الآن يُختار الأقل مناوبة هذه السنة، ثم مَن مرّت عليه مدة أطول منذ آخر مرة ──
+    const priorMonthsInYear = []; for(let m=0; m<mo.m; m++) priorMonthsInYear.push(m);
+    const priorYearDates = priorMonthsInYear.flatMap(m=>monthDays(mo.y,m).map(x=>x.date));
+    const usage={}; doctors.forEach(d=>usage[d.id]=0);
+    priorYearDates.forEach(dt=>((nd[dt]||{}).doctors||[]).forEach(id=>usage[id]=(usage[id]||0)+1));
+    monthDates.forEach(dt=>((n[dt]||{}).doctors||[]).forEach(id=>usage[id]=(usage[id]||0)+1));
+    const lastAssigned={}; doctors.forEach(d=>lastAssigned[d.id]=null);
+    Object.keys(nd).sort().forEach(dt=>{ ((nd[dt]||{}).doctors||[]).forEach(id=>{ lastAssigned[id]=dt; }); });
+    const recency = d => lastAssigned[d.id] ? new Date(lastAssigned[d.id]).getTime() : -Infinity;
+    days.forEach(({date,di})=>{
+      const need=needOf(date); if(need<=0) return;
+      const cur=(n[date]?.doctors)?[...n[date].doctors]:[];
+      const eligible = doctors.filter(d=>(d.nightDays||[]).includes(di) && !onLeave(d,date,leaves) && !(d.blockedDays||[]).includes(di) && !cur.includes(d.id));
+      eligible.sort((a,b)=> (usage[a.id]-usage[b.id]) || (recency(a)-recency(b)) || a.name.localeCompare(b.name,"ar"));
+      eligible.forEach(d=>{ if(cur.length<need){ cur.push(d.id); usage[d.id]++; lastAssigned[d.id]=date; } });
+      n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur, eveningSlots:need };
+    });
+    return n; }); logAudit&&logAudit("توزيع الأطباء أصحاب الأيام الثابتة"); showToast("تم وضع أصحاب الأيام الثابتة — والباقي فارغ"); };
   const fillRef = React.useRef({ leftover:0, report:null });
   const fillAvailable = () => {
     const planFill = (allowCommitted) => {
@@ -1239,6 +1258,36 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           if(cur.length<need) leftover += (need-cur.length);
           n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur, eveningSlots:need };
         });
+        // ── تصحيح موازنة نهائي: أحياناً يترك التوزيع اليومي (لأنه يمشي يوماً بيوم) طبيباً بلا أي مناوبة بينما آخر أخذ اثنتين أو أكثر، رغم أن حجم المجموعة كافٍ نظرياً ──
+        // هذه الخطوة تبحث عن مثل هذه الحالات وتُبدّل الطبيب "المكرر" بالطبيب "الصفري" في يوم متاح لكليهما، بلا كسر أي قاعدة (إجازة/عيادة/تكرار/راحة)
+        (function rebalanceRepeats(){
+          const rotate = doctors.filter(d=>(d.nightDays||[]).length===0);
+          let guard=0, changed=true;
+          while(changed && guard++<50){
+            changed=false;
+            const cnt={}; rotate.forEach(d=>cnt[d.id]=thisMoUsage[d.id]||0);
+            const zeroDocs = rotate.filter(d=>cnt[d.id]===0);
+            if(!zeroDocs.length) break;
+            for(const zd of zeroDocs){
+              let done=false;
+              for(const {date,di} of days){
+                const assigned=(n[date]?.doctors)||[];
+                const repeatedHere = assigned.find(id=>{ const dd=doctors.find(x=>x.id===id); return dd && (dd.nightDays||[]).length===0 && cnt[id]>=2; });
+                if(!repeatedHere) continue;
+                if(onLeave(zd,date,leaves)) continue;
+                if((zd.blockedDays||[]).includes(di)) continue;
+                if(assigned.includes(zd.id)) continue;
+                const prevEve=((n[prevCalDay(date)]||{}).doctors)||[];
+                if(prevEve.includes(zd.id)) continue;
+                n[date]={ ...n[date], doctors: assigned.map(id=>id===repeatedHere?zd.id:id) };
+                thisMoUsage[repeatedHere]--; thisMoUsage[zd.id]=(thisMoUsage[zd.id]||0)+1;
+                usage[repeatedHere]--; usage[zd.id]=(usage[zd.id]||0)+1;
+                changed=true; done=true; break;
+              }
+              if(done) break;
+            }
+          }
+        })();
         const counts=doctors.filter(d=>!((d.nightDays||[]).length>0)).map(d=>thisMoUsage[d.id]||0);
         fillRef.current={ leftover, report: counts.length?{min:Math.min(...counts),max:Math.max(...counts)}:null };
         return n;
