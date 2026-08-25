@@ -1097,7 +1097,10 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto, s
 
 
 // ════════ الرابط الحي (Firebase Firestore REST) ════════
-function cloudCfg(){ const c=S.get("v2_cloud"); return (c&&c.dbUrl)?c:null; } // {dbUrl, apiKey, email, password}
+// رابط القاعدة ومفتاح الويب ليسا سرَّين (حسب توثيق Firebase الرسمي — الحماية تأتي من قواعد Rules لا من إخفائهما)
+// فهما مضمَّنان هنا مباشرة، بحيث تعمل مزامنة بيانات القسم بين كل الأجهزة تلقائياً بلا أي إعداد يدوي على كل جهاز
+const FIREBASE_DEFAULT = { dbUrl:"https://restorative-department-default-rtdb.europe-west1.firebasedatabase.app", apiKey:"AIzaSyAFgGIFTVBzpVagVWLJz80xxbstkonG3j4" };
+function cloudCfg(){ const c=S.get("v2_cloud"); return (c&&c.dbUrl)?c:null; } // {dbUrl, apiKey, email, password} — يُستخدم فقط لزر "نشر رسمي" للرابط الحي العام (يحتاج حساب رئيس القسم)
 let __idTokenCache=null; // {token, exp}
 async function getIdToken(cfg){
   if(__idTokenCache && __idTokenCache.exp>Date.now()+30000) return __idTokenCache.token;
@@ -1109,6 +1112,19 @@ async function getIdToken(cfg){
   if(!r.ok){ const t=await r.text(); throw new Error("auth-failed: "+r.status+" "+t.slice(0,150)); }
   const j=await r.json();
   __idTokenCache={ token:j.idToken, exp:Date.now()+(Number(j.expiresIn||3600)*1000) };
+  return j.idToken;
+}
+// دخول مجهول (Anonymous) تلقائي — يعمل على أي جهاز بلا أي بريد أو كلمة مرور، فقط لمزامنة بيانات القسم بين الأجهزة (وليس لنشر الرابط العام)
+let __anonTokenCache=null; // {token, exp}
+async function getAnonToken(){
+  if(__anonTokenCache && __anonTokenCache.exp>Date.now()+30000) return __anonTokenCache.token;
+  const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${encodeURIComponent(FIREBASE_DEFAULT.apiKey)}`,{
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({ returnSecureToken:true })
+  });
+  if(!r.ok){ const t=await r.text(); throw new Error("anon-auth-failed: "+r.status+" "+t.slice(0,150)); }
+  const j=await r.json();
+  __anonTokenCache={ token:j.idToken, exp:Date.now()+(Number(j.expiresIn||3600)*1000) };
   return j.idToken;
 }
 async function cloudPublish(officialSnap){
@@ -1124,19 +1140,17 @@ async function cloudPublish(officialSnap){
 
 // ════════ مزامنة كاملة بين الأجهزة (نفس بيانات القسم من أي جهاز يفتح التطبيق ويسجّل دخول) ════════
 async function cloudLoadState(){
-  const cfg=cloudCfg(); if(!cfg||!cfg.dbUrl) return null;
-  const idToken=await getIdToken(cfg);
-  const base=String(cfg.dbUrl).replace(/\/+$/,"");
+  const idToken=await getAnonToken();
+  const base=FIREBASE_DEFAULT.dbUrl.replace(/\/+$/,"");
   const url=`${base}/app/state.json?auth=${encodeURIComponent(idToken)}`;
   const res=await fetch(url,{cache:"no-store"});
-  if(!res.ok) return null;
+  if(!res.ok){ const t=await res.text(); throw new Error("load-failed: "+res.status+" "+t.slice(0,150)); }
   const j=await res.json();
   return j||null;
 }
 async function cloudSaveState(state){
-  const cfg=cloudCfg(); if(!cfg||!cfg.dbUrl) return false;
-  const idToken=await getIdToken(cfg);
-  const base=String(cfg.dbUrl).replace(/\/+$/,"");
+  const idToken=await getAnonToken();
+  const base=FIREBASE_DEFAULT.dbUrl.replace(/\/+$/,"");
   const url=`${base}/app/state.json?auth=${encodeURIComponent(idToken)}`;
   const res=await fetch(url,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ ...state, updatedAt:new Date().toISOString() }) });
   return res.ok;
@@ -2413,8 +2427,17 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
       <textarea value={s.staffEmails||""} onChange={e=>set("staffEmails",e.target.value)} placeholder={"admin@clinic.com\nsecretary@clinic.com"} rows={3} style={{ ...sIn, direction:"ltr", textAlign:"left", resize:"vertical", fontFamily:"monospace", fontSize:12.5 }} />
     </div>
     <div style={{ ...card(), padding:16, marginBottom:12 }}>
-      <label style={label}>🔗🔄 المزامنة الحية بين الأجهزة + الرابط الحي للجدول</label>
-      <div style={{ fontSize:11.5, color:C.muted, marginBottom:10 }}>بعد ضبط هذا، أي جهاز يفتح التطبيق ويسجّل دخول (نفس الحساب) يرى تلقائياً نفس بيانات القسم (الأطباء، الإجازات، الجدول، التغطيات، الاعتماد) — تتحدّث كل بضع ثوانٍ من أي جهاز إلى البقية. بالإضافة لذلك: عند الاعتماد الرسمي تُنشر النسخة المعتمدة تلقائياً لرابط عرض عام واحد (view.html) للجميع.</div>
+      <label style={label}>☁️ المزامنة بين الأجهزة</label>
+      <div style={{ fontSize:11.5, color:C.ok, marginBottom:10, background:"var(--okSoft)", border:`1px solid ${C.ok}`, borderRadius:10, padding:"8px 10px", lineHeight:1.8 }}>
+        ✓ تعمل تلقائياً على أي جهاز فور فتح التطبيق — بلا أي إعداد يدوي. أي جهاز يسجّل دخول يرى ويعدّل نفس بيانات القسم (الأطباء، الإجازات، الجدول، التغطيات، الاعتماد) فوراً.
+      </div>
+      <div style={{ fontSize:11, color:C.warn, marginBottom:10, background:"var(--warnSoft)", border:`1px solid ${C.warn}`, borderRadius:10, padding:"8px 10px", lineHeight:1.8 }}>
+        ⚠️ لتفعيلها لأول مرة: من Firebase Console ← Authentication ← Sign-in method، فعّل أيضاً <b>Anonymous</b> (بجانب Email/Password الموجود). بدونها ستظهر شارة "⚠️ تعذّرت المزامنة" أعلى الشاشة.
+      </div>
+    </div>
+    <div style={{ ...card(), padding:16, marginBottom:12 }}>
+      <label style={label}>🔗 الرابط الحي العام (view.html)</label>
+      <div style={{ fontSize:11.5, color:C.muted, marginBottom:10 }}>هذا منفصل عن مزامنة الأجهزة أعلاه — فقط لنشر نسخة القراءة العامة (view.html) عند الاعتماد الرسمي. يحتاج حساب رئيس القسم الإداري تحديداً (بريد وكلمة مرور)، ولا يلزم على بقية الأجهزة/الأطباء إطلاقاً.</div>
       {(()=>{ const cfg=S.get("v2_cloud")||{}; return <>
         <input defaultValue={cfg.dbUrl||""} id="cl_url" placeholder="رابط Realtime Database (https://xxx-default-rtdb.firebaseio.com)" style={{ ...sIn, marginBottom:8, direction:"ltr", textAlign:"left" }} />
         <input defaultValue={cfg.apiKey||""} id="cl_apikey" placeholder="Web API Key (من Project Settings ← General)" style={{ ...sIn, marginBottom:8, direction:"ltr", textAlign:"left" }} />
@@ -2428,7 +2451,7 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
         <button onClick={publishNow} style={{ ...sBtn("var(--primary-d)"), width:"100%", marginTop:10, fontSize:14 }}>🔄 نشر الحالة الحالية الآن للرابط الحي</button>
         {(()=>{ const t=S.get("v2_published_at"); return t? <div style={{ fontSize:11, color:C.muted, marginTop:8, textAlign:"center" }}>آخر نشر للرابط الحي: <b style={{ color:C.primary }}>{new Date(t).toLocaleString("ar",{dateStyle:"medium",timeStyle:"short"})}</b></div> : <div style={{ fontSize:11, color:C.warn, marginTop:8, textAlign:"center" }}>لم يُنشر بعد — اضغط «نشر الآن» لتحديث الرابط الحي</div>; })()}
         <div style={{ fontSize:11, color:C.muted, marginTop:10, lineHeight:1.8 }}>
-          الإعداد: (١) من Firebase Console ← Authentication ← Sign-in method ← فعّل Email/Password → (٢) من تبويب Users أنشئ حساباً إدارياً (بريد + كلمة مرور) → (٣) من Project Settings ← General انسخ Web API Key → (٤) من Realtime Database انسخ الرابط أعلى الصفحة، وضع القواعد كالأسفل → (٥) الصق الرابط وWeb API Key والبريد وكلمة المرور هنا واحفظ، ثم أعد تحميل الصفحة → (٦) ضع نفس رابط القاعدة (فقط، بلا أي بيانات حساسة أخرى) في view.html وارفع الملفين.
+          الإعداد لهذه الميزة تحديداً (الرابط العام فقط — المزامنة بين الأجهزة تعمل تلقائياً بدونها): (١) من Firebase Console ← Authentication ← Sign-in method ← فعّل Email/Password → (٢) من تبويب Users أنشئ حساباً إدارياً (بريد + كلمة مرور) → (٣) من Project Settings ← General انسخ Web API Key → (٤) من Realtime Database انسخ الرابط أعلى الصفحة، وضع القواعد كالأسفل → (٥) الصق الرابط وWeb API Key والبريد وكلمة المرور هنا واحفظ، ثم أعد تحميل الصفحة → (٦) ضع نفس رابط القاعدة (فقط، بلا أي بيانات حساسة أخرى) في view.html وارفع الملفين.
         </div>
         <div style={{ fontSize:11, color:C.warn, marginTop:8, lineHeight:1.8, background:"var(--warnSoft)", border:`1px solid ${C.warn}`, borderRadius:10, padding:"8px 10px" }}>
           ⚠️ سجّل كل مستخدم دخوله من صفحة تسجيل الدخول (الاسم والرمز السري) بنفس الحساب على أي جهاز — هذه المزامنة تشارك بيانات القسم بين الأجهزة، لكنها لا تستبدل صلاحيات الدخول الخاصة بالتطبيق.
@@ -3018,7 +3041,7 @@ function App() {
   const [page, setPage]           = useState("dashboard");
   const [toast, setToast]         = useState(null);
   const [cloudReady, setCloudReady] = useState(false); // true بعد محاولة التحميل الأولى من السحابة (نجحت أو فشلت)
-  const [cloudSyncState, setCloudSyncState] = useState(cloudCfg()?"idle":"off"); // off | idle | syncing | synced | error
+  const [cloudSyncState, setCloudSyncState] = useState("idle"); // idle | syncing | synced | error — المزامنة نشطة دائماً تلقائياً على كل جهاز
   useEffect(()=>S.set("v2_docs",doctors),[doctors]);
   useEffect(()=>S.set("v2_leaves",leaves),[leaves]);
   useEffect(()=>S.set("v2_night",nightData),[nightData]);
@@ -3034,27 +3057,25 @@ function App() {
   // ── تحميل أوّلي من السحابة عند فتح التطبيق: لو فيه بيانات مشتركة محفوظة، تحل محل النسخة المحلية فوراً ──
   const [cloudSafeToSave, setCloudSafeToSave] = useState(false); // لا يُسمح بالحفظ للسحابة إلا بعد نجاح التحميل فعلياً — لمنع الكتابة فوق البيانات الحقيقية بنسخة محلية فارغة عند أي فشل اتصال
   useEffect(()=>{ (async()=>{
-    if(cloudCfg()){
-      try{
-        const remote = await cloudLoadState();
-        if(remote){
-          if(remote.doctors) _setDoctors(remote.doctors);
-          if(remote.leaves) _setLeaves(remote.leaves);
-          if(remote.nightData) _setNight(remote.nightData);
-          if(remote.coverages) _setCoverages(remote.coverages);
-          if(remote.settings) setSettings(remote.settings);
-          if(remote.holidays){ setHolidays(remote.holidays); HOLIDAYS=buildHolidayMap(remote.holidays); }
-          if(remote.audit) setAudit(remote.audit);
-          if(remote.users && remote.users.length) setUsers(remote.users);
-          if(remote.official) setOfficial(remote.official);
-        }
-        // نجح الاتصال (سواء وُجدت بيانات أو كانت هذه أول مرة) → آمن نبدأ الحفظ من الآن
-        setCloudSyncState("synced"); setCloudSafeToSave(true);
-      }catch(e){
-        // فشل الاتصال بالسحابة (شبكة/قواعد/مصادقة) → لا نحفظ إطلاقاً، حتى لا نكتب نسخة محلية ناقصة فوق البيانات الحقيقية بالخطأ
-        setCloudSyncState("error"); setCloudSafeToSave(false);
-        setTimeout(()=>showToast("⚠️ تعذّر الاتصال بالسحابة — تعمل الآن بنسخة محلية فقط ولن تُزامَن تعديلاتك حتى تضغط ☁️ لإعادة المحاولة","err"),400);
+    try{
+      const remote = await cloudLoadState();
+      if(remote){
+        if(remote.doctors) _setDoctors(remote.doctors);
+        if(remote.leaves) _setLeaves(remote.leaves);
+        if(remote.nightData) _setNight(remote.nightData);
+        if(remote.coverages) _setCoverages(remote.coverages);
+        if(remote.settings) setSettings(remote.settings);
+        if(remote.holidays){ setHolidays(remote.holidays); HOLIDAYS=buildHolidayMap(remote.holidays); }
+        if(remote.audit) setAudit(remote.audit);
+        if(remote.users && remote.users.length) setUsers(remote.users);
+        if(remote.official) setOfficial(remote.official);
       }
+      // نجح الاتصال (سواء وُجدت بيانات أو كانت هذه أول مرة) → آمن نبدأ الحفظ من الآن
+      setCloudSyncState("synced"); setCloudSafeToSave(true);
+    }catch(e){
+      // فشل الاتصال بالسحابة (شبكة/قواعد/مصادقة) → لا نحفظ إطلاقاً، حتى لا نكتب نسخة محلية ناقصة فوق البيانات الحقيقية بالخطأ
+      setCloudSyncState("error"); setCloudSafeToSave(false);
+      setTimeout(()=>showToast("⚠️ تعذّر الاتصال بالسحابة — تعمل الآن بنسخة محلية فقط ولن تُزامَن تعديلاتك حتى تضغط ☁️ لإعادة المحاولة","err"),400);
     }
     setCloudReady(true);
   })(); },[]);
@@ -3062,7 +3083,7 @@ function App() {
   // ── حفظ تلقائي مؤجَّل (debounce) للسحابة عند أي تغيير في البيانات المشتركة — فقط بعد تأكيد نجاح التحميل الأوّلي (cloudSafeToSave)، لمنع الكتابة فوق بيانات الأجهزة الأخرى بنسخة محلية ناقصة عند أي عطل اتصال ──
   const cloudSaveTimer = React.useRef(null);
   useEffect(()=>{
-    if(!cloudReady || !cloudCfg() || !cloudSafeToSave) return;
+    if(!cloudReady || !cloudSafeToSave) return;
     setCloudSyncState("syncing");
     if(cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
     cloudSaveTimer.current = setTimeout(()=>{
@@ -3074,7 +3095,6 @@ function App() {
   },[cloudReady, cloudSafeToSave, doctors, leaves, nightData, coverages, settings, holidays, audit, users, official]);
 
   const cloudSyncNow = async () => {
-    if(!cloudCfg()){ showToast("فعّل الرابط الحي من الإعدادات أولاً لتفعيل المزامنة","warn"); return; }
     setCloudSyncState("syncing"); showToast("جارٍ التحديث من السحابة…");
     try{
       const remote = await cloudLoadState();
@@ -3140,7 +3160,7 @@ function App() {
 
   // ---- Auth gating ----
   // ── انتظار تحميل السحابة أولاً (لو كانت مفعّلة) قبل عرض أي بيانات، لتفادي ظهور نسخة محلية قديمة ثم استبدالها فجأة ──
-  if(cloudCfg() && !cloudReady){
+  if(!cloudReady){
     return <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:14, background:"var(--bg)" }}>
       <div style={{ width:52, height:52, borderRadius:16, background:`linear-gradient(135deg,${C.primary},${C.accent})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, color:"#fff", fontWeight:800, animation:"fade 1.2s ease-in-out infinite alternate" }}>ط</div>
       <div style={{ fontSize:13.5, color:C.sub, fontWeight:600 }}>جارٍ تحميل أحدث بيانات القسم…</div>
@@ -3202,7 +3222,7 @@ function App() {
           {pending && <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} title="لديك تغييرات غير معتمدة — اضغط للانتقال للأعلى" style={{ display:"inline-flex", alignItems:"center", gap:5, background:"var(--warnSoft)", border:`1px solid ${C.warn}`, color:C.warn, borderRadius:20, padding:"4px 10px", fontSize:11, fontWeight:800, cursor:"pointer", flexShrink:0, fontFamily:"inherit" }}>
             <span style={{ width:7, height:7, borderRadius:"50%", background:C.warn, display:"inline-block" }} />غير معتمد
           </button>}
-          {(()=>{ if(!cloudCfg()) return null; const m={ idle:{c:C.muted,t:"☁️ متصل"}, syncing:{c:C.primary,t:"🔄 جارٍ المزامنة…"}, synced:{c:C.ok,t:"☁️ متزامن"}, error:{c:C.err,t:"⚠️ تعذّرت المزامنة"}, off:{c:C.muted,t:"☁️ متصل"} }[cloudSyncState]; return (
+          {(()=>{ const m={ idle:{c:C.muted,t:"☁️ متصل"}, syncing:{c:C.primary,t:"🔄 جارٍ المزامنة…"}, synced:{c:C.ok,t:"☁️ متزامن"}, error:{c:C.err,t:"⚠️ تعذّرت المزامنة"} }[cloudSyncState]; return (
             <button onClick={cloudSyncNow} title="اضغط لتحديث فوري من السحابة (أي تعديل من جهاز آخر)" style={{ display:"inline-flex", alignItems:"center", gap:5, background:"var(--surface2)", border:`1px solid ${C.line}`, color:m.c, borderRadius:20, padding:"4px 10px", fontSize:11, fontWeight:700, cursor:"pointer", flexShrink:0, fontFamily:"inherit" }}>{m.t}</button>
           ); })()}
         </div>
