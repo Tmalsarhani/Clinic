@@ -3032,6 +3032,7 @@ function App() {
   useEffect(()=>{ if(official) S.set("v2_official",official); },[official]);
 
   // ── تحميل أوّلي من السحابة عند فتح التطبيق: لو فيه بيانات مشتركة محفوظة، تحل محل النسخة المحلية فوراً ──
+  const [cloudSafeToSave, setCloudSafeToSave] = useState(false); // لا يُسمح بالحفظ للسحابة إلا بعد نجاح التحميل فعلياً — لمنع الكتابة فوق البيانات الحقيقية بنسخة محلية فارغة عند أي فشل اتصال
   useEffect(()=>{ (async()=>{
     if(cloudCfg()){
       try{
@@ -3046,17 +3047,22 @@ function App() {
           if(remote.audit) setAudit(remote.audit);
           if(remote.users && remote.users.length) setUsers(remote.users);
           if(remote.official) setOfficial(remote.official);
-          setCloudSyncState("synced");
         }
-      }catch(e){ setCloudSyncState("error"); }
+        // نجح الاتصال (سواء وُجدت بيانات أو كانت هذه أول مرة) → آمن نبدأ الحفظ من الآن
+        setCloudSyncState("synced"); setCloudSafeToSave(true);
+      }catch(e){
+        // فشل الاتصال بالسحابة (شبكة/قواعد/مصادقة) → لا نحفظ إطلاقاً، حتى لا نكتب نسخة محلية ناقصة فوق البيانات الحقيقية بالخطأ
+        setCloudSyncState("error"); setCloudSafeToSave(false);
+        setTimeout(()=>showToast("⚠️ تعذّر الاتصال بالسحابة — تعمل الآن بنسخة محلية فقط ولن تُزامَن تعديلاتك حتى تضغط ☁️ لإعادة المحاولة","err"),400);
+      }
     }
     setCloudReady(true);
   })(); },[]);
 
-  // ── حفظ تلقائي مؤجَّل (debounce) للسحابة عند أي تغيير في البيانات المشتركة — بعد اكتمال التحميل الأوّلي فقط، لمنع الكتابة فوق بيانات الأجهزة الأخرى بنسخة محلية قديمة ──
+  // ── حفظ تلقائي مؤجَّل (debounce) للسحابة عند أي تغيير في البيانات المشتركة — فقط بعد تأكيد نجاح التحميل الأوّلي (cloudSafeToSave)، لمنع الكتابة فوق بيانات الأجهزة الأخرى بنسخة محلية ناقصة عند أي عطل اتصال ──
   const cloudSaveTimer = React.useRef(null);
   useEffect(()=>{
-    if(!cloudReady || !cloudCfg()) return;
+    if(!cloudReady || !cloudCfg() || !cloudSafeToSave) return;
     setCloudSyncState("syncing");
     if(cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
     cloudSaveTimer.current = setTimeout(()=>{
@@ -3065,7 +3071,7 @@ function App() {
         .catch(()=>setCloudSyncState("error"));
     }, 1500);
     return ()=>{ if(cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current); };
-  },[cloudReady, doctors, leaves, nightData, coverages, settings, holidays, audit, users, official]);
+  },[cloudReady, cloudSafeToSave, doctors, leaves, nightData, coverages, settings, holidays, audit, users, official]);
 
   const cloudSyncNow = async () => {
     if(!cloudCfg()){ showToast("فعّل الرابط الحي من الإعدادات أولاً لتفعيل المزامنة","warn"); return; }
@@ -3082,9 +3088,9 @@ function App() {
         if(remote.audit) setAudit(remote.audit);
         if(remote.users && remote.users.length) setUsers(remote.users);
         if(remote.official) setOfficial(remote.official);
-        setCloudSyncState("synced"); showToast("✓ تم التحديث بأحدث بيانات من كل الأجهزة");
-      } else { showToast("لا توجد بيانات سحابية محفوظة بعد — سيُنشأ أول نسخة عند أي تعديل","warn"); }
-    }catch(e){ setCloudSyncState("error"); showToast("تعذّر التحديث من السحابة","err"); }
+        setCloudSyncState("synced"); setCloudSafeToSave(true); showToast("✓ تم التحديث بأحدث بيانات من كل الأجهزة");
+      } else { setCloudSafeToSave(true); showToast("لا توجد بيانات سحابية محفوظة بعد — سيُنشأ أول نسخة عند أي تعديل","warn"); }
+    }catch(e){ setCloudSyncState("error"); showToast("تعذّر التحديث من السحابة — الحفظ التلقائي مُعطَّل مؤقتاً لحماية بياناتك حتى تُحل المشكلة","err"); }
   };
   const today = new Date().toISOString().split("T")[0];
   const fd = id => doctors.find(d=>d.id===id);
