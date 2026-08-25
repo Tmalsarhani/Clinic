@@ -1257,10 +1257,10 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           const mornFreeNext = d => nDi<0 ? true : !DIRECT_SLOTS.includes(getSlot(d,nDi,"am")); // صباح الغد فارغ؟
           const base = d => !((d.nightDays||[]).length>0)                              // أصحاب المسائي الثابت لا يدخلون الإضافي
                           && !cur.includes(d.id) && !onLeave(d,date,leaves) && !(d.blockedDays||[]).includes(di);
-          const rank = (a,b)=> (usage[a.id]-usage[b.id])                               // ① الأقل مناوبات (هذه السنة)
-                            || ((weekdayUsage[a.id][di]||0)-(weekdayUsage[b.id][di]||0)) // ①.5 الأقل مناوبات لنفس يوم الأسبوع هذا تحديداً
-                            || ((mornFreeNext(a)?0:1)-(mornFreeNext(b)?0:1))            // ② يُفضّل من صباح غده فارغ
-                            || ((loadMap[a.id]||0)-(loadMap[b.id]||0))                  // ③ الأقل عبئاً نهارياً
+          // ── فصل تام بين "عدد المناوبات" و"العبء النهاري": المناوبة تناوب إجباري متساوٍ بحت، لا يتأثر بعبء العيادات النهارية إطلاقاً ──
+          const rank = (a,b)=> (usage[a.id]-usage[b.id])                               // ① الأقل مناوبات (هذه السنة) — المعيار الحاسم الوحيد للعدد
+                            || ((weekdayUsage[a.id][di]||0)-(weekdayUsage[b.id][di]||0)) // ②  الأقل مناوبات لنفس يوم الأسبوع هذا تحديداً
+                            || ((mornFreeNext(a)?0:1)-(mornFreeNext(b)?0:1))            // ③ يُفضّل من صباح غده فارغ (سلامة راحته، لا عبء)
                             || (recency(a)-recency(b))                                  // ④ من مرّت عليه مدة أطول منذ آخر مناوبة (لا الأبجدية)
                             || a.name.localeCompare(b.name,"ar");
           const freeT = doctors.filter(d=>base(d)&&!prevEve.includes(d.id)).sort(rank);                      // متاح (لم يعمل مساء أمس)
