@@ -953,7 +953,7 @@ function CoverPicker({ list, cur, onPick }) {
   if(!list.length) return <div style={{ fontSize:11.5, color:C.err, fontWeight:600 }}>لا يوجد طبيب</div>;
   const meta = a => a.status==="free" ? {dot:"🟢", t:a.load>0?("متاح · عبء "+a.load):"متاح"}
     : a.status==="warn" ? {dot:"🟠", t:a.commit?`التزام (${a.commit})`:"التزام"}
-    : a.status==="busy" ? {dot:"⚪", t:"لديه عيادة"}
+    : a.status==="busy" ? {dot:"⚪", t:a.busyType?`لديه ${a.busyType}`:"لديه عيادة"}
     : {dot:"🔴", t:"إجازة"};
   const choose2 = id => { if(!id) return; const a=list.find(x=>x.doc.id===id); if(!a) return; if(a.status==="free") onPick(a.doc.id); else setAsk(a); };
   return <>
@@ -964,7 +964,7 @@ function CoverPicker({ list, cur, onPick }) {
     {ask && <div onClick={()=>setAsk(null)} style={{ position:"fixed", inset:0, background:"rgba(15,30,45,.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:"var(--surface)", borderRadius:16, padding:20, maxWidth:330, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,.3)" }}>
         <div style={{ fontSize:15, fontWeight:800, marginBottom:8 }}>⚠️ تنبيه تعارض</div>
-        <div style={{ fontSize:13, color:C.text, lineHeight:1.7, marginBottom:16 }}>د. {ask.doc.name} {ask.status==="leave"?"في إجازة":ask.status==="busy"?"لديه عيادة في هذا الوقت":"لديه التزام"+(ask.commit?` (${ask.commit})`:"")}.<br/>تكليفه يُحدث تعارضاً في الجدول. هل يوافق رئيس القسم على التكليف؟</div>
+        <div style={{ fontSize:13, color:C.text, lineHeight:1.7, marginBottom:16 }}>د. {ask.doc.name} {ask.status==="leave"?"في إجازة":ask.status==="busy"?`لديه ${ask.busyType||"عيادة"} في هذا الوقت`:"لديه التزام"+(ask.commit?` (${ask.commit})`:"")}.<br/>تكليفه يُحدث تعارضاً في الجدول. هل يوافق رئيس القسم على التكليف؟</div>
         <div style={{ display:"flex", gap:8 }}>
           <button onClick={()=>setAsk(null)} style={{ ...sGhost, flex:1, padding:"10px" }}>إلغاء</button>
           <button onClick={()=>{ onPick(ask.doc.id); setAsk(null); }} style={{ ...sBtn(C.primary), flex:1, padding:"10px" }}>نعم، كلّفه</button>
@@ -1122,6 +1122,26 @@ async function cloudPublish(officialSnap){
   return true;
 }
 
+// ════════ مزامنة كاملة بين الأجهزة (نفس بيانات القسم من أي جهاز يفتح التطبيق ويسجّل دخول) ════════
+async function cloudLoadState(){
+  const cfg=cloudCfg(); if(!cfg||!cfg.dbUrl) return null;
+  const idToken=await getIdToken(cfg);
+  const base=String(cfg.dbUrl).replace(/\/+$/,"");
+  const url=`${base}/app/state.json?auth=${encodeURIComponent(idToken)}`;
+  const res=await fetch(url,{cache:"no-store"});
+  if(!res.ok) return null;
+  const j=await res.json();
+  return j||null;
+}
+async function cloudSaveState(state){
+  const cfg=cloudCfg(); if(!cfg||!cfg.dbUrl) return false;
+  const idToken=await getIdToken(cfg);
+  const base=String(cfg.dbUrl).replace(/\/+$/,"");
+  const url=`${base}/app/state.json?auth=${encodeURIComponent(idToken)}`;
+  const res=await fetch(url,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ ...state, updatedAt:new Date().toISOString() }) });
+  return res.ok;
+}
+
 // ════════ مشاركة وتصدير ════════
 function downloadCSV(filename, rows){
   const esc=v=>{ v=(v==null?"":String(v)); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; };
@@ -1151,7 +1171,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const eveLoadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>m[d.id]=0); monthDates.forEach(dt=>((nightData[dt]||{}).doctors||[]).forEach(id=>{ m[id]=(m[id]||0)+1; })); return m; }, [mo,doctors,nightData]);
   const rankAvail = arr => arr.filter(a=>a.status!=="leave").map(a=>({ ...a, load:loadMap[a.doc.id]||0 })).sort((a,b)=> (a.status==="free"?0:1)-(b.status==="free"?0:1) || a.load-b.load);
   const availForGap = g => rankAvail(getAvailable(doctors,[g.ownerId],g.di,g.date,g.period,leaves,nightData,{},coverages));
-  const pickList = (excludeId,di,date,period) => getAvailable(doctors,[excludeId],di,date,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadMap[a.doc.id]||0, commit: a.status==="warn" ? (SLOT_COMMIT[getSlot(a.doc,di,period)]||"التزام") : null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
+  const busyReason = (doc,di,period) => { const sl=getSlot(doc,di,period); if(isClinic(sl)) return "عيادة"; return SLOT_AR[sl]||"عيادة"; }; // يوضّح "تدقيق"/"افتراضي" بدل تعميم "عيادة" على كل شغل نهاري
+  const pickList = (excludeId,di,date,period) => getAvailable(doctors,[excludeId],di,date,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadMap[a.doc.id]||0, commit: a.status==="warn" ? (SLOT_COMMIT[getSlot(a.doc,di,period)]||"التزام") : null, busyType: a.status==="busy" ? busyReason(a.doc,di,period) : null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
 
   const ensureDay = date => setNight(nd=>nd[date]?nd:{...nd,[date]:{doctors:[],coverages:{am:[],pm:[],nextAm:[]},note:""}});
   const pushCov = cov => setCoverages(cs=>[...cs,{id:uid(),...cov}]);
@@ -1176,7 +1197,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   };
   const coverGap = g => { const av=availForGap(g); const s=picks[gapKey(g)]; const cid=s?+s:(av.find(a=>a.status==="free")?.doc?.id); if(!cid){showToast("لا يوجد طبيب متفرّغ — اختر يدوياً","warn");return;} placeCover(g,cid); showToast("تمت التغطية"); };
   const coverAll = () => {
-    let n=0; const used={};
+    let n=0; const used={}; let skipped=0;
     const runningLoad={}; // ── يحسب تراكم التعيينات خلال نفس عملية "حل الكل" — بدونه، مَن يبدأ بأقل عبء يفوز بكل العيادات المكشوفة دفعة واحدة لأن loadMap لا يتحدّث أثناء الحلقة ──
     gaps.forEach(g=>{
       const av=availForGap(g);
@@ -1184,8 +1205,12 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
       const s=picks[gapKey(g)]; const key=g.date+"|"+g.period; const taken=used[key]||[];
       const pick = s?+s : (ranked.find(a=>a.status==="free" && !taken.includes(a.doc.id))?.doc?.id);
       if(pick){ placeCover(g,pick); (used[key]=used[key]||[]).push(pick); runningLoad[pick]=(runningLoad[pick]||0)+1; n++; }
+      else skipped++; // كل المتاحين لديهم التزام (تدقيق/افتراضي/إداري) — لا يُختار أحد تلقائياً، يحتاج قراراً يدوياً من رئيس القسم
     });
-    showToast(n?`غُطّيت ${n} عيادة بالأنسب`:"لا يوجد متاح");
+    if(n && skipped) showToast(`غُطّيت ${n} عيادة بالأنسب — تبقّت ${skipped} تحتاج اختياراً يدوياً (كل المتاحين لديهم التزام)`,"warn");
+    else if(n) showToast(`غُطّيت ${n} عيادة بالأنسب`);
+    else if(skipped) showToast(`لم تُحل أي عيادة تلقائياً — كل المتاحين لديهم التزام (تدقيق/افتراضي/إداري)، اختر يدوياً لكل حالة`,"warn");
+    else showToast("لا يوجد متاح");
   };
 
   const toggleEvening = (date,id) => { ensureDay(date); setNight(nd=>{ const d={...(nd[date]||{doctors:[],coverages:{am:[],pm:[],nextAm:[]}})}; const has=(d.doctors||[]).includes(id); d.doctors=has?d.doctors.filter(x=>x!==id):[...(d.doctors||[]),id]; return {...nd,[date]:d}; }); const nextDay=(()=>{ const dt=new Date(date); dt.setDate(dt.getDate()+1); return dt.toISOString().split("T")[0]; })(); setCoverages(cs=>cs.filter(c=>!(c.absentId===id && ((c.date===date && c.reason==="evening") || (c.date===nextDay && c.reason==="post_evening"))))); };
@@ -1614,7 +1639,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           <div key={gapKey(g)} style={{ background:"var(--warnSoft)", border:"1px solid #fde9c8", borderRadius:10, padding:"10px 11px", marginBottom:7 }}>
             <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:8 }}>
               <div style={{ flex:1, fontSize:12.5, color:"#7c5410", minWidth:140 }}><b>{dmy(g.date)} {DAYS[g.di]}</b> — عيادة د.{own?own.name:"؟"} ({perAr(g.period)}) <span style={{ fontSize:10.5, color:C.muted }}>· {g.reason}</span></div>
-              {best && <button onClick={()=>coverGap(g)} style={{ ...sBtn(C.primary), padding:"6px 12px", fontSize:11.5 }}>⭐ الأنسب: د. {best.doc.name}</button>}
+              {best ? <button onClick={()=>coverGap(g)} style={{ ...sBtn(C.primary), padding:"6px 12px", fontSize:11.5 }}>⭐ الأنسب: د. {best.doc.name}</button>
+                : <span style={{ fontSize:11, fontWeight:700, color:C.err, background:"var(--dangerSoft)", borderRadius:20, padding:"5px 11px" }}>⚠️ لا يوجد طبيب متفرّغ تماماً — الكل لديه التزام، اختر يدوياً بالأسفل</span>}
             </div>
             <CoverPicker list={pl} cur={null} onPick={cid=>placeCover(g,cid)} />
           </div>
@@ -1991,7 +2017,7 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
             const yd = []; for(let m=0;m<12;m++) yd.push(...monthDays(+ly,m).map(x=>x.date));
             const md = monthDays(+l.start.split("-")[0], +l.start.split("-")[1]-1).map(x=>x.date);
             const loadOf = id => doctorSessions(doctors.find(x=>x.id===id), yd, nightData, coverages, leaves).total;
-            const pickFor = (wi,ds,period) => getAvailable(doctors,[d.id],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
+            const pickFor = (wi,ds,period) => getAvailable(doctors,[d.id],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null, busyType: a.status==="busy" ? (()=>{ const sl=getSlot(a.doc,wi,period); return isClinic(sl)?"عيادة":(SLOT_AR[sl]||"عيادة"); })() : null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
             const eveLoad = id => md.reduce((a,dt)=>a+(((nightData[dt]||{}).doctors||[]).includes(id)?1:0),0);
             const evePick = ds => { const nightDocs=(nightData[ds]?.doctors)||[]; return doctors.filter(x=>x.id!==d.id&&!nightDocs.includes(x.id)).map(x=>{ const lv=onLeave(x,ds,leaves); const fixedAny=(x.nightDays||[]).length>0; return { doc:x, status: lv?"leave":fixedAny?"warn":"free", commit: (fixedAny&&!lv)?"عيادة مسائية ثابتة":null, load:eveLoad(x.id) }; }).sort((a,b)=>(({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status]))||(a.load-b.load)); };
             const assignClinic = (ds,p,cid) => { setCoverages(cs=>[...cs.filter(c=>!(c.date===ds&&c.period===p&&c.absentId===d.id)), {id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:cid,reason:"leave"}]); logAudit&&logAudit(`بديل إجازة د.${d.name} (${perAr(p)} ${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`); showToast("تم تعيين البديل"); };
@@ -2387,28 +2413,37 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
       <textarea value={s.staffEmails||""} onChange={e=>set("staffEmails",e.target.value)} placeholder={"admin@clinic.com\nsecretary@clinic.com"} rows={3} style={{ ...sIn, direction:"ltr", textAlign:"left", resize:"vertical", fontFamily:"monospace", fontSize:12.5 }} />
     </div>
     <div style={{ ...card(), padding:16, marginBottom:12 }}>
-      <label style={label}>🔗 الرابط الحي للجدول</label>
-      <div style={{ fontSize:11.5, color:C.muted, marginBottom:10 }}>عند الاعتماد الرسمي تُنشر النسخة المعتمدة تلقائياً، ويظل رابط العرض واحداً ومحدَّثاً دائماً للجميع.</div>
+      <label style={label}>🔗🔄 المزامنة الحية بين الأجهزة + الرابط الحي للجدول</label>
+      <div style={{ fontSize:11.5, color:C.muted, marginBottom:10 }}>بعد ضبط هذا، أي جهاز يفتح التطبيق ويسجّل دخول (نفس الحساب) يرى تلقائياً نفس بيانات القسم (الأطباء، الإجازات، الجدول، التغطيات، الاعتماد) — تتحدّث كل بضع ثوانٍ من أي جهاز إلى البقية. بالإضافة لذلك: عند الاعتماد الرسمي تُنشر النسخة المعتمدة تلقائياً لرابط عرض عام واحد (view.html) للجميع.</div>
       {(()=>{ const cfg=S.get("v2_cloud")||{}; return <>
         <input defaultValue={cfg.dbUrl||""} id="cl_url" placeholder="رابط Realtime Database (https://xxx-default-rtdb.firebaseio.com)" style={{ ...sIn, marginBottom:8, direction:"ltr", textAlign:"left" }} />
         <input defaultValue={cfg.apiKey||""} id="cl_apikey" placeholder="Web API Key (من Project Settings ← General)" style={{ ...sIn, marginBottom:8, direction:"ltr", textAlign:"left" }} />
         <input defaultValue={cfg.email||""} id="cl_email" placeholder="بريد حساب النشر الإداري (Authentication)" style={{ ...sIn, marginBottom:8, direction:"ltr", textAlign:"left" }} />
         <input defaultValue={cfg.password||""} id="cl_password" type="password" placeholder="كلمة مرور حساب النشر" style={{ ...sIn, marginBottom:8, direction:"ltr", textAlign:"left" }} />
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-          <button onClick={()=>{ let url=document.getElementById("cl_url").value.trim(); const apiKey=document.getElementById("cl_apikey").value.trim(); const email=document.getElementById("cl_email").value.trim(); const password=document.getElementById("cl_password").value; if(!url){ showToast("ألصق رابط قاعدة Realtime","warn"); return; } if(!/^https?:\/\//.test(url)) url="https://"+url; if(!apiKey||!email||!password){ showToast("أكمل Web API Key والبريد وكلمة المرور","warn"); return; } S.set("v2_cloud",{ dbUrl:url, apiKey, email, password }); showToast("✓ تم حفظ إعدادات الرابط الحي"); }} style={{ ...sBtn(C.primary), flex:1, minWidth:140 }}>💾 حفظ</button>
+          <button onClick={()=>{ let url=document.getElementById("cl_url").value.trim(); const apiKey=document.getElementById("cl_apikey").value.trim(); const email=document.getElementById("cl_email").value.trim(); const password=document.getElementById("cl_password").value; if(!url){ showToast("ألصق رابط قاعدة Realtime","warn"); return; } if(!/^https?:\/\//.test(url)) url="https://"+url; if(!apiKey||!email||!password){ showToast("أكمل Web API Key والبريد وكلمة المرور","warn"); return; } S.set("v2_cloud",{ dbUrl:url, apiKey, email, password }); showToast("✓ تم الحفظ — أعد تحميل الصفحة لتفعيل المزامنة على هذا الجهاز"); }} style={{ ...sBtn(C.primary), flex:1, minWidth:140 }}>💾 حفظ</button>
           <button onClick={async()=>{ const cf=cloudCfg(); if(!cf){ showToast("احفظ الإعدادات أولاً","warn"); return; } showToast("جارٍ الاختبار…"); try{ await getIdToken(cf); const base=String(cf.dbUrl).replace(/\/+$/,""); const r=await fetch(`${base}/public/schedule.json`,{cache:"no-store"}); if(r.ok) showToast("✓ تسجيل الدخول والاتصال بالقاعدة سليم"); else showToast("القاعدة ردّت بخطأ — تحقق من الرابط والقواعد","warn"); }catch(e){ showToast("تعذّر تسجيل الدخول: "+String(e.message||e).slice(0,180),"err"); } }} style={{ ...sGhost, flex:1, minWidth:120, color:C.accent }}>🔌 اختبار</button>
           <button onClick={()=>{ const link=location.origin+location.pathname.replace(/[^/]*$/,"")+"view.html"; navigator.clipboard&&navigator.clipboard.writeText(link); showToast("✓ نُسخ: "+link); }} style={{ ...sGhost, flex:1, minWidth:140 }}>📋 نسخ رابط العرض</button>
         </div>
         <button onClick={publishNow} style={{ ...sBtn("var(--primary-d)"), width:"100%", marginTop:10, fontSize:14 }}>🔄 نشر الحالة الحالية الآن للرابط الحي</button>
         {(()=>{ const t=S.get("v2_published_at"); return t? <div style={{ fontSize:11, color:C.muted, marginTop:8, textAlign:"center" }}>آخر نشر للرابط الحي: <b style={{ color:C.primary }}>{new Date(t).toLocaleString("ar",{dateStyle:"medium",timeStyle:"short"})}</b></div> : <div style={{ fontSize:11, color:C.warn, marginTop:8, textAlign:"center" }}>لم يُنشر بعد — اضغط «نشر الآن» لتحديث الرابط الحي</div>; })()}
         <div style={{ fontSize:11, color:C.muted, marginTop:10, lineHeight:1.8 }}>
-          الإعداد: (١) من Firebase Console ← Authentication ← Sign-in method ← فعّل Email/Password → (٢) من تبويب Users أنشئ حساباً إدارياً (بريد + كلمة مرور) → (٣) من Project Settings ← General انسخ Web API Key → (٤) من Realtime Database انسخ الرابط أعلى الصفحة، وضع القواعد كالأسفل → (٥) الصق الرابط وWeb API Key والبريد وكلمة المرور هنا واحفظ → (٦) ضع نفس رابط القاعدة (فقط، بلا أي بيانات حساس أخرى) في view.html وارفع الملفين.
+          الإعداد: (١) من Firebase Console ← Authentication ← Sign-in method ← فعّل Email/Password → (٢) من تبويب Users أنشئ حساباً إدارياً (بريد + كلمة مرور) → (٣) من Project Settings ← General انسخ Web API Key → (٤) من Realtime Database انسخ الرابط أعلى الصفحة، وضع القواعد كالأسفل → (٥) الصق الرابط وWeb API Key والبريد وكلمة المرور هنا واحفظ، ثم أعد تحميل الصفحة → (٦) ضع نفس رابط القاعدة (فقط، بلا أي بيانات حساسة أخرى) في view.html وارفع الملفين.
+        </div>
+        <div style={{ fontSize:11, color:C.warn, marginTop:8, lineHeight:1.8, background:"var(--warnSoft)", border:`1px solid ${C.warn}`, borderRadius:10, padding:"8px 10px" }}>
+          ⚠️ سجّل كل مستخدم دخوله من صفحة تسجيل الدخول (الاسم والرمز السري) بنفس الحساب على أي جهاز — هذه المزامنة تشارك بيانات القسم بين الأجهزة، لكنها لا تستبدل صلاحيات الدخول الخاصة بالتطبيق.
         </div>
         <pre style={{ fontSize:10.5, background:"var(--surface2)", border:`1px solid ${C.line}`, borderRadius:10, padding:"10px 12px", marginTop:8, overflowX:"auto", direction:"ltr", textAlign:"left", color:C.text }}>{`{
   "rules": {
     "public": {
       "schedule": {
         ".read": true,
+        ".write": "auth != null"
+      }
+    },
+    "app": {
+      "state": {
+        ".read": "auth != null",
         ".write": "auth != null"
       }
     }
@@ -2982,6 +3017,8 @@ function App() {
   const toggleDark = () => { const dk=document.documentElement.getAttribute("data-theme")==="dark"; document.documentElement.setAttribute("data-theme", dk?"light":"dark"); S.set("v2_dark", !dk); forceDark(x=>x+1); };
   const [page, setPage]           = useState("dashboard");
   const [toast, setToast]         = useState(null);
+  const [cloudReady, setCloudReady] = useState(false); // true بعد محاولة التحميل الأولى من السحابة (نجحت أو فشلت)
+  const [cloudSyncState, setCloudSyncState] = useState(cloudCfg()?"idle":"off"); // off | idle | syncing | synced | error
   useEffect(()=>S.set("v2_docs",doctors),[doctors]);
   useEffect(()=>S.set("v2_leaves",leaves),[leaves]);
   useEffect(()=>S.set("v2_night",nightData),[nightData]);
@@ -2993,6 +3030,62 @@ function App() {
   useEffect(()=>S.set("v2_session",session),[session]);
   useEffect(()=>S.set("v2_navcollapsed",collapsed),[collapsed]);
   useEffect(()=>{ if(official) S.set("v2_official",official); },[official]);
+
+  // ── تحميل أوّلي من السحابة عند فتح التطبيق: لو فيه بيانات مشتركة محفوظة، تحل محل النسخة المحلية فوراً ──
+  useEffect(()=>{ (async()=>{
+    if(cloudCfg()){
+      try{
+        const remote = await cloudLoadState();
+        if(remote){
+          if(remote.doctors) _setDoctors(remote.doctors);
+          if(remote.leaves) _setLeaves(remote.leaves);
+          if(remote.nightData) _setNight(remote.nightData);
+          if(remote.coverages) _setCoverages(remote.coverages);
+          if(remote.settings) setSettings(remote.settings);
+          if(remote.holidays){ setHolidays(remote.holidays); HOLIDAYS=buildHolidayMap(remote.holidays); }
+          if(remote.audit) setAudit(remote.audit);
+          if(remote.users && remote.users.length) setUsers(remote.users);
+          if(remote.official) setOfficial(remote.official);
+          setCloudSyncState("synced");
+        }
+      }catch(e){ setCloudSyncState("error"); }
+    }
+    setCloudReady(true);
+  })(); },[]);
+
+  // ── حفظ تلقائي مؤجَّل (debounce) للسحابة عند أي تغيير في البيانات المشتركة — بعد اكتمال التحميل الأوّلي فقط، لمنع الكتابة فوق بيانات الأجهزة الأخرى بنسخة محلية قديمة ──
+  const cloudSaveTimer = React.useRef(null);
+  useEffect(()=>{
+    if(!cloudReady || !cloudCfg()) return;
+    setCloudSyncState("syncing");
+    if(cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
+    cloudSaveTimer.current = setTimeout(()=>{
+      cloudSaveState({ doctors, leaves, nightData, coverages, settings, holidays, audit, users, official })
+        .then(ok=>setCloudSyncState(ok?"synced":"error"))
+        .catch(()=>setCloudSyncState("error"));
+    }, 1500);
+    return ()=>{ if(cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current); };
+  },[cloudReady, doctors, leaves, nightData, coverages, settings, holidays, audit, users, official]);
+
+  const cloudSyncNow = async () => {
+    if(!cloudCfg()){ showToast("فعّل الرابط الحي من الإعدادات أولاً لتفعيل المزامنة","warn"); return; }
+    setCloudSyncState("syncing"); showToast("جارٍ التحديث من السحابة…");
+    try{
+      const remote = await cloudLoadState();
+      if(remote){
+        if(remote.doctors) _setDoctors(remote.doctors);
+        if(remote.leaves) _setLeaves(remote.leaves);
+        if(remote.nightData) _setNight(remote.nightData);
+        if(remote.coverages) _setCoverages(remote.coverages);
+        if(remote.settings) setSettings(remote.settings);
+        if(remote.holidays){ setHolidays(remote.holidays); HOLIDAYS=buildHolidayMap(remote.holidays); }
+        if(remote.audit) setAudit(remote.audit);
+        if(remote.users && remote.users.length) setUsers(remote.users);
+        if(remote.official) setOfficial(remote.official);
+        setCloudSyncState("synced"); showToast("✓ تم التحديث بأحدث بيانات من كل الأجهزة");
+      } else { showToast("لا توجد بيانات سحابية محفوظة بعد — سيُنشأ أول نسخة عند أي تعديل","warn"); }
+    }catch(e){ setCloudSyncState("error"); showToast("تعذّر التحديث من السحابة","err"); }
+  };
   const today = new Date().toISOString().split("T")[0];
   const fd = id => doctors.find(d=>d.id===id);
   const showToast = (msg,kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null), kind==="err"?6000:2200); };
@@ -3040,6 +3133,13 @@ function App() {
   </>;
 
   // ---- Auth gating ----
+  // ── انتظار تحميل السحابة أولاً (لو كانت مفعّلة) قبل عرض أي بيانات، لتفادي ظهور نسخة محلية قديمة ثم استبدالها فجأة ──
+  if(cloudCfg() && !cloudReady){
+    return <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:14, background:"var(--bg)" }}>
+      <div style={{ width:52, height:52, borderRadius:16, background:`linear-gradient(135deg,${C.primary},${C.accent})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, color:"#fff", fontWeight:800, animation:"fade 1.2s ease-in-out infinite alternate" }}>ط</div>
+      <div style={{ fontSize:13.5, color:C.sub, fontWeight:600 }}>جارٍ تحميل أحدث بيانات القسم…</div>
+    </div>;
+  }
   if(!currentUser) return <LoginScreen users={users} onLogin={u=>{ setSession({userId:u.id}); setPage("dashboard"); }} />;
   if(role==="doctor"){ const myDoc=doctors.find(d=>d.id===currentUser.doctorId); return (
     <div style={{ minHeight:"100vh", background:"var(--bg)" }}>
@@ -3096,6 +3196,9 @@ function App() {
           {pending && <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} title="لديك تغييرات غير معتمدة — اضغط للانتقال للأعلى" style={{ display:"inline-flex", alignItems:"center", gap:5, background:"var(--warnSoft)", border:`1px solid ${C.warn}`, color:C.warn, borderRadius:20, padding:"4px 10px", fontSize:11, fontWeight:800, cursor:"pointer", flexShrink:0, fontFamily:"inherit" }}>
             <span style={{ width:7, height:7, borderRadius:"50%", background:C.warn, display:"inline-block" }} />غير معتمد
           </button>}
+          {(()=>{ if(!cloudCfg()) return null; const m={ idle:{c:C.muted,t:"☁️ متصل"}, syncing:{c:C.primary,t:"🔄 جارٍ المزامنة…"}, synced:{c:C.ok,t:"☁️ متزامن"}, error:{c:C.err,t:"⚠️ تعذّرت المزامنة"}, off:{c:C.muted,t:"☁️ متصل"} }[cloudSyncState]; return (
+            <button onClick={cloudSyncNow} title="اضغط لتحديث فوري من السحابة (أي تعديل من جهاز آخر)" style={{ display:"inline-flex", alignItems:"center", gap:5, background:"var(--surface2)", border:`1px solid ${C.line}`, color:m.c, borderRadius:20, padding:"4px 10px", fontSize:11, fontWeight:700, cursor:"pointer", flexShrink:0, fontFamily:"inherit" }}>{m.t}</button>
+          ); })()}
         </div>
         <div className="qstats">
           <span className="qchip"><i className="dot" style={{ background:C.ok }}></i>تغطيات <b>{coverages.length}</b></span>
