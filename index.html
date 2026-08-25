@@ -1193,7 +1193,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const clearCov = (date,slot) => setNight(nd=>{ const d={...(nd[date]||{})}; const cv={...(d.coverages||{})}; cv[slot]=[]; d.coverages=cv; return {...nd,[date]:d}; });
 
   const autoEvening = () => { const next=autoFill(mo.y,mo.m,doctors,leaves,nightData); setNight(()=>next); showToast("تم التوزيع التلقائي للمسائي"); };
-  const [reqPerDay, setReqPerDay] = useState(2);
+  const [reqPerDay, setReqPerDay] = useState(()=>{ const v=S.get("v2_reqperday"); return v!=null?v:1; });
+  useEffect(()=>S.set("v2_reqperday",reqPerDay),[reqPerDay]);
   const [dayReq, setDayReq] = useState(()=>S.get("v2_dayreq")||{});
   useEffect(()=>S.set("v2_dayreq",dayReq),[dayReq]);
   const [showSetup, setShowSetup] = useState(false);
@@ -1562,7 +1563,10 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           <div style={{ flex:1, fontSize:14, fontWeight:700 }}>🗓 عدد العيادات المسائية لكل يوم</div>
           <label style={{ fontSize:11.5, color:C.sub, display:"inline-flex", alignItems:"center", gap:6 }}>الافتراضي<input type="number" min="0" max="10" value={reqPerDay} onChange={e=>setReqPerDay(Math.max(0,+e.target.value||0))} style={{ width:44, border:`1px solid ${C.line}`, borderRadius:7, padding:"4px", textAlign:"center" }} /></label>
         </div>
-        <div style={{ fontSize:11, color:C.muted, marginBottom:10 }}>حدّد لكل يوم عدد العيادات المسائية ثم اضغط «إنشاء جدول فارغ». تبقى الخانات فارغة لتختار الأطباء يدوياً، أو «توزيع الأيام الثابتة» ثم «إكمال المسائي بالمتاح».</div>
+        <div style={{ fontSize:11, color:C.muted, marginBottom:10 }}>
+          <b>الافتراضي</b> يُطبَّق على كل يوم لم تُخصِّص له عدداً يدوياً، ويُحفظ <b>دائماً</b> لكل الأشهر القادمة تلقائياً (لا حاجة لضبطه كل مرة). عدّل عدداً معيّناً بـ +/− فقط ليوم استثنائي.<br/>
+          «💾 حفظ الإعداد كقالب دائم» يحفظ الأرقام فقط، دون إنشاء الجدول بعد. «🗓 اعتماد وإنشاء الجدول» هو الخطوة التي تُنشئ الأيام فعلياً وتبدأ التعبئة (فارغة لتختار الأطباء يدوياً، أو استخدم «توزيع الأيام الثابتة» ثم «إكمال المسائي بالمتاح»).
+        </div>
         {!monthConfigured && <div style={{ background:"var(--primarySoft)", border:`1px solid ${C.primary}`, borderRadius:10, padding:"9px 11px", marginBottom:10, fontSize:12, color:C.primaryD, fontWeight:600 }}>👋 هذا الشهر جديد ولم يُحدَّد له شيء بعد — راجع الأعداد أدناه (أو غيّرها) ثم اختر طريقة التوزيع.</div>}
         <div style={{ display:"flex", flexDirection:"column", gap:5, maxHeight:360, overflowY:"auto" }}>
           {days.map(({date,di,day})=>{ const v=dayReq[date]!=null?dayReq[date]:reqPerDay; const assignedDocs=((nightData[date]?.doctors)||[]).map(id=>fd(id)).filter(Boolean); return (
@@ -1588,8 +1592,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           ); })}
         </div>
         <div style={{ display:"flex", gap:8, marginTop:12 }}>
-          <button onClick={()=>{ showToast("تم حفظ الإعداد"); setShowSetup(false); }} style={{ ...sGhost, flex:1 }}>💾 حفظ الإعداد</button>
-          <button onClick={createEmpty} style={{ ...sBtn(C.primary), flex:1 }}>🗓 إنشاء جدول فارغ</button>
+          <button onClick={()=>{ showToast("✓ تم حفظ العدد الافتراضي — سيبقى نفسه في كل الأشهر القادمة تلقائياً (لا يحتاج ضبطاً كل مرة)"); setShowSetup(false); }} style={{ ...sGhost, flex:1 }}>💾 حفظ الإعداد كقالب دائم</button>
+          <button onClick={createEmpty} style={{ ...sBtn(C.primary), flex:1 }}>🗓 اعتماد وإنشاء الجدول (ابدأ التعبئة)</button>
         </div>
       </div>
     )}
