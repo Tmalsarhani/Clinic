@@ -1208,6 +1208,10 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
         const usage={}, thisMoUsage={}; doctors.forEach(d=>{ usage[d.id]=0; thisMoUsage[d.id]=0; });
         priorYearDates.forEach(dt=>((nd[dt]||{}).doctors||[]).forEach(id=>usage[id]=(usage[id]||0)+1));
         monthDates.forEach(dt=>((n[dt]||{}).doctors||[]).forEach(id=>{ usage[id]=(usage[id]||0)+1; thisMoUsage[id]=(thisMoUsage[id]||0)+1; }));
+        // ── عدالة لكل يوم أسبوع على حدة: بعض الأيام (كالاثنين) قد يكون فيها عدد أطباء "متاحين" أقل (البقية عندهم عيادة ثابتة ذلك اليوم) ──
+        // فحتى مع عدالة إجمالية صحيحة، قد يتكرر نفس الطبيب لنفس يوم الأسبوع تحديداً. هذا العدّاد يمنع ذلك بحساب كل يوم أسبوع منفصلاً
+        const weekdayUsage={}; doctors.forEach(d=>{ weekdayUsage[d.id]=[0,0,0,0,0]; });
+        [...priorYearDates, ...monthDates].forEach(dt=>{ const wi=dayIdx(dt); if(wi<0) return; ((nd[dt]||{}).doctors||[]).forEach(id=>{ if(!weekdayUsage[id]) weekdayUsage[id]=[0,0,0,0,0]; weekdayUsage[id][wi]++; }); });
         // ── كسر التعادل بالتناوب لا بالأبجدية: عند تساوي كل معايير العدالة أعلاه، من المهم عدم اختيار نفس الطبيب دائماً بسبب ترتيب اسمه ──
         // (كان الترتيب الأبجدي يفوز في كل تعادل، فيتكرر نفس الاسم كل شهر) — الآن يُفضَّل مَن مرّت عليه مدة أطول منذ آخر مناوبة له
         const lastAssigned={}; doctors.forEach(d=>lastAssigned[d.id]=null);
@@ -1223,6 +1227,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           const base = d => !((d.nightDays||[]).length>0)                              // أصحاب المسائي الثابت لا يدخلون الإضافي
                           && !cur.includes(d.id) && !onLeave(d,date,leaves) && !(d.blockedDays||[]).includes(di);
           const rank = (a,b)=> (usage[a.id]-usage[b.id])                               // ① الأقل مناوبات (هذه السنة)
+                            || ((weekdayUsage[a.id][di]||0)-(weekdayUsage[b.id][di]||0)) // ①.5 الأقل مناوبات لنفس يوم الأسبوع هذا تحديداً
                             || ((mornFreeNext(a)?0:1)-(mornFreeNext(b)?0:1))            // ② يُفضّل من صباح غده فارغ
                             || ((loadMap[a.id]||0)-(loadMap[b.id]||0))                  // ③ الأقل عبئاً نهارياً
                             || (recency(a)-recency(b))                                  // ④ من مرّت عليه مدة أطول منذ آخر مناوبة (لا الأبجدية)
@@ -1230,7 +1235,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           const freeT = doctors.filter(d=>base(d)&&!prevEve.includes(d.id)).sort(rank);                      // متاح (لم يعمل مساء أمس)
           const commT = allowCommitted ? doctors.filter(d=>base(d)&&prevEve.includes(d.id)).sort(rank) : []; // عمل مساء أمس (بموافقة)
           const queue=[...freeT, ...commT];
-          while(cur.length<need && queue.length){ const pk=queue.shift(); cur.push(pk.id); usage[pk.id]++; thisMoUsage[pk.id]++; lastAssigned[pk.id]=date; }
+          while(cur.length<need && queue.length){ const pk=queue.shift(); cur.push(pk.id); usage[pk.id]++; thisMoUsage[pk.id]++; lastAssigned[pk.id]=date; weekdayUsage[pk.id][di]=(weekdayUsage[pk.id][di]||0)+1; }
           if(cur.length<need) leftover += (need-cur.length);
           n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur, eveningSlots:need };
         });
@@ -2059,9 +2064,16 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
   const [anchor,setAnchor] = useState(today);
   const [sel,setSel] = useState(null);
   const [full,setFull] = useState(false);
+  const [rangeFrom,setRangeFrom] = useState(today);
+  const [rangeTo,setRangeTo] = useState(today);
+  const [gridYear,setGridYear] = useState(new Date(today).getFullYear());
+  const [gridMonths,setGridMonths] = useState(()=>new Set([new Date(today).getMonth()]));
+  const toggleGridMonth = m => setGridMonths(s=>{ const n=new Set(s); n.has(m)?n.delete(m):n.add(m); return n; });
   const period = (()=>{
     if(mode==="week"){ const t=new Date(anchor); const sun=new Date(t); sun.setDate(t.getDate()-t.getDay()); const dates=[]; for(let i=0;i<5;i++){ const d=new Date(sun); d.setDate(sun.getDate()+i); dates.push(d.toISOString().split("T")[0]); } return { dates, label:`أسبوع ${dmy(dates[0])} ← ${dmy(dates[4])}`, weeks:1 }; }
     if(mode==="month"){ const [y,m]=anchor.split("-"); const dates=monthDays(+y,+m-1).map(x=>x.date); return { dates, label:`${MONTHS[+m-1]} ${y}`, weeks:Math.max(1,Math.round(dates.length/5)) }; }
+    if(mode==="range"){ const dates=[]; const s=new Date(rangeFrom), e=new Date(rangeTo); if(e>=s){ for(let d=new Date(s); d<=e; d.setDate(d.getDate()+1)) dates.push(d.toISOString().split("T")[0]); } return { dates, label:`${dmy(rangeFrom)} ← ${dmy(rangeTo)}`, weeks:Math.max(1,Math.round(dates.length/5)) }; }
+    if(mode==="grid"){ const ms=[...gridMonths].sort((a,b)=>a-b); const dates=ms.flatMap(m=>monthDays(gridYear,m).map(x=>x.date)); const label = ms.length ? `${ms.map(m=>MONTHS[m]).join("، ")} ${gridYear}` : `لم تُحدَّد أشهر — ${gridYear}`; return { dates, label, weeks:Math.max(1,Math.round(dates.length/5)) }; }
     // multi: N months ending at anchor's month (inclusive)
     const [y,m]=anchor.split("-"); const Y=+y, M=+m-1;
     const startAbs = Y*12+M-(monthsN-1);
@@ -2084,7 +2096,7 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
   const absentCov = overview.reduce((a,o)=>a+o.sess.absentCovered,0);
   const totalCov = overview.reduce((a,o)=>a+o.sess.covers,0);
   const totalEve = overview.reduce((a,o)=>a+o.sess.evening,0);
-  const shiftAnchor = n => { const d=new Date(anchor); if(mode==="week") d.setDate(d.getDate()+7*n); else if(mode==="month") d.setMonth(d.getMonth()+n); else d.setMonth(d.getMonth()+monthsN*n); setAnchor(d.toISOString().split("T")[0]); };
+  const shiftAnchor = n => { const d=new Date(anchor); if(mode==="week") d.setDate(d.getDate()+7*n); else if(mode==="month") d.setMonth(d.getMonth()+n); else if(mode==="multi") d.setMonth(d.getMonth()+monthsN*n); setAnchor(d.toISOString().split("T")[0]); };
   const loadStatus = (care,target) => { if(!target||target<=0) return { key:"na", color:"#64748b", label:"—" }; const r=care/target; if(r>=1.05) return { key:"over", color:"#064E3B", label:"أكثر من المطلوب" }; if(r>=0.90) return { key:"meets", color:"#16A34A", label:"مطابق للمطلوب" }; if(r>=0.65) return { key:"under", color:"#CA8A04", label:"ناقص" }; return { key:"vlow", color:"#DC2626", label:"ناقص جداً" }; };
   const printWorkload = (list,titleSuffix="") => {
     const css = `<style>.bdg{padding:3px 12px;border-radius:20px;font-size:11px;font-weight:700;color:#fff;display:inline-block}.lgnd{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 12px}.lgnd span{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#475569}.lgnd i{width:14px;height:14px;border-radius:4px;display:inline-block}</style>`;
@@ -2101,14 +2113,37 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
         <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden", flexWrap:"wrap" }}>
           {[["week","أسبوعي"],["month","شهري"]].map(([k,l])=><button key={k} onClick={()=>setMode(k)} style={{ padding:"7px 16px", border:"none", fontSize:12.5, fontWeight:700, background:mode===k?C.primary:"var(--surface)", color:mode===k?"#fff":C.sub }}>{l}</button>)}
           {[2,3,4,6,12].map(n=><button key={n} onClick={()=>{ setMode("multi"); setMonthsN(n); }} style={{ padding:"7px 13px", border:"none", borderInlineStart:`1px solid ${C.line}`, fontSize:12.5, fontWeight:700, background:(mode==="multi"&&monthsN===n)?C.primary:"var(--surface)", color:(mode==="multi"&&monthsN===n)?"#fff":C.sub }}>{n} أشهر</button>)}
+          <button onClick={()=>setMode("range")} style={{ padding:"7px 13px", border:"none", borderInlineStart:`1px solid ${C.line}`, fontSize:12.5, fontWeight:700, background:mode==="range"?C.primary:"var(--surface)", color:mode==="range"?"#fff":C.sub }}>📅 من/إلى</button>
+          <button onClick={()=>setMode("grid")} style={{ padding:"7px 13px", border:"none", borderInlineStart:`1px solid ${C.line}`, fontSize:12.5, fontWeight:700, background:mode==="grid"?C.primary:"var(--surface)", color:mode==="grid"?"#fff":C.sub }}>🗓 اختيار أشهر</button>
         </div>
       </div>
-      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
+      {mode==="range" && (
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
+          <div style={{ flex:"1 1 130px" }}><div style={{ fontSize:11, color:C.sub, marginBottom:3 }}>من</div><input type="date" value={rangeFrom} onChange={e=>setRangeFrom(e.target.value)} style={sIn} /></div>
+          <div style={{ flex:"1 1 130px" }}><div style={{ fontSize:11, color:C.sub, marginBottom:3 }}>إلى</div><input type="date" value={rangeTo} onChange={e=>setRangeTo(e.target.value)} style={sIn} /></div>
+        </div>
+      )}
+      {mode==="grid" && (
+        <div style={{ marginBottom:12 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:9 }}>
+            <button onClick={()=>setGridYear(y=>y-1)} style={{ ...sGhost, width:34, padding:"6px 0" }}>‹</button>
+            <div style={{ flex:1, textAlign:"center", fontWeight:700, fontSize:13.5 }}>{gridYear}</div>
+            <button onClick={()=>setGridYear(y=>y+1)} style={{ ...sGhost, width:34, padding:"6px 0" }}>›</button>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:6 }}>
+            {MONTHS.map((mn,mi)=>(
+              <button key={mi} onClick={()=>toggleGridMonth(mi)} style={{ padding:"10px 4px", borderRadius:10, border:`1.5px solid ${gridMonths.has(mi)?C.primary:C.line}`, background:gridMonths.has(mi)?"var(--primarySoft)":"var(--surface)", color:gridMonths.has(mi)?C.primaryD:C.sub, fontSize:12, fontWeight:700, cursor:"pointer" }}>{mn}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {(mode==="week"||mode==="month"||mode==="multi") && <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
         <button onClick={()=>shiftAnchor(-1)} style={{ ...sGhost, width:34, padding:"6px 0" }}>‹</button>
         <div style={{ flex:1, textAlign:"center", fontWeight:700, fontSize:13.5, minWidth:140 }}>{period.label}</div>
         <button onClick={()=>shiftAnchor(1)} style={{ ...sGhost, width:34, padding:"6px 0" }}>›</button>
         <input type="date" value={anchor} onChange={e=>e.target.value&&setAnchor(e.target.value)} style={{ ...sIn, width:"auto", padding:"6px 9px" }} />
-      </div>
+      </div>}
+      {(mode==="range"||mode==="grid") && <div style={{ textAlign:"center", fontWeight:700, fontSize:13.5, marginBottom:12, color:C.primaryD }}>{period.label}</div>}
       <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
         {[["أطباء عملوا بعيادة",worked,C.primary],["غياب مغطّى",absentCov,C.warn],["تغطيات منفّذة",totalCov,"var(--primary-d)"],["مناوبات مسائية",totalEve,"var(--eve)"]].map(([l,v,col])=>(
           <div key={l} style={{ flex:"1 1 110px", background:"var(--surface2)", borderRadius:10, padding:"10px", textAlign:"center" }}><div style={{ fontSize:20, fontWeight:800, color:col }}>{v}</div><div style={{ fontSize:10.5, color:C.sub, marginTop:3 }}>{l}</div></div>
@@ -2422,12 +2457,19 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd, setting
   const [monthsN,setMonthsN] = useState(2);
   const [ref,setRef]     = useState(today);
   const [sel,setSel]     = useState("all");
+  const [rangeFrom,setRangeFrom] = useState(today);
+  const [rangeTo,setRangeTo] = useState(today);
+  const [gridYear,setGridYear] = useState(new Date(today).getFullYear());
+  const [gridMonths,setGridMonths] = useState(()=>new Set([new Date(today).getMonth()]));
+  const toggleGridMonth = m => setGridMonths(s=>{ const n=new Set(s); n.has(m)?n.delete(m):n.add(m); return n; });
   const weekDatesOf = r => { const t=new Date(r); const sun=new Date(t); sun.setDate(t.getDate()-t.getDay()); const out=[]; for(let i=0;i<5;i++){ const dd=new Date(sun); dd.setDate(sun.getDate()+i); out.push(dd.toISOString().split("T")[0]); } return out; };
   const rd = new Date(ref);
   const multiRange = (()=>{ const Y=rd.getFullYear(), M=rd.getMonth(); const startAbs=Y*12+M-(monthsN-1); const startY=Math.floor(startAbs/12), startM=((startAbs%12)+12)%12; const dts=[]; for(let i=0;i<monthsN;i++){ const abs=startAbs+i; const yy=Math.floor(abs/12), mm=((abs%12)+12)%12; dts.push(...monthDays(yy,mm).map(x=>x.date)); } return { dates:dts, startY, startM }; })();
-  const dates = scope==="week" ? weekDatesOf(ref) : scope==="month" ? monthDays(rd.getFullYear(), rd.getMonth()).map(x=>x.date) : multiRange.dates;
-  const label = scope==="week" ? `أسبوع ${dmy(dates[0])} – ${dmy(dates[dates.length-1])}` : scope==="month" ? `${MONTHS[rd.getMonth()]} ${rd.getFullYear()}` : (monthsN===12 ? `${rd.getFullYear()} (١٢ شهر)` : `${MONTHS[multiRange.startM]} ${multiRange.startY} ← ${MONTHS[rd.getMonth()]} ${rd.getFullYear()}`);
-  const nav = dir => { const d=new Date(ref); if(scope==="week") d.setDate(d.getDate()+dir*7); else if(scope==="month") d.setMonth(d.getMonth()+dir); else d.setMonth(d.getMonth()+monthsN*dir); setRef(d.toISOString().split("T")[0]); };
+  const rangeDates = (()=>{ const out=[]; const s=new Date(rangeFrom), e=new Date(rangeTo); if(e>=s){ for(let d=new Date(s); d<=e; d.setDate(d.getDate()+1)) out.push(d.toISOString().split("T")[0]); } return out; })();
+  const gridDates = (()=>{ const ms=[...gridMonths].sort((a,b)=>a-b); return ms.flatMap(m=>monthDays(gridYear,m).map(x=>x.date)); })();
+  const dates = scope==="week" ? weekDatesOf(ref) : scope==="month" ? monthDays(rd.getFullYear(), rd.getMonth()).map(x=>x.date) : scope==="range" ? rangeDates : scope==="grid" ? gridDates : multiRange.dates;
+  const label = scope==="week" ? `أسبوع ${dmy(dates[0])} – ${dmy(dates[dates.length-1])}` : scope==="month" ? `${MONTHS[rd.getMonth()]} ${rd.getFullYear()}` : scope==="range" ? `${dmy(rangeFrom)} ← ${dmy(rangeTo)}` : scope==="grid" ? (([...gridMonths].length ? [...gridMonths].sort((a,b)=>a-b).map(m=>MONTHS[m]).join("، ") : "لم تُحدَّد أشهر")+` ${gridYear}`) : (monthsN===12 ? `${rd.getFullYear()} (١٢ شهر)` : `${MONTHS[multiRange.startM]} ${multiRange.startY} ← ${MONTHS[rd.getMonth()]} ${rd.getFullYear()}`);
+  const nav = dir => { const d=new Date(ref); if(scope==="week") d.setDate(d.getDate()+dir*7); else if(scope==="month") d.setMonth(d.getMonth()+dir); else if(scope==="multi") d.setMonth(d.getMonth()+monthsN*dir); setRef(d.toISOString().split("T")[0]); };
   const slotT = (d,di,p)=>{ const sl=(d.sched?.[di]?.[p])||""; return sl?SLOT_AR[sl]||sl:"—"; };
   const perTxt = p => p==="am"?"عيادة الصباح":p==="pm"?"عيادة الظهر":p==="nextAm"?"عيادة صباح الغد":"العيادة المسائية";
   const covsOf = d => { const out=[]; coverages.filter(c=>c.coverDoctorId===d.id&&dates.includes(c.date)).forEach(c=>out.push({date:c.date,period:c.period,ownerId:c.absentId,reason:c.reason})); dates.forEach(dt=>{ const cv=(nightData[dt]||{}).coverages||{}; ["am","pm","nextAm"].forEach(sl=>{ (cv[sl]||[]).forEach(id=>{ if(id===d.id) out.push({date:dt,period:sl,ownerId:null,reason:"evening"}); }); }); }); return out.sort((a,b)=>a.date.localeCompare(b.date)); };
@@ -2614,13 +2656,36 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd, setting
         <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden", flexWrap:"wrap" }}>
           {[["week","أسبوعي"],["month","شهري"]].map(([k,l])=><button key={k} onClick={()=>setScope(k)} style={{ padding:"7px 15px", border:"none", fontSize:12.5, fontWeight:700, background:scope===k?C.primary:"var(--surface)", color:scope===k?"#fff":C.sub }}>{l}</button>)}
           {[2,3,4,6,12].map(n=><button key={n} onClick={()=>{ setScope("multi"); setMonthsN(n); }} style={{ padding:"7px 12px", border:"none", borderInlineStart:`1px solid ${C.line}`, fontSize:12.5, fontWeight:700, background:(scope==="multi"&&monthsN===n)?C.primary:"var(--surface)", color:(scope==="multi"&&monthsN===n)?"#fff":C.sub }}>{n} أشهر</button>)}
+          <button onClick={()=>setScope("range")} style={{ padding:"7px 12px", border:"none", borderInlineStart:`1px solid ${C.line}`, fontSize:12.5, fontWeight:700, background:scope==="range"?C.primary:"var(--surface)", color:scope==="range"?"#fff":C.sub }}>📅 من/إلى</button>
+          <button onClick={()=>setScope("grid")} style={{ padding:"7px 12px", border:"none", borderInlineStart:`1px solid ${C.line}`, fontSize:12.5, fontWeight:700, background:scope==="grid"?C.primary:"var(--surface)", color:scope==="grid"?"#fff":C.sub }}>🗓 اختيار أشهر</button>
         </div>
       </div>
-      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+      {scope==="range" && (
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, flexWrap:"wrap" }}>
+          <div style={{ flex:"1 1 130px" }}><div style={{ fontSize:11, color:C.sub, marginBottom:3 }}>من</div><input type="date" value={rangeFrom} onChange={e=>setRangeFrom(e.target.value)} style={sIn} /></div>
+          <div style={{ flex:"1 1 130px" }}><div style={{ fontSize:11, color:C.sub, marginBottom:3 }}>إلى</div><input type="date" value={rangeTo} onChange={e=>setRangeTo(e.target.value)} style={sIn} /></div>
+        </div>
+      )}
+      {scope==="grid" && (
+        <div style={{ marginBottom:10 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:9 }}>
+            <button onClick={()=>setGridYear(y=>y-1)} style={{ ...sGhost, width:34, padding:"6px 0" }}>‹</button>
+            <div style={{ flex:1, textAlign:"center", fontWeight:700, fontSize:13.5 }}>{gridYear}</div>
+            <button onClick={()=>setGridYear(y=>y+1)} style={{ ...sGhost, width:34, padding:"6px 0" }}>›</button>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:6 }}>
+            {MONTHS.map((mn,mi)=>(
+              <button key={mi} onClick={()=>toggleGridMonth(mi)} style={{ padding:"10px 4px", borderRadius:10, border:`1.5px solid ${gridMonths.has(mi)?C.primary:C.line}`, background:gridMonths.has(mi)?"var(--primarySoft)":"var(--surface)", color:gridMonths.has(mi)?C.primaryD:C.sub, fontSize:12, fontWeight:700, cursor:"pointer" }}>{mn}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {(scope==="week"||scope==="month"||scope==="multi") && <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
         <button onClick={()=>nav(-1)} style={{ ...sGhost, width:34, padding:"6px 0" }}>‹</button>
         <div style={{ flex:1, textAlign:"center", fontWeight:700, fontSize:13.5 }}>{label}</div>
         <button onClick={()=>nav(1)} style={{ ...sGhost, width:34, padding:"6px 0" }}>›</button>
-      </div>
+      </div>}
+      {(scope==="range"||scope==="grid") && <div style={{ textAlign:"center", fontWeight:700, fontSize:13.5, marginBottom:10, color:C.primaryD }}>{label}</div>}
       <select value={sel} onChange={e=>setSel(e.target.value)} style={{ ...sIn, marginBottom:10 }}>
         <option value="all">كل الأطباء</option>
         {doctors.map(d=><option key={d.id} value={d.id}>د.{d.name}</option>)}
