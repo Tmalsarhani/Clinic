@@ -1209,15 +1209,30 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     }
     logAudit&&logAudit(`تغطية عيادة د.${fd(g.ownerId)?.name||"؟"} — بـ د.${fd(cid)?.name||"؟"} (${perAr(g.period)} ${dmy(g.date)})`);
   };
-  const coverGap = g => { const av=availForGap(g); const s=picks[gapKey(g)]; const cid=s?+s:(av.find(a=>a.status==="free")?.doc?.id); if(!cid){showToast("لا يوجد طبيب متفرّغ — اختر يدوياً","warn");return;} placeCover(g,cid); showToast("تمت التغطية"); };
+  // ── شريك العيادة: لو الطبيب صاحب الفجوة له "شريك عيادة" محدَّد ومتفرّغ، يُفضَّل تلقائياً على أي أحد آخر — قبل معيار العبء ──
+  const bestForGap = (g, av, taken=[]) => {
+    const partnerId = fd(g.ownerId)?.partnerId;
+    if(partnerId){ const p = av.find(a=>a.doc.id===partnerId && a.status==="free" && !taken.includes(a.doc.id)); if(p) return p; }
+    return av.find(a=>a.status==="free" && !taken.includes(a.doc.id));
+  };
+  const coverGap = g => { const av=availForGap(g); const s=picks[gapKey(g)]; const cid=s?+s:(bestForGap(g,av)?.doc?.id); if(!cid){showToast("لا يوجد طبيب متفرّغ — اختر يدوياً","warn");return;} placeCover(g,cid); showToast("تمت التغطية"); };
   const coverAll = () => {
     let n=0; const used={}; let skipped=0;
     const runningLoad={}; // ── يحسب تراكم التعيينات خلال نفس عملية "حل الكل" — بدونه، مَن يبدأ بأقل عبء يفوز بكل العيادات المكشوفة دفعة واحدة لأن loadMap لا يتحدّث أثناء الحلقة ──
     gaps.forEach(g=>{
       const av=availForGap(g);
-      const ranked=av.slice().sort((a,b)=> (a.status==="free"?0:1)-(b.status==="free"?0:1) || (((loadMap[a.doc.id]||0)+(runningLoad[a.doc.id]||0)) - ((loadMap[b.doc.id]||0)+(runningLoad[b.doc.id]||0))));
-      const s=picks[gapKey(g)]; const key=g.date+"|"+g.period; const taken=used[key]||[];
-      const pick = s?+s : (ranked.find(a=>a.status==="free" && !taken.includes(a.doc.id))?.doc?.id);
+      const key=g.date+"|"+g.period; const taken=used[key]||[];
+      const s=picks[gapKey(g)];
+      let pick;
+      if(s) pick=+s;
+      else {
+        const partnerPick = bestForGap(g,av,taken); // يفضّل شريك العيادة إن كان متفرّغاً
+        if(partnerPick) pick = partnerPick.doc.id;
+        else {
+          const ranked=av.slice().sort((a,b)=> (a.status==="free"?0:1)-(b.status==="free"?0:1) || (((loadMap[a.doc.id]||0)+(runningLoad[a.doc.id]||0)) - ((loadMap[b.doc.id]||0)+(runningLoad[b.doc.id]||0))));
+          pick = ranked.find(a=>a.status==="free" && !taken.includes(a.doc.id))?.doc?.id;
+        }
+      }
       if(pick){ placeCover(g,pick); (used[key]=used[key]||[]).push(pick); runningLoad[pick]=(runningLoad[pick]||0)+1; n++; }
       else skipped++; // كل المتاحين لديهم التزام (تدقيق/افتراضي/إداري) — لا يُختار أحد تلقائياً، يحتاج قراراً يدوياً من رئيس القسم
     });
@@ -1649,11 +1664,11 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
       {ana.conflicts.length>0 && ana.conflicts.map((c,i)=>(
         <div key={"c"+i} style={{ background:"var(--dangerSoft)", border:`1px solid #fecdd3`, borderRadius:10, padding:"9px 11px", marginBottom:7, fontSize:12.5, color:C.err, fontWeight:600 }}>⛔ {c.text}</div>
       ))}
-      {gaps.map(g=>{ const av=availForGap(g); const best=av.find(a=>a.status==="free"); const pl=pickList(g.ownerId,g.di,g.date,g.period); const own=fd(g.ownerId); return (
+      {gaps.map(g=>{ const av=availForGap(g); const own=fd(g.ownerId); const best=bestForGap(g,av); const isPartner = best && own && best.doc.id===own.partnerId; const pl=pickList(g.ownerId,g.di,g.date,g.period); return (
           <div key={gapKey(g)} style={{ background:"var(--warnSoft)", border:"1px solid #fde9c8", borderRadius:10, padding:"10px 11px", marginBottom:7 }}>
             <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:8 }}>
               <div style={{ flex:1, fontSize:12.5, color:"#7c5410", minWidth:140 }}><b>{dmy(g.date)} {DAYS[g.di]}</b> — عيادة د.{own?own.name:"؟"} ({perAr(g.period)}) <span style={{ fontSize:10.5, color:C.muted }}>· {g.reason}</span></div>
-              {best ? <button onClick={()=>coverGap(g)} style={{ ...sBtn(C.primary), padding:"6px 12px", fontSize:11.5 }}>⭐ الأنسب: د. {best.doc.name}</button>
+              {best ? <button onClick={()=>coverGap(g)} style={{ ...sBtn(isPartner?"var(--eve)":C.primary), padding:"6px 12px", fontSize:11.5 }}>{isPartner?"🔗 الشريك: د. ":"⭐ الأنسب: د. "}{best.doc.name}</button>
                 : <span style={{ fontSize:11, fontWeight:700, color:C.err, background:"var(--dangerSoft)", borderRadius:20, padding:"5px 11px" }}>⚠️ لا يوجد طبيب متفرّغ تماماً — الكل لديه التزام، اختر يدوياً بالأسفل</span>}
             </div>
             <CoverPicker list={pl} cur={null} onPick={cid=>placeCover(g,cid)} />
@@ -2118,6 +2133,7 @@ function DoctorsPage({ doctors, leaves, nightData, coverages, today, fd, setDoct
               <span className="tag t-pri">{rankLabel(rankOf(d))}</span>
               <span className="tag t-eve">مسائي ثابت {(d.nightDays||[]).length}</span>
               <span className="tag t-ok">{posLabel(d.adminPosition,d)}</span>
+              {d.partnerId && <span className="tag t-eve">🔗 شريك: د.{doctors.find(x=>x.id===d.partnerId)?.name||"—"}</span>}
             </div>
           </div>
           {isOpen && <div style={{ padding:"4px 14px 14px", borderTop:`1px solid ${C.line2}` }}>
@@ -2126,6 +2142,7 @@ function DoctorsPage({ doctors, leaves, nightData, coverages, today, fd, setDoct
               <div><label style={label}>البريد الإلكتروني</label><input type="email" value={d.email||""} onChange={e=>upd(d.id,{email:e.target.value})} placeholder="doctor@example.com" style={{ ...sIn, direction:"ltr", textAlign:"left" }} /></div>
               <div><label style={label}>الدرجة</label><select value={rankOf(d)} onChange={e=>upd(d.id,{rank:e.target.value})} style={sIn}><option value="specialist">أخصائي</option><option value="consultant">استشاري</option></select></div>
               <div><label style={label}>المنصب الإداري (هدف الرعاية = ١٠ − SS)</label><select value={normPos(d.adminPosition,d)} onChange={e=>upd(d.id,{adminPosition:e.target.value})} style={sIn}>{ADMIN_POS.map(pp=><option key={pp.code} value={pp.code}>{pp.code} · {pp.ar} — SS {pp.ss} دعم · DS {10-pp.ss} رعاية</option>)}</select></div>
+              <div><label style={label}>🔗 شريك العيادة (يُفضَّل عند التغطية إن كان متاحاً)</label><select value={d.partnerId||""} onChange={e=>upd(d.id,{partnerId:e.target.value?+e.target.value:null})} style={sIn}><option value="">— بلا شريك —</option>{doctors.filter(x=>x.id!==d.id).map(x=><option key={x.id} value={x.id}>د.{x.name}</option>)}</select></div>
               <div><label style={label}>اللون</label><div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>{PALETTE.map(c=><button key={c} onClick={()=>upd(d.id,{color:c})} style={{ width:22, height:22, borderRadius:"50%", background:c, border:d.color===c?"2px solid #1e293b":"2px solid #fff" }} />)}</div></div>
             </div>
             <label style={label}>جدول العيادات الأسبوعي (صباح / ظهر / مساء)</label>
