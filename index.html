@@ -1220,11 +1220,13 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const monthDates = days.map(x=>x.date);
   const yearDates = useMemo(()=>{ const out=[]; for(let m=0;m<=mo.m;m++) out.push(...monthDays(mo.y,m).map(x=>x.date)); return out; }, [mo.y,mo.m]);
   const loadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>{ const s=doctorSessions(d, yearDates, nightData, coverages, leaves); m[d.id]=s.total; }); return m; }, [mo,doctors,nightData,coverages,leaves,yearDates]);
+  // ── عدد التغطيات وحده (بلا خلط بعبء العيادة اليومي) — طبيب جدوله اليومي أخف (عيادات/إداري أقل) عبؤه الكلي أقل أصلاً، فلو رتّبنا حسب "loadMap" الكلي سيخسر زميله الأثقل يومياً كل تنافس رغم تساويهما بعدد التغطيات — هذا بالضبط سبب استحواذ طبيب واحد على أغلب التغطيات سابقاً ──
+  const coverLoadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>{ m[d.id]=doctorSessions(d, yearDates, nightData, coverages, leaves).covers; }); return m; }, [mo,doctors,nightData,coverages,leaves,yearDates]);
   const eveLoadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>m[d.id]=0); monthDates.forEach(dt=>((nightData[dt]||{}).doctors||[]).forEach(id=>{ m[id]=(m[id]||0)+1; })); return m; }, [mo,doctors,nightData]);
   const rankAvail = arr => arr.filter(a=>a.status!=="leave").map(a=>({ ...a, load:loadMap[a.doc.id]||0 })).sort((a,b)=> (a.status==="free"?0:1)-(b.status==="free"?0:1) || a.load-b.load);
-  const availForGap = g => rankAvail(getAvailable(doctors,[g.ownerId],g.di,g.date,g.period,leaves,nightData,{},coverages));
+  const availForGap = g => rankAvail(getAvailable(doctors,[g.ownerId],g.di,g.date,g.period,leaves,nightData,{},coverages,true));
   const busyReason = (doc,di,period) => { const sl=getSlot(doc,di,period); if(isClinic(sl)) return "عيادة"; return SLOT_AR[sl]||"عيادة"; }; // يوضّح "تدقيق"/"افتراضي" بدل تعميم "عيادة" على كل شغل نهاري
-  const pickList = (excludeId,di,date,period) => getAvailable(doctors,[excludeId],di,date,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadMap[a.doc.id]||0, commit: a.status==="warn" ? (SLOT_COMMIT[getSlot(a.doc,di,period)]||"التزام") : null, busyType: a.status==="busy" ? busyReason(a.doc,di,period) : null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
+  const pickList = (excludeId,di,date,period) => getAvailable(doctors,[excludeId],di,date,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:coverLoadMap[a.doc.id]||0, commit: a.status==="warn" ? (SLOT_COMMIT[getSlot(a.doc,di,period)]||"التزام") : null, busyType: a.status==="busy" ? busyReason(a.doc,di,period) : null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
 
   const ensureDay = date => setNight(nd=>nd[date]?nd:{...nd,[date]:{doctors:[],coverages:{am:[],pm:[],nextAm:[]},note:""}});
   const pushCov = cov => setCoverages(cs=>[...cs,{id:uid(),...cov}]);
@@ -1247,36 +1249,39 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     }
     logAudit&&logAudit(`تغطية عيادة د.${fd(g.ownerId)?.name||"؟"} — بـ د.${fd(cid)?.name||"؟"} (${perAr(g.period)} ${dmy(g.date)})`);
   };
-  // ── شريك العيادة: لو الطبيب صاحب الفجوة له "شريك عيادة" محدَّد ومتفرّغ، يُفضَّل تلقائياً على أي أحد آخر — قبل معيار العبء ──
-  const bestForGap = (g, av, taken=[]) => {
+  // ── شريك العيادة: لو الطبيب صاحب الفجوة له "شريك عيادة" محدَّد ومؤهَّل، يُفضَّل تلقائياً على أي أحد آخر — قبل معيار العبء ──
+  // ── الأهلية التلقائية: متفرّغ تماماً، أو عنده إداري/تدقيق/افتراضي (أعمال مرنة قابلة للمقاطعة) — التدريب والعيادة الفعلية والإجازة تبقى مستبعدة من الاختيار التلقائي ──
+  const AUTO_OVERRIDE_SLOTS = ["admin","audit","virtual"];
+  const isAutoEligible = (a,g) => a.status==="free" || (a.status!=="leave" && AUTO_OVERRIDE_SLOTS.includes(getSlot(a.doc,g.di,g.period)));
+  const bestForGap = (g, av, taken=[], runningLoad={}) => {
     const partnerId = fd(g.ownerId)?.partnerId;
-    if(partnerId){ const p = av.find(a=>a.doc.id===partnerId && a.status==="free" && !taken.includes(a.doc.id)); if(p) return p; }
-    return av.find(a=>a.status==="free" && !taken.includes(a.doc.id));
+    if(partnerId){ const p = av.find(a=>a.doc.id===partnerId && isAutoEligible(a,g) && !taken.includes(a.doc.id)); if(p) return p; }
+    // ── لا أفضلية لـ"المتفرّغ تماماً" على "الإداري/التدقيق/الافتراضي" — الكل يتنافس بمعيار عدد التغطيات وحده (لا العبء اليومي الكلي)، وإلا استمر نفس الطبيب "الفارغ دائماً" أو "الأخف يومياً" يستحوذ على أغلب التغطيات ──
+    const eligible = av.filter(a=>isAutoEligible(a,g) && !taken.includes(a.doc.id));
+    eligible.sort((a,b)=> (((coverLoadMap[a.doc.id]||0)+(runningLoad[a.doc.id]||0)) - ((coverLoadMap[b.doc.id]||0)+(runningLoad[b.doc.id]||0))));
+    return eligible[0];
   };
-  const coverGap = g => { const av=availForGap(g); const s=picks[gapKey(g)]; const cid=s?+s:(bestForGap(g,av)?.doc?.id); if(!cid){showToast("لا يوجد طبيب متفرّغ — اختر يدوياً","warn");return;} placeCover(g,cid); showToast("تمت التغطية"); };
-  const coverAll = () => {
+  const coverGap = g => { const av=availForGap(g); const s=picks[gapKey(g)]; const cid=s?+s:(bestForGap(g,av)?.doc?.id); if(!cid){showToast("لا يوجد طبيب مؤهَّل تلقائياً — اختر يدوياً","warn");return;} placeCover(g,cid); showToast("تمت التغطية"); };
+  const coverAll = (onlyDate) => {
     let n=0; const used={}; let skipped=0;
     const runningLoad={}; // ── يحسب تراكم التعيينات خلال نفس عملية "حل الكل" — بدونه، مَن يبدأ بأقل عبء يفوز بكل العيادات المكشوفة دفعة واحدة لأن loadMap لا يتحدّث أثناء الحلقة ──
-    gaps.forEach(g=>{
+    const targetGaps = onlyDate ? gaps.filter(g=>g.date===onlyDate) : gaps;
+    targetGaps.forEach(g=>{
       const av=availForGap(g);
       const key=g.date+"|"+g.period; const taken=used[key]||[];
       const s=picks[gapKey(g)];
       let pick;
       if(s) pick=+s;
       else {
-        const partnerPick = bestForGap(g,av,taken); // يفضّل شريك العيادة إن كان متفرّغاً
-        if(partnerPick) pick = partnerPick.doc.id;
-        else {
-          const ranked=av.slice().sort((a,b)=> (a.status==="free"?0:1)-(b.status==="free"?0:1) || (((loadMap[a.doc.id]||0)+(runningLoad[a.doc.id]||0)) - ((loadMap[b.doc.id]||0)+(runningLoad[b.doc.id]||0))));
-          pick = ranked.find(a=>a.status==="free" && !taken.includes(a.doc.id))?.doc?.id;
-        }
+        const best = bestForGap(g,av,taken,runningLoad);
+        pick = best?.doc?.id;
       }
       if(pick){ placeCover(g,pick); (used[key]=used[key]||[]).push(pick); runningLoad[pick]=(runningLoad[pick]||0)+1; n++; }
-      else skipped++; // كل المتاحين لديهم التزام (تدقيق/افتراضي/إداري) — لا يُختار أحد تلقائياً، يحتاج قراراً يدوياً من رئيس القسم
+      else skipped++; // كل المتاحين لديهم تدريب/عيادة فعلية/إجازة فقط — لا يُختار أحد تلقائياً، يحتاج قراراً يدوياً من رئيس القسم
     });
-    if(n && skipped) showToast(`غُطّيت ${n} عيادة بالأنسب — تبقّت ${skipped} تحتاج اختياراً يدوياً (كل المتاحين لديهم التزام)`,"warn");
+    if(n && skipped) showToast(`غُطّيت ${n} عيادة بالأنسب — تبقّت ${skipped} تحتاج اختياراً يدوياً`,"warn");
     else if(n) showToast(`غُطّيت ${n} عيادة بالأنسب`);
-    else if(skipped) showToast(`لم تُحل أي عيادة تلقائياً — كل المتاحين لديهم التزام (تدقيق/افتراضي/إداري)، اختر يدوياً لكل حالة`,"warn");
+    else if(skipped) showToast(`لم تُحل أي عيادة تلقائياً — اختر يدوياً لكل حالة`,"warn");
     else showToast("لا يوجد متاح");
   };
 
@@ -1297,7 +1302,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const monthPrefix = `${mo.y}-${String(mo.m+1).padStart(2,"0")}`;
   const monthConfigured = useMemo(()=> days.some(d=>dayReq[d.date]!=null) || Object.keys(nightData).some(k=>k.startsWith(monthPrefix)), [days,dayReq,nightData,monthPrefix]);
   const needOf = date => (dayReq[date]!=null ? dayReq[date] : (monthConfigured ? reqPerDay : 0));
-  useEffect(()=>{ if(!monthConfigured) setShowSetup(true); }, [mo.y, mo.m]);
+  useEffect(()=>{ setShowSetup(!monthConfigured); }, [mo.y, mo.m]); // يُغلق تلقائياً عند الانتقال لأي شهر معتمد/مُعدّ مسبقاً، ويُفتح فقط للأشهر غير المُعدّة بعد — الصفحة تبقى مختصرة دائماً بشكل افتراضي
   const createEmpty = () => { setNight(nd=>{ const n={...nd}; days.forEach(({date})=>{ const need=needOf(date); if(need>0){ n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:[], eveningSlots:need }; } }); return n; }); logAudit&&logAudit("إنشاء جدول مسائي فارغ حسب عدد العيادات"); showToast("تم إنشاء جدول فارغ — اختر الأطباء أو وزّع تلقائياً"); setShowSetup(false); };
   const distributeFixed = () => { setNight(nd=>{ const n={...nd};
     // ── عدالة بين أصحاب نفس اليوم الثابت: لو أكثر من طبيب "ثابت" لنفس يوم الأسبوع (مثلاً ٥ أطباء كلهم الأحد) وعدد المطلوب أقل منهم،
@@ -1645,7 +1650,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
         {manualOpen && <div style={{ display:"flex", flexWrap:"wrap", gap:7, marginTop:6, paddingTop:10, borderTop:`1px dashed ${C.line2}` }}>
           <button onClick={distributeFixed} style={sGhost}>⚡ توزيع حسب الأيام الثابتة</button>
           <button onClick={fillAvailable} style={sBtn("var(--eve)")}>🌙 إكمال المسائي بالمتاح</button>
-          <button onClick={coverAll} style={sBtn("var(--primary-d)")}>🩺 تغطية العيادات المكشوفة</button>
+          <button onClick={()=>coverAll()} style={sBtn("var(--primary-d)")}>🩺 تغطية العيادات المكشوفة</button>
         </div>}
       </div>
     </div>
@@ -1698,7 +1703,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     <div style={{ ...card(), padding:16, marginBottom:14 }}>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:gaps.length?12:0, flexWrap:"wrap" }}>
         <div style={{ flex:1, fontSize:15, fontWeight:700, minWidth:130 }}>🩺 الحلول المطلوبة {gaps.length>0 && <span style={{ color:C.warn }}>({gaps.length})</span>}</div>
-        {gaps.length>0 && <button onClick={coverAll} style={sBtn(C.primary)}>حلّ الكل بالأنسب</button>}
+        {gaps.length>0 && <button onClick={()=>coverAll()} style={sBtn(C.primary)}>حلّ الكل بالأنسب</button>}
       </div>
       {ana.conflicts.length>0 && ana.conflicts.map((c,i)=>(
         <div key={"c"+i} style={{ background:"var(--dangerSoft)", border:`1px solid #fecdd3`, borderRadius:10, padding:"9px 11px", marginBottom:7, fontSize:12.5, color:C.err, fontWeight:600 }}>⛔ {c.text}</div>
@@ -1807,6 +1812,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                         <button onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }} title="التفاصيل الكاملة لليوم" style={{ background:"rgba(0,0,0,.05)", border:"none", borderRadius:7, width:22, height:22, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:C.sub, fontSize:12 }}>⋯</button>
                       </div>
                     </div>
+                    {r.gaps.length>0 && <button onClick={()=>coverAll(date)} style={{ width:"100%", marginTop:2, background:"var(--dangerSoft)", border:`1px solid #fecdd3`, color:C.err, borderRadius:7, padding:"5px 6px", fontSize:10.5, fontWeight:800, cursor:"pointer" }}>🩺 {r.gaps.length} مكشوفة — حلّ سريع</button>}
+                    {r.conflicts.length>0 && <div style={{ fontSize:10, fontWeight:800, color:C.err, background:"var(--dangerSoft)", border:"1px solid #fecdd3", borderRadius:7, padding:"3px 6px", marginTop:2 }}>⛔ {r.conflicts.length} تعارض — راجع يدوياً</div>}
                     {docs.map(d=><div key={d.id} className="cchip"><span className="d" style={{ background:d.color }}></span>د.{d.name}<button onClick={()=>toggleEvening(date,d.id)} title="إزالة" style={{ background:"none", border:"none", color:"inherit", opacity:.6, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 0 0 2px" }}>×</button></div>)}
                     {emptyEve>0 && <select onChange={e=>{ const v=+e.target.value; if(v) assignEvening(date,v); }} defaultValue="" style={{ marginTop:2, width:"100%", fontSize:11.5, fontWeight:700, color:C.warn, background:"#fff", border:`1.5px dashed ${C.warn}`, borderRadius:9, padding:"7px 8px" }}>
                       <option value="">+ إضافة طبيب ({emptyEve} فارغ)</option>
@@ -1853,6 +1860,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                       <button onClick={()=>{ ensureDay(date); setSel(date); setView("list"); }} title="التفاصيل الكاملة لليوم" style={{ background:"rgba(0,0,0,.05)", border:"none", borderRadius:7, width:22, height:22, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:C.sub, fontSize:12 }}>⋯</button>
                     </div>
                   </div>
+                  {r.gaps.length>0 && <button onClick={()=>coverAll(date)} style={{ width:"100%", marginTop:2, background:"var(--dangerSoft)", border:`1px solid #fecdd3`, color:C.err, borderRadius:7, padding:"5px 6px", fontSize:10.5, fontWeight:800, cursor:"pointer" }}>🩺 {r.gaps.length} مكشوفة — حلّ سريع</button>}
+                  {r.conflicts.length>0 && <div style={{ fontSize:10, fontWeight:800, color:C.err, background:"var(--dangerSoft)", border:"1px solid #fecdd3", borderRadius:7, padding:"3px 6px", marginTop:2 }}>⛔ {r.conflicts.length} تعارض — راجع يدوياً</div>}
                   {docs.map(d=><div key={d.id} className="cchip"><span className="d" style={{ background:d.color }}></span>د.{d.name}<button onClick={()=>toggleEvening(date,d.id)} title="إزالة" style={{ background:"none", border:"none", color:"inherit", opacity:.6, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 0 0 2px" }}>×</button></div>)}
                   {emptyEve>0 && <select onChange={e=>{ const v=+e.target.value; if(v) assignEvening(date,v); }} defaultValue="" style={{ marginTop:2, width:"100%", fontSize:11.5, fontWeight:700, color:C.warn, background:"#fff", border:`1.5px dashed ${C.warn}`, borderRadius:9, padding:"7px 8px" }}>
                     <option value="">+ إضافة طبيب ({emptyEve} فارغ)</option>
@@ -2011,7 +2020,7 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
     logAudit&&logAudit(`حذف إجازة د.${fd(l.doctorId)?.name||""} وإلغاء تغطياتها المرتبطة`);
     showToast&&showToast("تم حذف الإجازة وإلغاء التغطيات المرتبطة بها");
   };
-  const autoCoverLeave = l => { const d=fd(l.doctorId); if(!d) return; const [ly]=l.start.split("-"); const yd=[]; for(let m=0;m<12;m++) yd.push(...monthDays(+ly,m).map(x=>x.date)); const load=id=>{ const s=doctorSessions(doctors.find(x=>x.id===id),yd,nightData,coverages,leaves); return s.total; }; const adds=[]; const used={}; const s=new Date(l.start),e=new Date(l.end); for(let dt=new Date(s);dt<=e;dt.setDate(dt.getDate()+1)){ const wi=dt.getDay(); if(wi>4) continue; const ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; ["am","pm"].forEach(p=>{ if(!isClinic(getSlot(d,wi,p))) return; if(coverages.some(c=>c.date===ds&&c.period===p&&c.absentId===d.id)) return; const av=getAvailable(doctors,[d.id],wi,ds,p,leaves,nightData,{},coverages).filter(a=>a.status==="free").map(a=>({a,L:load(a.doc.id)})).sort((x,y)=>x.L-y.L); const key=ds+"|"+p; const taken=used[key]||[]; const pick=av.find(x=>!taken.includes(x.a.doc.id)); if(pick){ adds.push({id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:pick.a.doc.id,reason:"leave"}); (used[key]=used[key]||[]).push(pick.a.doc.id); } }); } if(!adds.length){ showToast("لا عيادات مكشوفة أو لا متاح","warn"); return; } setCoverages(cs=>[...cs,...adds]); showToast(`تمت تغطية ${adds.length} عيادة بالأنسب`); };
+  const autoCoverLeave = l => { const d=fd(l.doctorId); if(!d) return; const [ly]=l.start.split("-"); const yd=[]; for(let m=0;m<12;m++) yd.push(...monthDays(+ly,m).map(x=>x.date)); const load=id=>{ const s=doctorSessions(doctors.find(x=>x.id===id),yd,nightData,coverages,leaves); return s.covers; }; const AUTO_OVERRIDE_SLOTS=["admin","audit","virtual"]; const adds=[]; const used={}; const runningLoad={}; const s=new Date(l.start),e=new Date(l.end); for(let dt=new Date(s);dt<=e;dt.setDate(dt.getDate()+1)){ const wi=dt.getDay(); if(wi>4) continue; const ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; ["am","pm"].forEach(p=>{ if(!isClinic(getSlot(d,wi,p))) return; if(coverages.some(c=>c.date===ds&&c.period===p&&c.absentId===d.id)) return; const av=getAvailable(doctors,[d.id],wi,ds,p,leaves,nightData,{},coverages,true).filter(a=>a.status!=="leave"&&(a.status==="free"||AUTO_OVERRIDE_SLOTS.includes(getSlot(a.doc,wi,p)))).map(a=>({a,L:load(a.doc.id)+(runningLoad[a.doc.id]||0)})).sort((x,y)=>x.L-y.L); const key=ds+"|"+p; const taken=used[key]||[]; const pick=av.find(x=>!taken.includes(x.a.doc.id)); if(pick){ adds.push({id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:pick.a.doc.id,reason:"leave"}); (used[key]=used[key]||[]).push(pick.a.doc.id); runningLoad[pick.a.doc.id]=(runningLoad[pick.a.doc.id]||0)+1; } }); } if(!adds.length){ showToast("لا عيادات مكشوفة أو لا متاح","warn"); return; } setCoverages(cs=>[...cs,...adds]); showToast(`تمت تغطية ${adds.length} عيادة بالأنسب`); };
   const sorted = leaves.slice().sort((a,b)=>b.start.localeCompare(a.start));
   const [open,setOpen] = useState(()=>new Set());
   const toggle = id => setOpen(o=>{ const n=new Set(o); n.has(id)?n.delete(id):n.add(id); return n; });
@@ -2084,7 +2093,7 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
             const [ly] = l.start.split("-");
             const yd = []; for(let m=0;m<12;m++) yd.push(...monthDays(+ly,m).map(x=>x.date));
             const md = monthDays(+l.start.split("-")[0], +l.start.split("-")[1]-1).map(x=>x.date);
-            const loadOf = id => doctorSessions(doctors.find(x=>x.id===id), yd, nightData, coverages, leaves).total;
+            const loadOf = id => doctorSessions(doctors.find(x=>x.id===id), yd, nightData, coverages, leaves).covers;
             const pickFor = (wi,ds,period) => getAvailable(doctors,[d.id],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null, busyType: a.status==="busy" ? (()=>{ const sl=getSlot(a.doc,wi,period); return isClinic(sl)?"عيادة":(SLOT_AR[sl]||"عيادة"); })() : null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
             const eveLoad = id => md.reduce((a,dt)=>a+(((nightData[dt]||{}).doctors||[]).includes(id)?1:0),0);
             const evePick = ds => { const nightDocs=(nightData[ds]?.doctors)||[]; return doctors.filter(x=>x.id!==d.id&&!nightDocs.includes(x.id)).map(x=>{ const lv=onLeave(x,ds,leaves); const fixedAny=(x.nightDays||[]).length>0; return { doc:x, status: lv?"leave":fixedAny?"warn":"free", commit: (fixedAny&&!lv)?"عيادة مسائية ثابتة":null, load:eveLoad(x.id) }; }).sort((a,b)=>(({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status]))||(a.load-b.load)); };
@@ -3227,13 +3236,21 @@ function App() {
         if(remote.holidays){ setHolidays(remote.holidays); HOLIDAYS=buildHolidayMap(remote.holidays); }
         if(remote.audit) setAudit(remote.audit);
         if(remote.users && remote.users.length) setUsers(remote.users);
-        if(remote.official) setOfficial(remote.official);
       }
+      // ── تهيئة "النسخة المعتمدة" اعتماداً على نفس البيانات التي انتهينا إليها فعلاً (بعد أي تحميل من السحابة) — لا قبله، حتى لا تظهر "تغييرات غير معتمدة" وهمية بسبب فارق توقيت التحميل ──
+      setOfficial(remote?.official || {
+        doctors: remote?.doctors || doctors,
+        leaves: remote?.leaves || leaves,
+        nightData: remote?.nightData || nightData,
+        coverages: remote?.coverages || coverages,
+        settings: remote?.settings || settings,
+      });
       // نجح الاتصال (سواء وُجدت بيانات أو كانت هذه أول مرة) → آمن نبدأ الحفظ من الآن
       setCloudSyncState("synced"); setCloudSafeToSave(true);
       if(remote) cloudBackupIfDue(remote); // نسخة احتياطية أسبوعية تلقائية صامتة — لا تعطّل أي شيء لو فشلت
     }catch(e){
       // فشل الاتصال بالسحابة (شبكة/قواعد/مصادقة) → لا نحفظ إطلاقاً، حتى لا نكتب نسخة محلية ناقصة فوق البيانات الحقيقية بالخطأ
+      setOfficial(o=>o || { doctors, leaves, nightData, coverages, settings }); // نهيّئ محلياً على الأقل حتى تعمل شارة "معتمد/غير معتمد" بشكل صحيح دون اتصال
       setCloudSyncState("error"); setCloudSafeToSave(false);
       setTimeout(()=>showToast("⚠️ تعذّر الاتصال بالسحابة — تعمل الآن بنسخة محلية فقط ولن تُزامَن تعديلاتك حتى تضغط ☁️ لإعادة المحاولة","err"),400);
     }
@@ -3283,7 +3300,6 @@ function App() {
   // ──────── طبقة الاعتماد (مسودة → اعتماد / تراجع) ────────
   const snap = () => ({ doctors, leaves, nightData, coverages, settings });
   const off = official || snap();
-  useEffect(()=>{ if(!official) setOfficial(snap()); }, []);
   const pending = JSON.stringify(snap()) !== JSON.stringify(off);
   const canApprove = role==="head" || role==="deputy";
   const computeDiff = () => { const a=snap(); const cnt=(o,k)=>(o[k]||[]).length; const eve=o=>Object.values(o.nightData||{}).reduce((x,d)=>x+((d.doctors||[]).length),0); const diff=[];
