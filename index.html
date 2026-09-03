@@ -600,7 +600,7 @@ function analyzeDay(date, doctors, leaves, nightData, coverages, loadMap, restRu
   // evening shift holders (occupied all day effectively for their own daytime clinics)
   (nd.doctors||[]).forEach(id=>mark("evening", id, "دوام مسائي"));
 
-  // each doctor's own clinic occupies them that period (unless their clinic is closed by leave, or they're absent/evening — those make it a GAP not occupancy)
+  // each doctor's own clinic occupies them that period (الافتراضي والتدقيق عمل مرن، لا يُحسب إشغالاً حقيقياً يمنع تغطية أخرى بنفس الوقت — فقط العيادة الفعلية)
   doctors.forEach(d=>{
     PERS.forEach(per=>{
       if (isClinic(getSlot(d,di,per))) mark(per, d.id, "عيادته");
@@ -713,7 +713,8 @@ const rankLabel = r => r==="consultant" ? "استشاري" : "أخصائي";
 
 // ─── CAPP 001 Physician Job Planning: Supportive Sessions (SS) by admin position ───
 // Week = 10 sessions. Direct (CCS) target = 10 − SS (سلّم المناصب الإدارية — الملحق المرفق)
-const ADMIN_POS = [
+// هذه القيم الافتراضية فقط — رئيس القسم يقدر يعدّلها من "⚙️ الإعدادات ← قواعد العبء الوظيفي"، وتصير هي الأساس بكل مكان بالتطبيق
+const ADMIN_POS_DEFAULT = [
   { code:"H-0",  ss:8, ar:"مدير تنفيذي للعمليات (COO)" },
   { code:"H-1",  ss:7, ar:"مدير تنفيذي / مساعد COO / مدير تنفيذي مشارك" },
   { code:"H-2",  ss:6, ar:"مدير (Director)" },
@@ -722,8 +723,13 @@ const ADMIN_POS = [
   { code:"H-5A", ss:2, ar:"بلا منصب إداري — استشاري" },
   { code:"H-5B", ss:1, ar:"بلا منصب إداري — غير استشاري" },
 ];
-const POS_SS = Object.fromEntries(ADMIN_POS.map(p=>[p.code,p.ss]));
-const POS_AR = Object.fromEntries(ADMIN_POS.map(p=>[p.code,p.ar]));
+let ADMIN_POS = ADMIN_POS_DEFAULT; // يُستبدَل بقيم settings.adminPosSS المخصَّصة عند تشغيل التطبيق (إن وُجدت)
+let POS_SS = Object.fromEntries(ADMIN_POS.map(p=>[p.code,p.ss]));
+const POS_AR = Object.fromEntries(ADMIN_POS_DEFAULT.map(p=>[p.code,p.ar]));
+function applyPosSSOverrides(custom){
+  ADMIN_POS = ADMIN_POS_DEFAULT.map(p=> (custom && custom[p.code]!=null) ? { ...p, ss:custom[p.code] } : p);
+  POS_SS = Object.fromEntries(ADMIN_POS.map(p=>[p.code,p.ss]));
+}
 const POS_MIGRATE = { head:"H-4", chairperson:"H-3", director:"H-2" };
 const normPos = (code,doc) => { if(POS_SS[code]!=null) return code; if(POS_MIGRATE[code]) return POS_MIGRATE[code]; return rankOf(doc)==="consultant"?"H-5A":"H-5B"; };
 const posLabel = (code,doc) => { const c=normPos(code,doc); return `${c} · ${POS_AR[c]}`; };
@@ -765,8 +771,10 @@ function doctorSessions(doctor, dates, nightData, coverages, leaves) {
         if (!slot) return;                                       // الفراغ لا يُحسب
         const isCare = DIRECT_SLOTS.includes(slot);
         const coveredAway = dind.some(x => x.period===per && x.absentId===doctor.id); // غُطّيت عنه
+        const sentToCoverElsewhere = dind.some(x => x.period===per && x.coverDoctorId===doctor.id); // كُلِّف هو نفسه بتغطية طبيب آخر بنفس الفترة
         if (onLv)        { if (isCare) absentCovered += 1; return; }   // غاب → لا تُحسب له
         if (coveredAway) { if (isCare) absentCovered += 1; return; }   // غطّى مكانه زميل → لا تُحسب له
+        if (sentToCoverElsewhere && isClinic(slot)) return;          // مستحيل التواجد بعيادتين فعليتين بنفس الوقت — العيادة الفعلية فقط لا تُحسب هنا (التغطية تُحسب له أدناه). أما الافتراضي/التدقيق فعمل مرن (إلكتروني) يمكن الجمع بينه وبين التغطية، فيُحسب دائماً كاملاً بلا نقصان
         if (isCare) direct += 1;                                  // عيادة فعلية اشتغلها
         else if (SUPPORT_SLOTS.includes(slot)) support += 1;      // دعم (إدارة/لجان)
       });
@@ -1156,6 +1164,36 @@ async function cloudSaveState(state){
   return res.ok;
 }
 
+// ════════ نسخ احتياطي أسبوعي تلقائي (على Firebase، منفصل عن البيانات الحيّة) ════════
+async function cloudBackupIfDue(state){
+  try{
+    const idToken=await getAnonToken();
+    const base=FIREBASE_DEFAULT.dbUrl.replace(/\/+$/,"");
+    const metaUrl=`${base}/backups/_meta.json?auth=${encodeURIComponent(idToken)}`;
+    const metaRes=await fetch(metaUrl,{cache:"no-store"});
+    const meta = metaRes.ok ? await metaRes.json() : null;
+    const lastAt = meta&&meta.lastAt ? new Date(meta.lastAt).getTime() : 0;
+    const WEEK = 7*24*60*60*1000;
+    if(Date.now()-lastAt < WEEK) return false; // لم يحن الأسبوع بعد
+    const dateKey = new Date().toISOString().slice(0,10);
+    const backupUrl=`${base}/backups/${dateKey}.json?auth=${encodeURIComponent(idToken)}`;
+    const body = { ...state, _type:"clinic-backup", _version:1, exportedAt:new Date().toISOString(), auto:true };
+    const r1=await fetch(backupUrl,{ method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
+    if(!r1.ok) return false;
+    await fetch(metaUrl,{ method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ lastAt:new Date().toISOString() }) });
+    return true;
+  }catch(e){ return false; } // فشل صامت — لا يعطّل الاستخدام العادي للتطبيق
+}
+async function cloudListBackups(){
+  const idToken=await getAnonToken();
+  const base=FIREBASE_DEFAULT.dbUrl.replace(/\/+$/,"");
+  const url=`${base}/backups.json?shallow=false&auth=${encodeURIComponent(idToken)}`;
+  const res=await fetch(url,{cache:"no-store"});
+  if(!res.ok) return [];
+  const j=await res.json()||{};
+  return Object.keys(j).filter(k=>k!=="_meta").sort().reverse().map(k=>({ key:k, data:j[k] }));
+}
+
 // ════════ مشاركة وتصدير ════════
 function downloadCSV(filename, rows){
   const esc=v=>{ v=(v==null?"":String(v)); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; };
@@ -1526,7 +1564,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const statusOf = date => { const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const nd=nightData[date]||{}; return ((nd.doctors||[]).length && r.gaps.length===0 && r.conflicts.length===0) ? "done":"pending"; };
   const listDays = filled.filter(d=>{ if(sFilter!=="all" && statusOf(d.date)!==sFilter) return false; if(search){ const q=search.trim(); const nd=nightData[d.date]||{}; const names=(nd.doctors||[]).map(id=>fd(id)?.name||"").join(" ")+" "+coverages.filter(c=>c.date===d.date).map(c=>fd(c.coverDoctorId)?.name||"").join(" "); if(!names.includes(q)&&!d.date.includes(q)) return false; } return true; });
   const offset = calDays.length?calDays[0].di:0;
-  const covLines = date => { const nd=nightData[date]||{}; const cv=nd.coverages||{}; const out=[]; const di0=dayIdx(date); const ndi=dayIdx(nextWork(date)); ["am","pm","nextAm"].forEach(slot=>{ (cv[slot]||[]).forEach(cid=>{ const cdr=fd(cid); if(!cdr) return; const sl=slot==="nextAm"?"am":slot; const sdi=slot==="nextAm"?ndi:di0; const owner=(nd.doctors||[]).map(id=>fd(id)).find(o=>o&&isClinic(getSlot(o,sdi,sl))); out.push(`تم تغطية ${perFull(slot)} لـ ${owner?("د."+owner.name):"طبيب المسائي"} بـ د.${cdr.name} بسبب دوام مسائي`); }); }); coverages.filter(c=>c.date===date).forEach(c=>{ const cdr=fd(c.coverDoctorId); const ad=c.absentId?fd(c.absentId):null; if(cdr) out.push(`تم تغطية ${perFull(c.period)} لـ ${ad?("د."+ad.name):"—"} بـ د.${cdr.name} بسبب ${coverReasonAr(c.absentId,date,c.reason,leaves)}`); }); return out; };
+  const commitNote = (doc,di,per) => { const sl=getSlot(doc,di,per); if(!sl) return ""; if(isClinic(sl)) return " ⚠️ (لديه عيادة بنفس الوقت أيضاً)"; const lbl=SLOT_AR[sl]; return lbl?` ⚠️ (لديه ${lbl} بنفس الوقت أيضاً)`:""; };
+  const covLines = date => { const nd=nightData[date]||{}; const cv=nd.coverages||{}; const out=[]; const di0=dayIdx(date); const ndi=dayIdx(nextWork(date)); ["am","pm","nextAm"].forEach(slot=>{ (cv[slot]||[]).forEach(cid=>{ const cdr=fd(cid); if(!cdr) return; const sl=slot==="nextAm"?"am":slot; const sdi=slot==="nextAm"?ndi:di0; const owner=(nd.doctors||[]).map(id=>fd(id)).find(o=>o&&isClinic(getSlot(o,sdi,sl))); out.push(`تم تغطية ${perFull(slot)} لـ ${owner?("د."+owner.name):"طبيب المسائي"} بـ د.${cdr.name} بسبب دوام مسائي${commitNote(cdr,sdi,sl)}`); }); }); coverages.filter(c=>c.date===date).forEach(c=>{ const cdr=fd(c.coverDoctorId); const ad=c.absentId?fd(c.absentId):null; if(cdr) out.push(`تم تغطية ${perFull(c.period)} لـ ${ad?("د."+ad.name):"—"} بـ د.${cdr.name} بسبب ${coverReasonAr(c.absentId,date,c.reason,leaves)}${commitNote(cdr,di0,c.period)}`); }); return out; };
 
   const clearDayCovs = date => { if(!date){showToast("اختر يوماً","warn");return;} setCoverages(cs=>cs.filter(c=>c.date!==date)); setNight(n=>{ if(!n[date])return n; const nn={...n}; nn[date]={...nn[date],coverages:{am:[],pm:[],nextAm:[]}}; return nn; }); logAudit&&logAudit(`مسح تغطيات يوم ${dmy(date)}`); showToast("تم مسح تغطيات اليوم"); };
   const daySummary = date => { const r=analyzeDay(date,doctors,leaves,nightData,coverages,null,restRule); const eve=((nightData[date]||{}).doctors||[]).length; const covered=coverages.filter(c=>c.date===date).length + Object.values((nightData[date]||{}).coverages||{}).reduce((a,arr)=>a+(arr?arr.length:0),0); return { gaps:r.gaps.length, conflicts:r.conflicts.length, eve, covered }; };
@@ -2393,13 +2432,28 @@ function showPrintOverlay(docHtml){
 function __PW__(html){ html=String(html).replace(/<script>[\s\S]*?<\/script>/g,"").replace(/<button class="printbtn"[\s\S]*?<\/button>/g,""); showPrintOverlay(html); }
 const printDoc = (title, body, landscape=false) => { const now=new Date().toLocaleString("ar",{year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit"}); __PW__(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet"><style>*{box-sizing:border-box}body{font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif;margin:0;color:#334155;background:#f1f5f9;line-height:1.6}.wrap{max-width:1000px;margin:0 auto;padding:24px;background:#fff}.hdr{background:linear-gradient(120deg,${C.primaryD},${C.primary} 70%,${C.accent});color:#fff;padding:22px 26px;border-radius:18px;margin-bottom:20px;display:flex;align-items:center;gap:16px;box-shadow:0 10px 30px rgba(15,118,110,.18)}.hdr .lg{width:50px;height:50px;border-radius:14px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:25px;font-weight:800;border:1px solid rgba(255,255,255,.3)}.hdr h1{margin:0;font-size:21px;font-weight:800;letter-spacing:-.3px}.hdr .sub{font-size:11.5px;opacity:.92;margin-top:4px;font-weight:500}h2{font-size:14px;color:${C.primaryD};margin:24px 0 10px;font-weight:800;display:flex;align-items:center;gap:8px;letter-spacing:-.2px}h2::before{content:"";width:9px;height:9px;border-radius:50%;background:${C.accent};display:inline-block}table{width:100%;border-collapse:separate;border-spacing:0;margin-top:6px;border:1px solid #e8eef3;border-radius:14px;overflow:hidden;font-size:12.5px;box-shadow:0 1px 3px rgba(16,40,60,.04)}thead th{background:linear-gradient(135deg,${C.primary},${C.accent});color:#fff;padding:11px 12px;font-weight:700;text-align:center;font-size:12px}tbody td{padding:9px 12px;text-align:center;border-top:1px solid #eef3f8}tbody th{padding:9px 12px;text-align:start;border-top:1px solid #eef3f8;background:#f4f8fb;color:${C.primaryD};font-weight:700;white-space:nowrap}tbody tr:nth-child(even){background:#f8fbfd}p{color:#94a3b8;font-size:12px;margin:8px 0 0}.foot{margin-top:28px;padding-top:14px;border-top:1px dashed #d8e2ea;font-size:10.5px;color:#94a3b8;text-align:center;letter-spacing:.3px}.printbtn{position:fixed;left:16px;bottom:16px;z-index:99;background:${C.primary};color:#fff;border:none;border-radius:12px;padding:12px 18px;font-family:inherit;font-size:14px;font-weight:700;box-shadow:0 8px 24px rgba(15,118,110,.3);cursor:pointer}@media print{@page{size:A4 ${landscape?"landscape":"portrait"};margin:10mm}body{background:#fff}.wrap{padding:0}.hdr{box-shadow:none}.printbtn{display:none}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class="wrap"><div class="hdr"><div class="lg">ط</div><div><h1>${title}</h1><div class="sub">نظام إدارة الجداول والتغطيات · ${now}</div></div></div>${body}<div class="foot">قسم الأسنان · نظام إدارة الجداول والتغطيات</div></div><button class="printbtn" onclick="window.print()">🖨 طباعة / حفظ PDF</button><script>setTimeout(function(){try{window.print()}catch(e){}},800);<\/script></body></html>`); };
 
-function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays, doctors, publishNow }) {
+function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays, doctors, publishNow, leaves, nightData, coverages, audit, users, setDoctors, setLeaves, setNight, setCoverages, setAudit, setUsers, logAudit }) {
   const s = { ...DEFAULT_SETTINGS, ...settings };
   const set = (k,v)=> setSettings(p=>({ ...p, [k]:v }));
   const [dk,setDk] = useState(document.documentElement.getAttribute("data-theme")==="dark");
   const [hName,setHName]=useState(""); const [hStart,setHStart]=useState(""); const [hEnd,setHEnd]=useState(""); const [hOnCall,setHOnCall]=useState(false); const [hDoc,setHDoc]=useState("");
   const addHoliday = () => { if(!hName.trim()||!hStart){ showToast&&showToast("أدخل اسم العطلة وتاريخ البداية","warn"); return; } setHolidays&&setHolidays([...(holidays||[]), { id:uid(), name:hName.trim(), start:hStart, end:hEnd||hStart, onCall: hOnCall?(hDoc?+hDoc:null):null }]); setHName(""); setHStart(""); setHEnd(""); setHOnCall(false); setHDoc(""); showToast&&showToast("تمت إضافة العطلة الرسمية"); };
   const delHoliday = id => setHolidays&&setHolidays((holidays||[]).filter(h=>h.id!==id));
+  const [autoBackups,setAutoBackups] = useState(null);
+  const [backupsLoading,setBackupsLoading] = useState(false);
+  const restoreFromBackup = data => {
+    if(!confirm(`استرجاع نسخة بتاريخ ${data.exportedAt?new Date(data.exportedAt).toLocaleString("ar",{dateStyle:"medium",timeStyle:"short"}):"غير معروف"}؟\n\nهذا سيستبدل كل البيانات الحالية (الأطباء، الجدول، التغطيات، الإعدادات) بما في هذه النسخة — لا يمكن التراجع بعدها إلا بنسخة احتياطية أخرى.`)) return;
+    if(data.doctors) setDoctors(data.doctors);
+    if(data.leaves) setLeaves(data.leaves);
+    if(data.nightData) setNight(data.nightData);
+    if(data.coverages) setCoverages(data.coverages);
+    if(data.settings) setSettings(data.settings);
+    if(data.holidays) setHolidays(data.holidays);
+    if(data.audit) setAudit(data.audit);
+    if(data.users && data.users.length) setUsers(data.users);
+    logAudit&&logAudit("استرجاع نسخة احتياطية كاملة — استُبدلت كل البيانات");
+    showToast("✓ تم الاسترجاع بنجاح — راجع الجدول والإعدادات للتأكد");
+  };
   const field = (k,ttl,hint)=> <div style={{ ...card(), padding:16, marginBottom:12 }}>
     <label style={label}>{ttl}</label>
     <input type="number" min="0" value={s[k]} onChange={e=>set(k,Math.max(0,+e.target.value||0))} style={{ ...sIn, width:130 }} />
@@ -2428,6 +2482,23 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
         ); })}
       </div>
       <div style={{ fontSize:11, color:C.muted, marginTop:8 }}>تُعاد الصفحة تلقائياً لتطبيق اللون على كامل النظام.</div>
+    </div>
+    <div style={{ ...card(), padding:16, marginBottom:12 }}>
+      <label style={label}>🎯 قواعد العبء الوظيفي (قابلة للتعديل)</label>
+      <div style={{ fontSize:11.5, color:C.muted, marginBottom:10, lineHeight:1.8 }}>الأسبوع = ١٠ فترات. لكل مستوى إداري "دعم" (SS) محدَّد، و"رعاية مباشرة" (الهدف الفعلي) = ١٠ − SS تلقائياً. هذه القيم كانت ثابتة بالنظام (سياسة CAPP 001) — الآن يمكنك تعديلها لتصير هي الأساس بكل مكان (الإحصائيات، ملفات الأطباء، التقارير).</div>
+      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 70px 70px", gap:8, fontSize:10.5, fontWeight:700, color:C.muted, padding:"0 2px" }}>
+          <span>المستوى الإداري</span><span style={{ textAlign:"center" }}>SS دعم</span><span style={{ textAlign:"center" }}>DS رعاية</span>
+        </div>
+        {ADMIN_POS_DEFAULT.map(p=>{ const custom=s.adminPosSS||{}; const ss = custom[p.code]!=null ? custom[p.code] : p.ss; return (
+          <div key={p.code} style={{ display:"grid", gridTemplateColumns:"1fr 70px 70px", gap:8, alignItems:"center", background:"var(--surface2)", borderRadius:9, padding:"7px 9px" }}>
+            <span style={{ fontSize:12, fontWeight:600 }}>{p.code} · {p.ar}</span>
+            <input type="number" min="0" max="10" value={ss} onChange={e=>{ const v=Math.max(0,Math.min(10,+e.target.value||0)); set("adminPosSS",{ ...(s.adminPosSS||{}), [p.code]:v }); }} style={{ ...sIn, padding:"5px", textAlign:"center", fontSize:12.5 }} />
+            <span style={{ textAlign:"center", fontWeight:800, color:C.primary, fontSize:13 }}>{10-ss}</span>
+          </div>
+        ); })}
+      </div>
+      {s.adminPosSS && Object.keys(s.adminPosSS).length>0 && <button onClick={()=>{ set("adminPosSS",{}); showToast("تمت استعادة القيم الافتراضية"); }} style={{ ...sGhost, width:"100%", marginTop:10, color:C.err }}>↩️ استعادة القيم الافتراضية الأصلية</button>}
     </div>
     {field("capEvening","حدّ المناوبات المسائية شهرياً","ينبّه عند تجاوز الطبيب هذا العدد من المناوبات في الشهر.")}
     {field("capLeaveDay","حدّ المُجازين في اليوم","ينبّه عند تساوي/تجاوز عدد المُجازين في يوم عمل هذا الحد.")}
@@ -2486,6 +2557,10 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
         ".read": "auth != null",
         ".write": "auth != null"
       }
+    },
+    "backups": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     }
   }
 }`}</pre>
@@ -2518,8 +2593,56 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
           </div>
         ); })}
     </div>
-    <div style={{ fontSize:11.5, color:C.muted, marginBottom:10 }}>أهداف الرعاية الأسبوعية ثابتة: استشاري ٨ · أخصائي ٩.</div>
+    <div style={{ fontSize:11.5, color:C.muted, marginBottom:10 }}>أهداف الرعاية الأسبوعية قابلة للتعديل الآن من قسم "🎯 قواعد العبء الوظيفي" أعلاه.</div>
     <button onClick={()=>showToast("تم حفظ الإعدادات")} style={{ ...sBtn(C.primary), width:"100%" }}>💾 حفظ الإعدادات</button>
+    <div style={{ ...card(), padding:16, marginTop:12 }}>
+      <label style={label}>💾 نسخة احتياطية كاملة</label>
+      <div style={{ fontSize:11.5, color:C.muted, marginBottom:10, lineHeight:1.8 }}>يحمّل ملفاً واحداً فيه كل بيانات النظام (الأطباء، الإجازات، الجدول، التغطيات، الإعدادات، العطل، المستخدمون، سجل النشاط). احفظه بمكان آمن (جهازك أو بريدك) بشكل دوري — هذا هو المصدر الوحيد لاسترجاع البيانات لو صار أي عطل.</div>
+      <button onClick={()=>{
+        const backup = { _type:"clinic-backup", _version:1, exportedAt:new Date().toISOString(), doctors, leaves, nightData, coverages, settings, holidays, audit, users };
+        const blob = new Blob([JSON.stringify(backup,null,2)], {type:"application/json;charset=utf-8"});
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `نسخة-احتياطية-${new Date().toISOString().slice(0,10)}.json`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
+        showToast("✓ تم تحميل النسخة الاحتياطية");
+      }} style={{ ...sBtn(C.primary), width:"100%", marginBottom:10 }}>📥 تحميل نسخة احتياطية الآن</button>
+      <label style={{ ...sGhost, display:"flex", alignItems:"center", justifyContent:"center", gap:8, cursor:"pointer", position:"relative", overflow:"hidden", color:C.err, borderColor:"#fecaca" }}>
+        📤 استرجاع من نسخة احتياطية (يستبدل كل البيانات الحالية)
+        <input type="file" accept="application/json" onChange={e=>{
+          const file = e.target.files && e.target.files[0]; if(!file) return;
+          const reader = new FileReader();
+          reader.onload = ev => {
+            try{
+              const data = JSON.parse(ev.target.result);
+              if(data._type!=="clinic-backup"){ showToast("هذا الملف ليس نسخة احتياطية صالحة لهذا النظام","err"); return; }
+              restoreFromBackup(data);
+            }catch(err){ showToast("تعذّر قراءة الملف — تأكد أنه نسخة احتياطية صحيحة","err"); }
+            e.target.value="";
+          };
+          reader.readAsText(file);
+        }} style={{ position:"absolute", inset:0, width:"100%", height:"100%", opacity:0, cursor:"pointer" }} />
+      </label>
+    </div>
+    <div style={{ ...card(), padding:16, marginTop:12 }}>
+      <label style={label}>📅 نسخ احتياطية أسبوعية تلقائية</label>
+      <div style={{ fontSize:11.5, color:C.muted, marginBottom:10, lineHeight:1.8 }}>يحفظها النظام نفسه تلقائياً على Firebase مرة كل أسبوع (أول فتح للتطبيق بعد مرور ٧ أيام من آخر نسخة) — بدون أي تدخل منك. منفصلة تماماً عن البيانات الحيّة، فلو صار خطأ بالبيانات الحالية، هذي تبقى سليمة.</div>
+      <button onClick={async()=>{ setBackupsLoading(true); try{ const list=await cloudListBackups(); setAutoBackups(list); if(!list.length) showToast("لا توجد نسخ أسبوعية بعد — ستُنشأ أول واحدة تلقائياً مع أول أسبوع استخدام","warn"); }catch(e){ showToast("تعذّر جلب النسخ الأسبوعية","err"); } setBackupsLoading(false); }} style={{ ...sGhost, width:"100%" }}>{backupsLoading?"⏳ جارٍ التحميل…":"🔄 عرض النسخ الأسبوعية المتاحة"}</button>
+      {autoBackups && autoBackups.length>0 && <div style={{ marginTop:10, display:"flex", flexDirection:"column", gap:7 }}>
+        {autoBackups.map(b=>(
+          <div key={b.key} style={{ display:"flex", alignItems:"center", gap:10, background:"var(--surface2)", borderRadius:10, padding:"9px 11px" }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:12.5, fontWeight:700 }}>{b.key}</div>
+              <div style={{ fontSize:10.5, color:C.muted }}>{(b.data?.doctors||[]).length} طبيب · {(b.data?.leaves||[]).length} إجازة</div>
+            </div>
+            <button onClick={()=>{
+              const blob=new Blob([JSON.stringify(b.data,null,2)],{type:"application/json;charset=utf-8"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`نسخة-أسبوعية-${b.key}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
+            }} style={{ ...sGhost, padding:"6px 10px", fontSize:11.5 }}>📥 تنزيل</button>
+            <button onClick={()=>restoreFromBackup(b.data)} style={{ ...sGhost, color:C.err, padding:"6px 10px", fontSize:11.5 }}>↩️ استرجاع</button>
+          </div>
+        ))}
+      </div>}
+    </div>
   </div>;
 }
 
@@ -2729,12 +2852,30 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd, setting
     const totalCov = perDoctorRows.reduce((a,r)=>a+r.cv.length,0);
     const byReason = {};
     perDoctorRows.forEach(r=>r.cv.forEach(c=>{ const key=coverReasonAr(c.ownerId,c.date,c.reason,leaves); byReason[key]=(byReason[key]||0)+1; }));
+    // ── من تمت تغطيته أكثر (صاحب العيادة الغائب/المناوب)، ولماذا بالتفصيل — يشمل كل القسم بصرف النظر عن اختيار "طبيب معيّن" أعلاه، لأنه سؤال مختلف (مَن يحتاج تغطية) ──
+    const coveredMap = {};
+    const bumpCovered = (ownerId, reasonLabel) => { if(ownerId==null) return; if(!coveredMap[ownerId]) coveredMap[ownerId]={count:0,reasons:{}}; coveredMap[ownerId].count++; coveredMap[ownerId].reasons[reasonLabel]=(coveredMap[ownerId].reasons[reasonLabel]||0)+1; };
+    coverages.filter(c=>dates.includes(c.date)).forEach(c=>{ bumpCovered(c.absentId, coverReasonAr(c.absentId,c.date,c.reason,leaves)); });
+    dates.forEach(dt=>{
+      const nd=nightData[dt]||{}; const cv=nd.coverages||{};
+      const di0=dayIdx(dt); const ndi=dayIdx(nextWork(dt));
+      ["am","pm","nextAm"].forEach(slot=>{
+        (cv[slot]||[]).forEach(()=>{
+          const sl=slot==="nextAm"?"am":slot; const sdi=slot==="nextAm"?ndi:di0;
+          const owner=(nd.doctors||[]).find(id=>{ const o=fd(id); return o&&isClinic(getSlot(o,sdi,sl)); });
+          bumpCovered(owner, slot==="nextAm"?"راحة بعد مسائي":"دوام مسائي");
+        });
+      });
+    });
+    const coveredRows = Object.entries(coveredMap).map(([id,v])=>({ d:fd(+id), count:v.count, reasons:v.reasons })).filter(r=>r.d).sort((a,b)=>b.count-a.count);
+    const allReasonKeys = [...new Set(coveredRows.flatMap(r=>Object.keys(r.reasons)))];
+    const coveredTbl = coveredRows.length ? `<h2>🩺 مَن تمت تغطيته أكثر (صاحب العيادة الغائب/المناوب) — ولماذا بالتفصيل</h2><table><thead><tr><th style="text-align:start">الطبيب</th><th>الإجمالي</th>${allReasonKeys.map(k=>`<th>${k}</th>`).join("")}</tr></thead><tbody>${coveredRows.map(r=>`<tr><td style="text-align:start;font-weight:700">د.${r.d.name}</td><td style="font-weight:800;color:${C.err}">${r.count}</td>${allReasonKeys.map(k=>`<td>${r.reasons[k]||"—"}</td>`).join("")}</tr>`).join("")}</tbody></table>` : "";
     const summary = `<div class="sumbar">
       <div class="sumtile"><b>${totalCov}</b><span>إجمالي التغطيات</span></div>
       <div class="sumtile"><b>${dates.filter(dt=>coverages.some(c=>c.date===dt)||Object.values(((nightData[dt]||{}).coverages)||{}).some(a=>a&&a.length)).length}</b><span>أيام فيها تغطية</span></div>
-      ${Object.entries(byReason).slice(0,2).map(([k,v])=>`<div class="sumtile"><b>${v}</b><span>${k}</span></div>`).join("")}
+      ${Object.entries(byReason).map(([k,v])=>`<div class="sumtile"><b>${v}</b><span>${k}</span></div>`).join("")}
     </div>`;
-    const totalsTbl = shown.length>1 ? `<h2>📊 إجمالي التغطيات لكل طبيب (مرتّب تنازلياً)</h2><table><thead><tr><th style="text-align:start">الطبيب</th><th>عدد التغطيات</th></tr></thead><tbody>${perDoctorRows.map(r=>`<tr><td style="text-align:start;font-weight:700">د.${r.d.name}</td><td style="font-weight:800;color:${C.primaryD}">${r.cv.length}</td></tr>`).join("")}<tr class="totrow"><td style="text-align:start">الإجمالي</td><td>${totalCov}</td></tr></tbody></table>` : "";
+    const totalsTbl = shown.length>1 ? `<h2>📊 إجمالي التغطيات لكل طبيب مغطٍّ (مرتّب تنازلياً)</h2><table><thead><tr><th style="text-align:start">الطبيب</th><th>عدد التغطيات</th></tr></thead><tbody>${perDoctorRows.map(r=>`<tr><td style="text-align:start;font-weight:700">د.${r.d.name}</td><td style="font-weight:800;color:${C.primaryD}">${r.cv.length}</td></tr>`).join("")}<tr class="totrow"><td style="text-align:start">الإجمالي</td><td>${totalCov}</td></tr></tbody></table>` : "";
     let dayByDay;
     if(shown.length===1){
       const r = perDoctorRows[0];
@@ -2751,7 +2892,7 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd, setting
       dayByDay = rows.length ? `<table><thead><tr><th style="width:170px">اليوم والتاريخ</th><th>التغطيات (المغطّي ◂ الغائب)</th></tr></thead><tbody>${rows.join("")}</tbody></table>` : `<p>لا تغطيات خلال ${label}</p>`;
     }
     const title = shown.length===1 ? `تقرير التغطيات — د.${shown[0].name} (${label})` : `تقرير التغطيات — كامل القسم (${label})`;
-    printDoc(title, reportCSS+focusCSS+summary+totalsTbl+`<h2>🔄 كل الأيام</h2>`+dayByDay, false);
+    printDoc(title, reportCSS+focusCSS+summary+totalsTbl+coveredTbl+`<h2>🔄 كل الأيام</h2>`+dayByDay, false);
   };
 
   const printDoctorTimetable = d => {
@@ -3046,6 +3187,7 @@ function App() {
   const [settings, setSettings]   = useState(()=>S.get("v2_settings")||{});
   const [holidays, setHolidays]   = useState(()=>S.get("v2_holidays")||[]);
   HOLIDAYS = buildHolidayMap(holidays);
+  applyPosSSOverrides(settings?.adminPosSS);
 
   const [audit, setAudit]         = useState(()=>S.get("v2_audit")||[]);
   const [users, setUsers]         = useState(()=>{ const u=S.get("v2_users"); return (u&&u.length)?u:[{ id:uid(), username:"admin", pin:"0000", role:"head", doctorId:null }]; });
@@ -3089,6 +3231,7 @@ function App() {
       }
       // نجح الاتصال (سواء وُجدت بيانات أو كانت هذه أول مرة) → آمن نبدأ الحفظ من الآن
       setCloudSyncState("synced"); setCloudSafeToSave(true);
+      if(remote) cloudBackupIfDue(remote); // نسخة احتياطية أسبوعية تلقائية صامتة — لا تعطّل أي شيء لو فشلت
     }catch(e){
       // فشل الاتصال بالسحابة (شبكة/قواعد/مصادقة) → لا نحفظ إطلاقاً، حتى لا نكتب نسخة محلية ناقصة فوق البيانات الحقيقية بالخطأ
       setCloudSyncState("error"); setCloudSafeToSave(false);
@@ -3171,7 +3314,7 @@ function App() {
       {page==="reports" && <ReportsPage doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} settings={settings} />}
       {page==="alerts" && <AlertsPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} settings={settings} onGoto={setPage} />}
       {page==="audit" && <AuditPage audit={audit} />}
-      {page==="settings" && <SettingsPage settings={settings} setSettings={setSettings} showToast={showToast} holidays={holidays} setHolidays={setHolidays} doctors={doctors} publishNow={publishNow} />}
+      {page==="settings" && <SettingsPage settings={settings} setSettings={setSettings} showToast={showToast} holidays={holidays} setHolidays={setHolidays} doctors={doctors} publishNow={publishNow} leaves={leaves} nightData={nightData} coverages={coverages} audit={audit} users={users} setDoctors={setDoctors} setLeaves={setLeaves} setNight={setNight} setCoverages={setCoverages} setAudit={setAudit} setUsers={setUsers} logAudit={logAudit} />}
       {page==="users" && role==="head" && <UsersPage users={users} setUsers={setUsers} doctors={doctors} currentUser={currentUser} showToast={showToast} />}
   </>;
 
