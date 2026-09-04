@@ -687,22 +687,6 @@ function analyzeDay(date, doctors, leaves, nightData, coverages, loadMap, restRu
     if (amDuty||pmDuty) conflicts.push({ type:"evening-plus-cover", date, text:`${fd(id)?.name||""} له دوام/تغطية مسائية ومكلّف بتغطية نهارية نفس اليوم (${fmtDate(date)}) — غير مسموح` });
   });
 
-  // ---- Suggestions for each gap: least-loaded, free that period, not absent, not the owner ----
-  gaps.forEach(g=>{
-    const busy = new Set(Object.keys(occupied[g.period]).map(Number));
-    const prevEve = g.period==="am" ? new Set(((nightData[prevCalDay(date)]||{}).doctors)||[]) : new Set();
-    const cands = doctors.filter(d=>
-      d.id!==g.ownerId &&
-      !busy.has(d.id) &&
-      !absentReason[d.id] &&
-      !prevEve.has(d.id) &&
-      !onLeave(d,date,leaves) &&
-      !(d.blockedDays||[]).includes(g.di)
-    );
-    cands.sort((a,b)=>((loadMap&&loadMap[a.id])||0)-((loadMap&&loadMap[b.id])||0));
-    g.suggestions = cands.slice(0,3).map(d=>d.id);
-  });
-
   return { gaps, conflicts, periods, occupied, absentReason };
 }
 
@@ -839,21 +823,6 @@ function computeLoadMap(year, monthIdx, doctors, nightData, coverages, leaves) {
     dayIndiv.forEach(c=>{ load[c.coverDoctorId]=(load[c.coverDoctorId]||0)+1; });
   });
   return load;
-}
-
-// Given a load map, return a function that labels a doctor's load relative to peers
-function makeLoadLabeler(loadMap) {
-  const vals = Object.values(loadMap||{}).filter(v=>v>0).sort((a,b)=>a-b);
-  if (!vals.length) return () => ({ icon:"⚪", text:"—", val:0 });
-  const lo = vals[Math.floor(vals.length/3)] || vals[0];
-  const hi = vals[Math.floor(vals.length*2/3)] || vals[vals.length-1];
-  return (id) => {
-    const v = loadMap[id]||0;
-    if (v===0) return { icon:"🟢", text:"الأقل عبئاً", val:v };
-    if (v<=lo) return { icon:"🟢", text:"الأقل عبئاً", val:v };
-    if (v>=hi) return { icon:"🔴", text:"الأكثر عبئاً", val:v };
-    return { icon:"🟡", text:"متوسط", val:v };
-  };
 }
 
 // Analyze every filled day in a month → aggregate gaps + conflicts
@@ -1218,12 +1187,12 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const gaps = ana.gaps.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.period.localeCompare(b.period));
   const gapKey = g => `${g.date}|${g.period}|${g.ownerId}`;
   const monthDates = days.map(x=>x.date);
+  const monthAssignments = useMemo(()=> days.flatMap(({date,di})=> ((nightData[date]||{}).doctors||[]).map(id=>({date,di,docId:id,key:`${date}|${id}`}))).sort((a,b)=>a.date.localeCompare(b.date)), [days,nightData]);
   const yearDates = useMemo(()=>{ const out=[]; for(let m=0;m<=mo.m;m++) out.push(...monthDays(mo.y,m).map(x=>x.date)); return out; }, [mo.y,mo.m]);
-  const loadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>{ const s=doctorSessions(d, yearDates, nightData, coverages, leaves); m[d.id]=s.total; }); return m; }, [mo,doctors,nightData,coverages,leaves,yearDates]);
-  // ── عدد التغطيات وحده (بلا خلط بعبء العيادة اليومي) — طبيب جدوله اليومي أخف (عيادات/إداري أقل) عبؤه الكلي أقل أصلاً، فلو رتّبنا حسب "loadMap" الكلي سيخسر زميله الأثقل يومياً كل تنافس رغم تساويهما بعدد التغطيات — هذا بالضبط سبب استحواذ طبيب واحد على أغلب التغطيات سابقاً ──
+  // ── عدد التغطيات وحده (بلا خلط بعبء العيادة اليومي) — طبيب جدوله اليومي أخف (عيادات/إداري أقل) عبؤه الكلي أقل أصلاً، فلو رتّبنا حسب العبء الكلي سيخسر زميله الأثقل يومياً كل تنافس رغم تساويهما بعدد التغطيات — هذا بالضبط سبب استحواذ طبيب واحد على أغلب التغطيات سابقاً ──
   const coverLoadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>{ m[d.id]=doctorSessions(d, yearDates, nightData, coverages, leaves).covers; }); return m; }, [mo,doctors,nightData,coverages,leaves,yearDates]);
   const eveLoadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>m[d.id]=0); monthDates.forEach(dt=>((nightData[dt]||{}).doctors||[]).forEach(id=>{ m[id]=(m[id]||0)+1; })); return m; }, [mo,doctors,nightData]);
-  const rankAvail = arr => arr.filter(a=>a.status!=="leave").map(a=>({ ...a, load:loadMap[a.doc.id]||0 })).sort((a,b)=> (a.status==="free"?0:1)-(b.status==="free"?0:1) || a.load-b.load);
+  const rankAvail = arr => arr.filter(a=>a.status!=="leave"); // بلا أي فرز حسب العبء — bestForGap يفرز بنفسه حسب عدد التغطيات فقط
   const availForGap = g => rankAvail(getAvailable(doctors,[g.ownerId],g.di,g.date,g.period,leaves,nightData,{},coverages,true));
   const busyReason = (doc,di,period) => { const sl=getSlot(doc,di,period); if(isClinic(sl)) return "عيادة"; return SLOT_AR[sl]||"عيادة"; }; // يوضّح "تدقيق"/"افتراضي" بدل تعميم "عيادة" على كل شغل نهاري
   const pickList = (excludeId,di,date,period) => getAvailable(doctors,[excludeId],di,date,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:coverLoadMap[a.doc.id]||0, commit: a.status==="warn" ? (SLOT_COMMIT[getSlot(a.doc,di,period)]||"التزام") : null, busyType: a.status==="busy" ? busyReason(a.doc,di,period) : null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
@@ -1286,6 +1255,27 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   };
 
   const toggleEvening = (date,id) => { ensureDay(date); setNight(nd=>{ const d={...(nd[date]||{doctors:[],coverages:{am:[],pm:[],nextAm:[]}})}; const has=(d.doctors||[]).includes(id); d.doctors=has?d.doctors.filter(x=>x!==id):[...(d.doctors||[]),id]; return {...nd,[date]:d}; }); const nextDay=(()=>{ const dt=new Date(date); dt.setDate(dt.getDate()+1); return dt.toISOString().split("T")[0]; })(); setCoverages(cs=>cs.filter(c=>!(c.absentId===id && ((c.date===date && c.reason==="evening") || (c.date===nextDay && c.reason==="post_evening"))))); };
+  // ── تبديل بين طبيبين بمناوبتين مختلفتين — يبدّل مباشرة بدل ٤ خطوات يدوية (إزالة/إضافة لكل جانب) ──
+  const [swapResolvePending, setSwapResolvePending] = useState(null); // [dateA, dateB] بعد التبديل مباشرة، لحلّ أي عيادة نهارية جديدة احتاجها كل طرف بسبب انتقاله ليوم آخر
+  const swapEvening = (dateA,docA,dateB,docB) => {
+    if(!dateA||!docA||!dateB||!docB){ showToast("اختر المناوبتين كاملتين","warn"); return; }
+    if(dateA===dateB && docA===docB){ showToast("اختر مناوبتين مختلفتين","warn"); return; }
+    toggleEvening(dateA,docA); toggleEvening(dateA,docB);
+    if(dateA!==dateB){ toggleEvening(dateB,docB); toggleEvening(dateB,docA); }
+    logAudit&&logAudit(`تبديل مسائي: د.${fd(docA)?.name||"؟"} (${dmy(dateA)}) ↔ د.${fd(docB)?.name||"؟"} (${dmy(dateB)})`);
+    showToast(`✓ تم التبديل: د.${fd(docA)?.name||"؟"} ↔ د.${fd(docB)?.name||"؟"} — جارٍ حلّ أي عيادة نهارية محتاجة تلقائياً…`);
+    setSwapResolvePending([dateA,dateB]);
+  };
+  useEffect(()=>{
+    if(!swapResolvePending) return;
+    const t = setTimeout(()=>{
+      const [dA,dB] = swapResolvePending;
+      coverAll(dA);
+      if(dB!==dA) coverAll(dB);
+      setSwapResolvePending(null);
+    }, 300);
+    return ()=>clearTimeout(t);
+  }, [swapResolvePending, nightData]);
   const setCov = (date,slot,id) => { if(!id) return; setNight(nd=>{ const d={...(nd[date]||{doctors:[],coverages:{}})}; const cv={am:[],pm:[],nextAm:[],...(d.coverages||{})}; cv[slot]=[+id]; d.coverages=cv; return {...nd,[date]:d}; }); };
   const clearCov = (date,slot) => setNight(nd=>{ const d={...(nd[date]||{})}; const cv={...(d.coverages||{})}; cv[slot]=[]; d.coverages=cv; return {...nd,[date]:d}; });
 
@@ -1450,6 +1440,9 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const [clrOpen,setClrOpen] = useState(false);
   const [exportOpen,setExportOpen] = useState(false);
   const [manualOpen,setManualOpen] = useState(false);
+  const [swapOpen,setSwapOpen] = useState(false);
+  const [swapA,setSwapA] = useState("");
+  const [swapB,setSwapB] = useState("");
   const [calMode,setCalMode] = useState("split"); // split | merged
   const [wkRef,setWkRef] = useState(today);
   const pre = `${mo.y}-${String(mo.m+1).padStart(2,"0")}`;
@@ -1645,14 +1638,31 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           </>}
         </div>
       </div>
-      <div style={{ marginTop:8 }}>
+      <div style={{ marginTop:8, display:"flex", flexWrap:"wrap", gap:14 }}>
         <button onClick={()=>setManualOpen(o=>!o)} style={{ display:"flex", alignItems:"center", gap:6, background:"none", border:"none", cursor:"pointer", color:C.muted, fontSize:11.5, fontWeight:700, padding:"4px 2px" }}>⚖ خطوات يدوية (للتحكم الدقيق) {manualOpen?"▲":"▼"}</button>
-        {manualOpen && <div style={{ display:"flex", flexWrap:"wrap", gap:7, marginTop:6, paddingTop:10, borderTop:`1px dashed ${C.line2}` }}>
-          <button onClick={distributeFixed} style={sGhost}>⚡ توزيع حسب الأيام الثابتة</button>
-          <button onClick={fillAvailable} style={sBtn("var(--eve)")}>🌙 إكمال المسائي بالمتاح</button>
-          <button onClick={()=>coverAll()} style={sBtn("var(--primary-d)")}>🩺 تغطية العيادات المكشوفة</button>
-        </div>}
+        <button onClick={()=>setSwapOpen(o=>!o)} style={{ display:"flex", alignItems:"center", gap:6, background:"none", border:"none", cursor:"pointer", color:C.muted, fontSize:11.5, fontWeight:700, padding:"4px 2px" }}>🔄 تبديل بين طبيبين {swapOpen?"▲":"▼"}</button>
       </div>
+      {manualOpen && <div style={{ display:"flex", flexWrap:"wrap", gap:7, marginTop:6, paddingTop:10, borderTop:`1px dashed ${C.line2}` }}>
+        <button onClick={distributeFixed} style={sGhost}>⚡ توزيع حسب الأيام الثابتة</button>
+        <button onClick={fillAvailable} style={sBtn("var(--eve)")}>🌙 إكمال المسائي بالمتاح</button>
+        <button onClick={()=>coverAll()} style={sBtn("var(--primary-d)")}>🩺 تغطية العيادات المكشوفة</button>
+      </div>}
+      {swapOpen && <div style={{ marginTop:6, paddingTop:10, borderTop:`1px dashed ${C.line2}` }}>
+        <div style={{ fontSize:11, color:C.muted, marginBottom:8 }}>اختر مناوبتين من هذا الشهر لتبديل الطبيبَين بينهما مباشرة (يجب أن يكون هناك مناوبات موزَّعة أولاً).</div>
+        {monthAssignments.length<2 ? <div style={{ fontSize:12, color:C.muted }}>لا توجد مناوبتان بعد لهذا الشهر — وزّع المسائي أولاً.</div> : <>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:8, marginBottom:8 }}>
+            <select value={swapA} onChange={e=>setSwapA(e.target.value)} style={sIn}>
+              <option value="">— المناوبة الأولى —</option>
+              {monthAssignments.map(a=><option key={a.key} value={a.key}>{DAYS[a.di]} {dmy(a.date)} — د.{fd(a.docId)?.name||"؟"}</option>)}
+            </select>
+            <select value={swapB} onChange={e=>setSwapB(e.target.value)} style={sIn}>
+              <option value="">— المناوبة الثانية —</option>
+              {monthAssignments.map(a=><option key={a.key} value={a.key}>{DAYS[a.di]} {dmy(a.date)} — د.{fd(a.docId)?.name||"؟"}</option>)}
+            </select>
+          </div>
+          <button onClick={()=>{ if(!swapA||!swapB){ showToast("اختر المناوبتين","warn"); return; } if(swapA===swapB){ showToast("اختر مناوبتين مختلفتين","warn"); return; } const [dateA,docAstr]=swapA.split("|"); const [dateB,docBstr]=swapB.split("|"); swapEvening(dateA,+docAstr,dateB,+docBstr); setSwapA(""); setSwapB(""); setSwapOpen(false); }} style={{ ...sBtn("var(--eve)"), width:"100%" }}>🔄 تبديل الآن</button>
+        </>}
+      </div>}
     </div>
 
     {showSetup && (
@@ -1763,8 +1773,6 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           ); })}
         </div>
       ) : view==="calendar" ? (() => {
-        const eveLoad={}; doctors.forEach(d=>eveLoad[d.id]=0); monthDates.forEach(dt=>(((nightData[dt]||{}).doctors)||[]).forEach(id=>{ eveLoad[id]=(eveLoad[id]||0)+1; }));
-        const pool=[...doctors].sort((a,b)=>(eveLoad[a.id]-eveLoad[b.id])||((loadMap[a.id]||0)-(loadMap[b.id]||0)));
         return (
         <div className="cal-wrap">
           <div>
