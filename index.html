@@ -2020,29 +2020,10 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
   const add = () => {
     if(!f.doctorId||!f.start||!f.end){showToast("أكمل الحقول","warn");return;}
     if(f.end<f.start){showToast("التواريخ غير صحيحة","err");return;}
-    const docId = +f.doctorId;
-    setLeaves(ls=>[...ls,{id:uid(),doctorId:docId,type:f.type,start:f.start,end:f.end,clinicClosed:f.clinicClosed}]);
-    // ── تنظيف تلقائي فوري: يزيل الطبيب من أي مناوبة مسائية تقع ضمن فترة إجازته الجديدة — حتى لا يبقى "مناوباً وغائباً" بنفس الوقت (تعارض مربك بدل حل مباشر) ──
-    // وبهذا تظهر عيادته (لو "قائمة") كفجوة واضحة عادية في "الحلول المطلوبة" فوراً، بدل تحذير تعارض يحتاج بحثاً يدوياً
-    const s=new Date(f.start), e=new Date(f.end);
-    const affectedDates=[];
-    for(let dt=new Date(s); dt<=e; dt.setDate(dt.getDate()+1)){
-      const wd=dt.getDay(); if(wd>=5) continue;
-      const ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
-      if(((nightData[ds]||{}).doctors||[]).includes(docId)) affectedDates.push(ds);
-    }
-    if(affectedDates.length){
-      setNight(nd=>{ const n={...nd}; affectedDates.forEach(ds=>{ const day={...(n[ds]||{doctors:[],coverages:{am:[],pm:[],nextAm:[]}})}; day.doctors=(day.doctors||[]).filter(x=>x!==docId); n[ds]=day; }); return n; });
-      setCoverages(cs=>cs.filter(c=>{
-        const isEveningToday = c.absentId===docId && c.reason==="evening" && affectedDates.includes(c.date);
-        const isPostEveningTomorrow = c.absentId===docId && c.reason==="post_evening" && affectedDates.some(ds=>{ const nx=new Date(ds); nx.setDate(nx.getDate()+1); return nx.toISOString().split("T")[0]===c.date; });
-        return !(isEveningToday || isPostEveningTomorrow);
-      }));
-      logAudit&&logAudit(`إزالة د.${fd(docId)?.name||""} من ${affectedDates.length} مناوبة مسائية تتعارض مع إجازته الجديدة`);
-    }
+    setLeaves(ls=>[...ls,{id:uid(),doctorId:+f.doctorId,type:f.type,start:f.start,end:f.end,clinicClosed:f.clinicClosed}]);
     setF({doctorId:"",type:"annual",start:"",end:"",clinicClosed:true});
-    logAudit&&logAudit(`تسجيل إجازة د.${fd(docId)?.name||""} (${f.type})`);
-    showToast(affectedDates.length?`✓ تم تسجيل الإجازة — وأُزيل تلقائياً من ${affectedDates.length} مناوبة متعارضة`:"تم تسجيل الإجازة");
+    logAudit&&logAudit(`تسجيل إجازة د.${fd(+f.doctorId)?.name||""} (${f.type})`);
+    showToast("تم تسجيل الإجازة — سيُزال تلقائياً من أي مناوبة/تغطية متعارضة"); // التصحيح الفعلي يجري بتصحيح ذاتي شامل مستقل (App-level)، يعمل لأي مصدر تعارض لا فقط الإضافة هنا
   };
   const del = id => {
     const l = leaves.find(x=>x.id===id); if(!l) return;
@@ -3258,6 +3239,46 @@ function App() {
   useEffect(()=>S.set("v2_users",users),[users]);
   useEffect(()=>S.set("v2_session",session),[session]);
   useEffect(()=>S.set("v2_navcollapsed",collapsed),[collapsed]);
+  // ── تصحيح ذاتي دائم وشامل: لو أي طبيب "مكلَّف" بأي شكل (مناوباً مسائياً هو نفسه، أو مغطّياً لعيادة زميل) بيوم يقع ضمن إجازته، يُزال تلقائياً — بلا أي تعارض "غائب ومكلَّف بنفس الوقت" معلَّق ──
+  useEffect(()=>{
+    if(!leaves.length) return;
+    const leaveDates = {}; // docId -> Set(dates)
+    leaves.forEach(l=>{
+      const s=new Date(l.start), e=new Date(l.end);
+      for(let dt=new Date(s); dt<=e; dt.setDate(dt.getDate()+1)){
+        const wd=dt.getDay(); if(wd>=5) continue;
+        const ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+        (leaveDates[l.doctorId]=leaveDates[l.doctorId]||new Set()).add(ds);
+      }
+    });
+    if(!Object.keys(leaveDates).length) return;
+    const onLv = (docId,ds) => leaveDates[docId] && leaveDates[docId].has(ds);
+    let touchedNight=false, touchedCov=false; let fixedCount=0;
+
+    const n2 = {...nightData};
+    Object.keys(n2).forEach(ds=>{
+      const day = n2[ds]; if(!day) return;
+      let dchanged=false; const nd2 = {...day};
+      // ١) مناوبته المسائية الخاصة به
+      if((nd2.doctors||[]).some(id=>onLv(id,ds))){ nd2.doctors=(nd2.doctors||[]).filter(id=>!onLv(id,ds)); dchanged=true; fixedCount++; }
+      // ٢) تغطيته لعيادة زميل (صباح/ظهر) نفس اليوم — مخزّنة داخل جدول المسائي بصيغة am/pm
+      const cv = {...(nd2.coverages||{})};
+      ["am","pm"].forEach(sl=>{ if((cv[sl]||[]).some(id=>onLv(id,ds))){ cv[sl]=(cv[sl]||[]).filter(id=>!onLv(id,ds)); dchanged=true; fixedCount++; } });
+      // ٣) تغطيته "لصباح الغد" — مسجَّلة باليوم السابق (nextAm)، يجب أن نتحقق أنه ليس في إجازة يوم الغد الفعلي
+      const nextDs = (()=>{ const d=new Date(ds); d.setDate(d.getDate()+1); return d.toISOString().split("T")[0]; })();
+      if((cv.nextAm||[]).some(id=>onLv(id,nextDs))){ cv.nextAm=(cv.nextAm||[]).filter(id=>!onLv(id,nextDs)); dchanged=true; fixedCount++; }
+      if(dchanged){ nd2.coverages=cv; n2[ds]=nd2; touchedNight=true; }
+    });
+
+    const affectedCoverageIds = new Set();
+    coverages.forEach(c=>{ if(onLv(c.coverDoctorId,c.date)) affectedCoverageIds.add(c.id); });
+    if(affectedCoverageIds.size){ touchedCov=true; fixedCount+=affectedCoverageIds.size; }
+
+    if(!touchedNight && !touchedCov) return;
+    if(touchedNight) _setNight(()=>n2);
+    if(touchedCov) _setCoverages(cs=>cs.filter(c=>!affectedCoverageIds.has(c.id)));
+    logAudit&&logAudit(`تصحيح تلقائي: إزالة ${fixedCount} تكليف (مناوبة/تغطية) يتعارض مع إجازة مسجَّلة`);
+  },[leaves, nightData, coverages]);
   useEffect(()=>{ if(official) S.set("v2_official",official); },[official]);
 
   // ── تحميل أوّلي من السحابة عند فتح التطبيق: لو فيه بيانات مشتركة محفوظة، تحل محل النسخة المحلية فوراً ──
