@@ -1357,21 +1357,25 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           if(cur.length<need) leftover += (need-cur.length);
           n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur, eveningSlots:need };
         });
-        // ── تصحيح موازنة نهائي: أحياناً يترك التوزيع اليومي (لأنه يمشي يوماً بيوم) طبيباً بلا أي مناوبة بينما آخر أخذ اثنتين أو أكثر، رغم أن حجم المجموعة كافٍ نظرياً ──
-        // هذه الخطوة تبحث عن مثل هذه الحالات وتُبدّل الطبيب "المكرر" بالطبيب "الصفري" في يوم متاح لكليهما، بلا كسر أي قاعدة (إجازة/عيادة/تكرار/راحة)
-        (function rebalanceRepeats(){
+        // ── تصحيح موازنة نهائي (عام): أحياناً يترك التوزيع اليومي (لأنه يمشي يوماً بيوم) فارقاً كبيراً بين الأقل والأكثر (حتى لو لم يصل أحد لصفر تماماً — مثلاً ١ مقابل ٤) رغم أن حجم المجموعة كافٍ نظرياً ──
+        // هذه الخطوة تكرّر البحث عن "الأقل" و"الأكثر" وتُبدّل بينهما في يوم متاح للاثنين، حتى يضيق الفارق لأقصى حد ممكن (فرق ١ فقط)، بلا كسر أي قاعدة (إجازة/عيادة/تكرار/راحة)
+        (function rebalanceSpread(){
           const rotate = doctors.filter(d=>(d.nightDays||[]).length===0);
+          if(rotate.length<2) return;
           let guard=0, changed=true;
-          while(changed && guard++<50){
+          while(changed && guard++<200){
             changed=false;
             const cnt={}; rotate.forEach(d=>cnt[d.id]=thisMoUsage[d.id]||0);
-            const zeroDocs = rotate.filter(d=>cnt[d.id]===0);
-            if(!zeroDocs.length) break;
-            for(const zd of zeroDocs){
+            const vals=Object.values(cnt);
+            const minV=Math.min(...vals), maxV=Math.max(...vals);
+            if(maxV-minV<=1) break; // الفارق مقبول، لا حاجة لمزيد من التبديل
+            const minDocs = rotate.filter(d=>cnt[d.id]===minV);
+            for(const zd of minDocs){
               let done=false;
               for(const {date,di} of days){
                 const assigned=(n[date]?.doctors)||[];
-                const repeatedHere = assigned.find(id=>{ const dd=doctors.find(x=>x.id===id); return dd && (dd.nightDays||[]).length===0 && cnt[id]>=2; });
+                // ابحث عن طبيب "بالحد الأقصى" مُعيَّن هذا اليوم يمكن استبداله بالطبيب "الأقل"
+                const repeatedHere = assigned.find(id=>{ const dd=doctors.find(x=>x.id===id); return dd && (dd.nightDays||[]).length===0 && cnt[id]===maxV; });
                 if(!repeatedHere) continue;
                 if(onLeave(zd,date,leaves)) continue;
                 if((zd.blockedDays||[]).includes(di)) continue;
