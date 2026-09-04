@@ -925,6 +925,30 @@ function Kebab({ items }) {
 // ════════ Color-coded coverage picker ════════
 const ST_COLOR = s => s==="free" ? {bg:"#ecfdf5",bd:"#10b981",fg:"#047857",t:"متفرّغ"} : s==="warn" ? {bg:"#fffbeb",bd:"#f59e0b",fg:"#b45309",t:"التزام"} : s==="busy" ? {bg:"#eef2f7",bd:"#94a3b8",fg:"#475569",t:"في عيادته"} : {bg:"#fef2f2",bd:"#ef4444",fg:"#b91c1c",t:"إجازة"};
 const SLOT_COMMIT = { clinic:"عيادة", clinic_am:"عيادة", clinic_pm:"عيادة", virtual:"افتراضي", audit:"تدقيق", training:"تدريب", admin:"إداري" };
+
+// ════════ قائمة "إضافة طبيب" المسائي — عرض واضح لعدد المناوبات/التغطيات (٣ أشهر) + اقتراح الأنسب ════════
+function QuickAddList({ options, onPick }) {
+  if(!options.length) return <div style={{ fontSize:11.5, color:C.err, fontWeight:600, padding:"6px 4px" }}>لا يوجد طبيب متاح</div>;
+  return (
+    <div style={{ background:"#fff", border:`1px solid ${C.line}`, borderRadius:11, boxShadow:"0 10px 28px rgba(15,23,42,.16)", padding:6, maxHeight:280, overflowY:"auto", position:"absolute", insetInlineStart:0, insetInlineEnd:0, top:"100%", marginTop:5, zIndex:60 }}>
+      {options.map(({d,rank,note,m0,m1,m2,isBest})=>(
+        <button key={d.id} onClick={()=>onPick(d.id)} style={{ width:"100%", textAlign:"start", display:"flex", flexDirection:"column", gap:3, padding:"8px 10px", borderRadius:8, border: isBest?`1.5px solid ${C.ok}`:"1px solid transparent", background:isBest?"var(--okSoft)":"transparent", cursor:"pointer", marginBottom:3, fontFamily:"inherit" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:12.5, fontWeight:800, color: rank===2?C.muted:C.text }}>
+            {isBest && <span title="الأنسب: الأقل مناوبات وتغطيات">⭐</span>}
+            د.{d.name}
+            {note && <span style={{ fontSize:10.5, fontWeight:600, color:C.muted }}>· {note}</span>}
+            {isBest && <span style={{ fontSize:9.5, fontWeight:800, color:C.ok, background:"#fff", border:`1px solid ${C.ok}`, borderRadius:20, padding:"1px 7px", marginInlineStart:"auto" }}>الأنسب</span>}
+          </div>
+          {m0 && <div style={{ display:"flex", gap:14, fontSize:10.5, color:C.muted, paddingInlineStart:18 }}>
+            <span>🌙 مناوبات: <b style={{color:C.text}}>{m0.eve}</b> <span style={{opacity:.65}}>(الماضي {m1.eve}، {m2.eve})</span></span>
+            <span>🔄 تغطيات: <b style={{color:C.text}}>{m0.cov}</b> <span style={{opacity:.65}}>({m1.cov}، {m2.cov})</span></span>
+          </div>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function CoverPicker({ list, cur, onPick }) {
   const [ask,setAsk] = useState(null);
   if(!list.length) return <div style={{ fontSize:11.5, color:C.err, fontWeight:600 }}>لا يوجد طبيب</div>;
@@ -1436,7 +1460,35 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     if(sFilter==="done") return status==="ok";
     return true;
   };
-  const quickAddOptions = (date, di, assignedIds) => doctors.filter(d=>!assignedIds.includes(d.id) && !(d.blockedDays||[]).includes(di)).map(d=>{ const lv=onLeave(d,date,leaves); const fixedHere=(d.nightDays||[]).includes(di); const fixedAny=(d.nightDays||[]).length>0; const rank=lv?3:fixedHere?0:fixedAny?2:1; const note=lv?"إجازة":fixedHere?"ثابت هذا اليوم":fixedAny?"له مسائي ثابت يوم آخر":"متاح"; return { d, rank, note }; }).filter(x=>x.rank<3).sort((a,b)=>a.rank-b.rank||a.d.name.localeCompare(b.d.name,"ar"));
+  // ── عدد المناوبات والتغطيات لطبيب معيّن بشهر محدَّد (0=هذا الشهر، 1=الماضي، 2=قبله) — لعرضها بجانب "متاح" وتسهيل الاختيار العادل ──
+  const monthlyCounts = (docId, monthsBack) => {
+    let ty=mo.y, tm=mo.m-monthsBack; while(tm<0){ tm+=12; ty--; }
+    const tdays = monthDays(ty,tm).map(x=>x.date);
+    let eve=0; tdays.forEach(dt=>{ if(((nightData[dt]||{}).doctors||[]).includes(docId)) eve++; });
+    let cov=0;
+    coverages.forEach(c=>{ if(c.coverDoctorId===docId && tdays.includes(c.date)) cov++; });
+    tdays.forEach(dt=>{ const cv=(nightData[dt]||{}).coverages||{}; ["am","pm","nextAm"].forEach(sl=>{ if((cv[sl]||[]).includes(docId)) cov++; }); });
+    return { eve, cov };
+  };
+  const quickAddOptions = (date, di, assignedIds) => {
+    const list = doctors.filter(d=>!assignedIds.includes(d.id) && !(d.blockedDays||[]).includes(di)).map(d=>{
+      const lv=onLeave(d,date,leaves); const fixedHere=(d.nightDays||[]).includes(di); const fixedAny=(d.nightDays||[]).length>0;
+      const rank=lv?3:fixedHere?0:fixedAny?2:1;
+      let note=null, m0=null,m1=null,m2=null;
+      if(lv) note="إجازة";
+      else if(fixedHere) note="ثابت هذا اليوم";
+      else if(fixedAny) note="له مسائي ثابت يوم آخر";
+      else { m0=monthlyCounts(d.id,0); m1=monthlyCounts(d.id,1); m2=monthlyCounts(d.id,2); }
+      return { d, rank, note, m0, m1, m2 };
+    }).filter(x=>x.rank<3).sort((a,b)=>a.rank-b.rank||a.d.name.localeCompare(b.d.name,"ar"));
+    // ⭐ الأنسب: من بين "المتاحين" (rank===1) فقط، الأقل مناوبات هذا الشهر ثم الأقل تغطيات
+    const available = list.filter(x=>x.rank===1);
+    if(available.length){
+      const best = available.slice().sort((a,b)=> (a.m0.eve-b.m0.eve) || (a.m0.cov-b.m0.cov))[0];
+      best.isBest = true;
+    }
+    return list;
+  };
   const [view,setView] = useState("calendar");
   const [dragDoc,setDragDoc] = useState(null);
   const [dragCell,setDragCell] = useState(null);
@@ -1444,6 +1496,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const [clrOpen,setClrOpen] = useState(false);
   const [exportOpen,setExportOpen] = useState(false);
   const [manualOpen,setManualOpen] = useState(false);
+  const [addOpenKey,setAddOpenKey] = useState(null); // مفتاح الخانة (تاريخ) التي تُعرض فيها قائمة "إضافة طبيب" حالياً بالتقويم
   const [swapOpen,setSwapOpen] = useState(false);
   const [swapA,setSwapA] = useState("");
   const [swapB,setSwapB] = useState("");
@@ -1827,10 +1880,10 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                     {r.gaps.length>0 && <button onClick={()=>coverAll(date)} style={{ width:"100%", marginTop:2, background:"var(--dangerSoft)", border:`1px solid #fecdd3`, color:C.err, borderRadius:7, padding:"5px 6px", fontSize:10.5, fontWeight:800, cursor:"pointer" }}>🩺 {r.gaps.length} مكشوفة — حلّ سريع</button>}
                     {r.conflicts.length>0 && <div style={{ fontSize:10, fontWeight:800, color:C.err, background:"var(--dangerSoft)", border:"1px solid #fecdd3", borderRadius:7, padding:"3px 6px", marginTop:2 }}>⛔ {r.conflicts.length} تعارض — راجع يدوياً</div>}
                     {docs.map(d=><div key={d.id} className="cchip"><span className="d" style={{ background:d.color }}></span>د.{d.name}<button onClick={()=>toggleEvening(date,d.id)} title="إزالة" style={{ background:"none", border:"none", color:"inherit", opacity:.6, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 0 0 2px" }}>×</button></div>)}
-                    {emptyEve>0 && <select onChange={e=>{ const v=+e.target.value; if(v) assignEvening(date,v); }} defaultValue="" style={{ marginTop:2, width:"100%", fontSize:11.5, fontWeight:700, color:C.warn, background:"#fff", border:`1.5px dashed ${C.warn}`, borderRadius:9, padding:"7px 8px" }}>
-                      <option value="">+ إضافة طبيب ({emptyEve} فارغ)</option>
-                      {quickAddOptions(date,di,docs.map(x=>x.id)).map(({d,note})=><option key={d.id} value={d.id}>د.{d.name} — {note}</option>)}
-                    </select>}
+                    {emptyEve>0 && <div style={{ position:"relative", marginTop:2 }}>
+                      <button onClick={()=>setAddOpenKey(k=>k===("m"+date)?null:("m"+date))} style={{ width:"100%", fontSize:11.5, fontWeight:700, color:C.warn, background:"#fff", border:`1.5px dashed ${C.warn}`, borderRadius:9, padding:"7px 8px", cursor:"pointer", fontFamily:"inherit" }}>+ إضافة طبيب ({emptyEve} فارغ) {addOpenKey===("m"+date)?"▲":"▼"}</button>
+                      {addOpenKey===("m"+date) && <QuickAddList options={quickAddOptions(date,di,docs.map(x=>x.id))} onPick={id=>{ assignEvening(date,id); setAddOpenKey(null); }} />}
+                    </div>}
                     {lines.map((t,i)=><div key={i} style={{ fontSize:11, color:"var(--primary-d)", background:"#EFFAFB", border:"1px solid #D7EEF1", borderRadius:7, padding:"5px 8px", marginTop:2, lineHeight:1.55, whiteSpace:"normal", wordBreak:"break-word" }}>🔄 {t}</div>)}
                   </div>
                 ); })}
@@ -1875,10 +1928,10 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                   {r.gaps.length>0 && <button onClick={()=>coverAll(date)} style={{ width:"100%", marginTop:2, background:"var(--dangerSoft)", border:`1px solid #fecdd3`, color:C.err, borderRadius:7, padding:"5px 6px", fontSize:10.5, fontWeight:800, cursor:"pointer" }}>🩺 {r.gaps.length} مكشوفة — حلّ سريع</button>}
                   {r.conflicts.length>0 && <div style={{ fontSize:10, fontWeight:800, color:C.err, background:"var(--dangerSoft)", border:"1px solid #fecdd3", borderRadius:7, padding:"3px 6px", marginTop:2 }}>⛔ {r.conflicts.length} تعارض — راجع يدوياً</div>}
                   {docs.map(d=><div key={d.id} className="cchip"><span className="d" style={{ background:d.color }}></span>د.{d.name}<button onClick={()=>toggleEvening(date,d.id)} title="إزالة" style={{ background:"none", border:"none", color:"inherit", opacity:.6, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 0 0 2px" }}>×</button></div>)}
-                  {emptyEve>0 && <select onChange={e=>{ const v=+e.target.value; if(v) assignEvening(date,v); }} defaultValue="" style={{ marginTop:2, width:"100%", fontSize:11.5, fontWeight:700, color:C.warn, background:"#fff", border:`1.5px dashed ${C.warn}`, borderRadius:9, padding:"7px 8px" }}>
-                    <option value="">+ إضافة طبيب ({emptyEve} فارغ)</option>
-                    {quickAddOptions(date,di,docs.map(x=>x.id)).map(({d,note})=><option key={d.id} value={d.id}>د.{d.name} — {note}</option>)}
-                  </select>}
+                  {emptyEve>0 && <div style={{ position:"relative", marginTop:2 }}>
+                    <button onClick={()=>setAddOpenKey(k=>k===("s"+date)?null:("s"+date))} style={{ width:"100%", fontSize:11.5, fontWeight:700, color:C.warn, background:"#fff", border:`1.5px dashed ${C.warn}`, borderRadius:9, padding:"7px 8px", cursor:"pointer", fontFamily:"inherit" }}>+ إضافة طبيب ({emptyEve} فارغ) {addOpenKey===("s"+date)?"▲":"▼"}</button>
+                    {addOpenKey===("s"+date) && <QuickAddList options={quickAddOptions(date,di,docs.map(x=>x.id))} onPick={id=>{ assignEvening(date,id); setAddOpenKey(null); }} />}
+                  </div>}
                 </div>
               ); })}
             </div>
