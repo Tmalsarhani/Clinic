@@ -2017,7 +2017,33 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
 function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeaves, setCoverages, setNight, showToast, logAudit }) {
   const TYPES = { annual:"سنوية", sick:"مرضية", emergency:"طارئة", other:"أخرى" };
   const [f, setF] = useState({ doctorId:"", type:"annual", start:"", end:"", clinicClosed:true });
-  const add = () => { if(!f.doctorId||!f.start||!f.end){showToast("أكمل الحقول","warn");return;} if(f.end<f.start){showToast("التواريخ غير صحيحة","err");return;} setLeaves(ls=>[...ls,{id:uid(),doctorId:+f.doctorId,type:f.type,start:f.start,end:f.end,clinicClosed:f.clinicClosed}]); setF({doctorId:"",type:"annual",start:"",end:"",clinicClosed:true}); logAudit&&logAudit(`تسجيل إجازة د.${fd(+f.doctorId)?.name||""} (${f.type})`); showToast("تم تسجيل الإجازة"); };
+  const add = () => {
+    if(!f.doctorId||!f.start||!f.end){showToast("أكمل الحقول","warn");return;}
+    if(f.end<f.start){showToast("التواريخ غير صحيحة","err");return;}
+    const docId = +f.doctorId;
+    setLeaves(ls=>[...ls,{id:uid(),doctorId:docId,type:f.type,start:f.start,end:f.end,clinicClosed:f.clinicClosed}]);
+    // ── تنظيف تلقائي فوري: يزيل الطبيب من أي مناوبة مسائية تقع ضمن فترة إجازته الجديدة — حتى لا يبقى "مناوباً وغائباً" بنفس الوقت (تعارض مربك بدل حل مباشر) ──
+    // وبهذا تظهر عيادته (لو "قائمة") كفجوة واضحة عادية في "الحلول المطلوبة" فوراً، بدل تحذير تعارض يحتاج بحثاً يدوياً
+    const s=new Date(f.start), e=new Date(f.end);
+    const affectedDates=[];
+    for(let dt=new Date(s); dt<=e; dt.setDate(dt.getDate()+1)){
+      const wd=dt.getDay(); if(wd>=5) continue;
+      const ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+      if(((nightData[ds]||{}).doctors||[]).includes(docId)) affectedDates.push(ds);
+    }
+    if(affectedDates.length){
+      setNight(nd=>{ const n={...nd}; affectedDates.forEach(ds=>{ const day={...(n[ds]||{doctors:[],coverages:{am:[],pm:[],nextAm:[]}})}; day.doctors=(day.doctors||[]).filter(x=>x!==docId); n[ds]=day; }); return n; });
+      setCoverages(cs=>cs.filter(c=>{
+        const isEveningToday = c.absentId===docId && c.reason==="evening" && affectedDates.includes(c.date);
+        const isPostEveningTomorrow = c.absentId===docId && c.reason==="post_evening" && affectedDates.some(ds=>{ const nx=new Date(ds); nx.setDate(nx.getDate()+1); return nx.toISOString().split("T")[0]===c.date; });
+        return !(isEveningToday || isPostEveningTomorrow);
+      }));
+      logAudit&&logAudit(`إزالة د.${fd(docId)?.name||""} من ${affectedDates.length} مناوبة مسائية تتعارض مع إجازته الجديدة`);
+    }
+    setF({doctorId:"",type:"annual",start:"",end:"",clinicClosed:true});
+    logAudit&&logAudit(`تسجيل إجازة د.${fd(docId)?.name||""} (${f.type})`);
+    showToast(affectedDates.length?`✓ تم تسجيل الإجازة — وأُزيل تلقائياً من ${affectedDates.length} مناوبة متعارضة`:"تم تسجيل الإجازة");
+  };
   const del = id => {
     const l = leaves.find(x=>x.id===id); if(!l) return;
     const nextDay = ds=>{ const x=new Date(ds); x.setDate(x.getDate()+1); return x.toISOString().split("T")[0]; };
