@@ -1215,6 +1215,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const yearDates = useMemo(()=>{ const out=[]; for(let m=0;m<=mo.m;m++) out.push(...monthDays(mo.y,m).map(x=>x.date)); return out; }, [mo.y,mo.m]);
   // ── عدد التغطيات وحده (بلا خلط بعبء العيادة اليومي) — طبيب جدوله اليومي أخف (عيادات/إداري أقل) عبؤه الكلي أقل أصلاً، فلو رتّبنا حسب العبء الكلي سيخسر زميله الأثقل يومياً كل تنافس رغم تساويهما بعدد التغطيات — هذا بالضبط سبب استحواذ طبيب واحد على أغلب التغطيات سابقاً ──
   const coverLoadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>{ m[d.id]=doctorSessions(d, yearDates, nightData, coverages, leaves).covers; }); return m; }, [mo,doctors,nightData,coverages,leaves,yearDates]);
+  const coverThisMoMap = useMemo(()=>{ const m={}; doctors.forEach(d=>{ m[d.id]=doctorSessions(d, monthDates, nightData, coverages, leaves).covers; }); return m; }, [mo,doctors,nightData,coverages,leaves,monthDates]); // للحدّ الأقصى (تغطية واحدة بالشهر) إن كان مفعَّلاً
   const eveLoadMap = useMemo(()=>{ const m={}; doctors.forEach(d=>m[d.id]=0); monthDates.forEach(dt=>((nightData[dt]||{}).doctors||[]).forEach(id=>{ m[id]=(m[id]||0)+1; })); return m; }, [mo,doctors,nightData]);
   const rankAvail = arr => arr.filter(a=>a.status!=="leave"); // بلا أي فرز حسب العبء — bestForGap يفرز بنفسه حسب عدد التغطيات فقط
   const availForGap = g => rankAvail(getAvailable(doctors,[g.ownerId],g.di,g.date,g.period,leaves,nightData,{},coverages,true));
@@ -1246,11 +1247,12 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   // ── الأهلية التلقائية: متفرّغ تماماً، أو عنده إداري/تدقيق/افتراضي (أعمال مرنة قابلة للمقاطعة) — التدريب والعيادة الفعلية والإجازة تبقى مستبعدة من الاختيار التلقائي ──
   const AUTO_OVERRIDE_SLOTS = ["admin","audit","virtual"];
   const isAutoEligible = (a,g) => a.status==="free" || (a.status!=="leave" && AUTO_OVERRIDE_SLOTS.includes(getSlot(a.doc,g.di,g.period)));
+  const underCap = (docId, runningLoad) => !(settings?.capOnePerMonth && ((coverThisMoMap[docId]||0)+(runningLoad[docId]||0))>=1); // حدّ أقصى تغطية واحدة بالشهر (إن كان مفعَّلاً) — يشمل ما تراكم بنفس عملية الحل الحالية أيضاً
   const bestForGap = (g, av, taken=[], runningLoad={}) => {
     const partnerId = fd(g.ownerId)?.partnerId;
-    if(partnerId){ const p = av.find(a=>a.doc.id===partnerId && isAutoEligible(a,g) && !taken.includes(a.doc.id)); if(p) return p; }
+    if(partnerId){ const p = av.find(a=>a.doc.id===partnerId && isAutoEligible(a,g) && underCap(a.doc.id,runningLoad) && !taken.includes(a.doc.id)); if(p) return p; }
     // ── لا أفضلية لـ"المتفرّغ تماماً" على "الإداري/التدقيق/الافتراضي" — الكل يتنافس بمعيار عدد التغطيات وحده (لا العبء اليومي الكلي)، وإلا استمر نفس الطبيب "الفارغ دائماً" أو "الأخف يومياً" يستحوذ على أغلب التغطيات ──
-    const eligible = av.filter(a=>isAutoEligible(a,g) && !taken.includes(a.doc.id));
+    const eligible = av.filter(a=>isAutoEligible(a,g) && underCap(a.doc.id,runningLoad) && !taken.includes(a.doc.id));
     eligible.sort((a,b)=> (((coverLoadMap[a.doc.id]||0)+(runningLoad[a.doc.id]||0)) - ((coverLoadMap[b.doc.id]||0)+(runningLoad[b.doc.id]||0))));
     return eligible[0];
   };
@@ -1367,7 +1369,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           const nDi=dayIdx(ndd);                                                       // فهرس يوم الغد (-1 لو عطلة)
           const mornFreeNext = d => nDi<0 ? true : !DIRECT_SLOTS.includes(getSlot(d,nDi,"am")); // صباح الغد فارغ؟
           const base = d => !((d.nightDays||[]).length>0)                              // أصحاب المسائي الثابت لا يدخلون الإضافي
-                          && !cur.includes(d.id) && !onLeave(d,date,leaves) && !(d.blockedDays||[]).includes(di);
+                          && !cur.includes(d.id) && !onLeave(d,date,leaves) && !(d.blockedDays||[]).includes(di)
+                          && !(settings?.capOnePerMonth && (thisMoUsage[d.id]||0)>=1); // حدّ أقصى مناوبة واحدة بالشهر (إن كان مفعَّلاً) — مَن أخذ مناوبته هذا الشهر لا يُختار مجدداً حتى لو بقيت أيام فارغة
           // ── فصل تام بين "عدد المناوبات" و"العبء النهاري": المناوبة تناوب إجباري متساوٍ بحت، لا يتأثر بعبء العيادات النهارية إطلاقاً ──
           const rank = (a,b)=> (usage[a.id]-usage[b.id])                               // ① الأقل مناوبات (هذه السنة) — المعيار الحاسم الوحيد للعدد
                             || ((weekdayUsage[a.id][di]||0)-(weekdayUsage[b.id][di]||0)) // ②  الأقل مناوبات لنفس يوم الأسبوع هذا تحديداً
@@ -2580,6 +2583,16 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
         ); })}
       </div>
       {s.adminPosSS && Object.keys(s.adminPosSS).length>0 && <button onClick={()=>{ set("adminPosSS",{}); showToast("تمت استعادة القيم الافتراضية"); }} style={{ ...sGhost, width:"100%", marginTop:10, color:C.err }}>↩️ استعادة القيم الافتراضية الأصلية</button>}
+    </div>
+    <div style={{ ...card(), padding:16, marginBottom:12 }}>
+      <label style={label}>🎯 حدّ أقصى: مناوبة واحدة وتغطية واحدة شهرياً لكل طبيب</label>
+      <div style={{ fontSize:11.5, color:C.muted, marginBottom:10, lineHeight:1.8 }}>عند التفعيل، لا يُختار أي طبيب دوّار تلقائياً (لا بالمسائي ولا بالتغطيات) أكثر من مرة واحدة بنفس الشهر — حتى لو بقيت أيام بلا مناوبة أو عيادات مكشوفة، تبقى فارغة وتحتاج قراراً يدوياً منك بدل تكرار أحد. عند الإيقاف (الافتراضي)، يوزَّع أي فائض بالتساوي قدر الإمكان بين الجميع (السلوك المعتاد).</div>
+      <button onClick={()=>set("capOnePerMonth",!s.capOnePerMonth)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", width:"100%", background: s.capOnePerMonth?"var(--okSoft)":"var(--surface2)", border:`1.5px solid ${s.capOnePerMonth?C.ok:C.line}`, borderRadius:10, padding:"10px 14px", cursor:"pointer", fontFamily:"inherit" }}>
+        <span style={{ fontSize:13, fontWeight:700, color: s.capOnePerMonth?C.ok:C.text }}>{s.capOnePerMonth?"✓ مُفعَّل":"غير مُفعَّل"}</span>
+        <span style={{ width:40, height:22, borderRadius:20, background: s.capOnePerMonth?C.ok:"#cbd5e1", position:"relative", transition:".15s" }}>
+          <span style={{ position:"absolute", top:2, insetInlineStart: s.capOnePerMonth?20:2, width:18, height:18, borderRadius:"50%", background:"#fff", transition:".15s" }} />
+        </span>
+      </button>
     </div>
     {field("capEvening","حدّ المناوبات المسائية شهرياً","ينبّه عند تجاوز الطبيب هذا العدد من المناوبات في الشهر.")}
     {field("capLeaveDay","حدّ المُجازين في اليوم","ينبّه عند تساوي/تجاوز عدد المُجازين في يوم عمل هذا الحد.")}
