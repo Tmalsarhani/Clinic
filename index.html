@@ -2122,14 +2122,28 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
     const nextDay = ds=>{ const x=new Date(ds); x.setDate(x.getDate()+1); return x.toISOString().split("T")[0]; };
     const inRange = ds => ds>=l.start && ds<=l.end;
     setLeaves(ls=>ls.filter(x=>x.id!==id));
-    setCoverages(cs=>cs.filter(c=>{
-      if(c.absentId!==l.doctorId) return true;
-      if(c.reason==="leave" && inRange(c.date)) return false;                       // تغطية الإجازة
-      if(c.reason==="post_evening" && inRange((()=>{const x=new Date(c.date);x.setDate(x.getDate()-1);return x.toISOString().split("T")[0];})())) return false; // راحة بعد مسائي أثناء الإجازة
-      return true;
-    }));
-    logAudit&&logAudit(`حذف إجازة د.${fd(l.doctorId)?.name||""} وإلغاء تغطياتها المرتبطة`);
-    showToast&&showToast("تم حذف الإجازة وإلغاء التغطيات المرتبطة بها");
+    // ── استعادة ما أُزيل بسبب هذه الإجازة: مناوباته المسائية وتغطياته لغيره — فقط لو مكانها ما زال شاغراً (لم يُعيَّن بديل) ──
+    const eveBack = l.eveRemoved||[];
+    const dispNight = (l.displaced||[]).filter(x=>x.kind==="night");
+    const dispCov = (l.displaced||[]).filter(x=>x.kind==="cov");
+    if(eveBack.length || dispNight.length){
+      setNight(nd=>{ const n={...nd};
+        eveBack.forEach(ds=>{ const day=n[ds]; if(!day) return; const docs=day.doctors||[]; if(docs.includes(l.doctorId) || docs.length >= (day.eveningSlots||1)) return; n[ds]={ ...day, doctors:[...docs, l.doctorId] }; });
+        dispNight.forEach(x=>{ const day=n[x.dayKey]; if(!day) return; const cv={am:[],pm:[],nextAm:[],...(day.coverages||{})}; if((cv[x.slot]||[]).length) return; cv[x.slot]=[x.coverId]; n[x.dayKey]={ ...day, coverages:cv }; });
+        return n; });
+    }
+    setCoverages(cs=>{
+      const kept = cs.filter(c=>{
+        if(c.absentId!==l.doctorId) return true;
+        if(c.reason==="leave" && inRange(c.date)) return false;                       // تغطية الإجازة
+        if(c.reason==="post_evening" && inRange((()=>{const x=new Date(c.date);x.setDate(x.getDate()-1);return x.toISOString().split("T")[0];})())) return false; // راحة بعد مسائي أثناء الإجازة
+        return true;
+      });
+      const back = dispCov.filter(x=>x.rec && !kept.some(c=>c.date===x.date && c.period===x.period && c.absentId===x.ownerId)).map(x=>({ ...x.rec, id:uid() }));
+      return [...kept, ...back];
+    });
+    logAudit&&logAudit(`حذف إجازة د.${fd(l.doctorId)?.name||""} — إلغاء تغطيات عياداته، واستعادة مناوباته وتغطياته لغيره (إن لم يُعيَّن بديل)`);
+    showToast&&showToast("تم حذف الإجازة — أُلغيت تغطيات عياداته، واستُعيدت مناوباته وتغطياته حيث لم يُعيَّن بديل");
   };
   const autoCoverLeave = l => { const d=fd(l.doctorId); if(!d) return; const [ly]=l.start.split("-"); const yd=[]; for(let m=0;m<12;m++) yd.push(...monthDays(+ly,m).map(x=>x.date)); const load=id=>{ const s=doctorSessions(doctors.find(x=>x.id===id),yd,nightData,coverages,leaves); return s.covers; }; const AUTO_OVERRIDE_SLOTS=["admin","audit","virtual"]; const adds=[]; const used={}; const runningLoad={}; const s=new Date(l.start),e=new Date(l.end); for(let dt=new Date(s);dt<=e;dt.setDate(dt.getDate()+1)){ const wi=dt.getDay(); if(wi>4) continue; const ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; ["am","pm"].forEach(p=>{ if(!isClinic(getSlot(d,wi,p))) return; if(coverages.some(c=>c.date===ds&&c.period===p&&c.absentId===d.id)) return; const av=getAvailable(doctors,[d.id],wi,ds,p,leaves,nightData,{},coverages,true).filter(a=>a.status!=="leave"&&(a.status==="free"||AUTO_OVERRIDE_SLOTS.includes(getSlot(a.doc,wi,p)))).map(a=>({a,L:load(a.doc.id)+(runningLoad[a.doc.id]||0)})).sort((x,y)=>x.L-y.L); const key=ds+"|"+p; const taken=used[key]||[]; const pick=av.find(x=>!taken.includes(x.a.doc.id)); if(pick){ adds.push({id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:pick.a.doc.id,reason:"leave"}); (used[key]=used[key]||[]).push(pick.a.doc.id); runningLoad[pick.a.doc.id]=(runningLoad[pick.a.doc.id]||0)+1; } }); } if(!adds.length){ showToast("لا عيادات مكشوفة أو لا متاح","warn"); return; } setCoverages(cs=>[...cs,...adds]); showToast(`تمت تغطية ${adds.length} عيادة بالأنسب`); };
   const sorted = leaves.slice().sort((a,b)=>b.start.localeCompare(a.start));
@@ -2170,20 +2184,26 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
             </div>
             {isOpen && <div className="grid-cards">{items.map(l=>{ const d=fd(l.doctorId); if(!d) return null;
         // impact
-        const clinics=[],evening=[],otherGaps=[];
+        // ── ما يخص هذا الطبيب وحده: عياداته، مناوباته المسائية، وتغطياته التي كان يؤديها لغيره — لا شيء عن زملاء لا علاقة لهم بإجازته ──
+        const clinics=[];
         const s=new Date(l.start),e=new Date(l.end);
-        for(let dt=new Date(s);dt<=e;dt.setDate(dt.getDate()+1)){ const wi=dt.getDay(); if(wi>4)continue; const ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; const nd=nightData[ds]||{};
+        for(let dt=new Date(s);dt<=e;dt.setDate(dt.getDate()+1)){ const wi=dt.getDay(); if(wi>4)continue; const ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
           ["am","pm"].forEach(p=>{ if(isClinic(getSlot(d,wi,p))){ const ex=coverages.find(c=>c.date===ds&&c.period===p&&c.absentId===d.id); clinics.push({ds,p,cov:ex?ex.coverDoctorId:null}); } });
-          // ── لا نتحقق هل هو ما زال مُدرجاً بالمسائي (أُزيل فوراً وبصمت عبر التصحيح الذاتي بمجرد تسجيل الإجازة) — بل هل يوجد نقص فعلي بعدد مناوبي ذلك اليوم مقارنة بالمطلوب، وهذا يكشف الفراغ الناتج عن إزالته ──
-          if(((nd.doctors||[]).length) < (nd.eveningSlots||0)) evening.push(ds);
-          // ── تغطياته لزملاء (كان يغطّي عيادة شخص آخر ذلك اليوم): لا نبحث عن سجل تغطيته بالذات (أُزيل هو الآخر فوراً وبصمت لنفس السبب) — بل نعيد فحص اليوم كاملاً بنفس منطق النظام لاكتشاف أي عيادة زميل ما زالت مكشوفة فعلياً الآن ──
-          const r = analyzeDay(ds, doctors, leaves, nightData, coverages, null, true);
-          r.gaps.forEach(g=>{ if(g.ownerId!==d.id) otherGaps.push(g); });
         }
+        // مناوباته المسائية التي أُزيل منها بسبب هذه الإجازة ولم يُعيَّن بديل بعد
+        const evening = (l.eveRemoved||[]).filter(ds=>{ const nd=nightData[ds]||{}; return (nd.doctors||[]).length < (nd.eveningSlots||1); }).sort();
+        // تغطياته التي كان يؤديها لغيره وأُلغيت بسبب إجازته — ما زالت بلا بديل
+        const gapCache = {}; const gapsOn = ds => (gapCache[ds] = gapCache[ds] || analyzeDay(ds, doctors, leaves, nightData, coverages, null, true).gaps);
+        const seen = new Set();
+        const myCovs = (l.displaced||[]).filter(x=>{
+          if(x.ownerId==null) return false;
+          const k = `${x.date}|${x.period}|${x.ownerId}`; if(seen.has(k)) return false; seen.add(k);
+          return gapsOn(x.date).some(g=>g.ownerId===x.ownerId && g.period===x.period);
+        }).map(x=>({ ...x, di:dayIdx(x.date) })).sort((a,b)=>a.date.localeCompare(b.date));
         const uncoveredClinics = l.clinicClosed!==false?0:clinics.filter(c=>!c.cov).length;
-        const uncovered = uncoveredClinics + evening.length + otherGaps.length; // للعرض فقط بالشارة العلوية — يشمل فراغ المسائي وتغطياته لزملاء أيضاً
+        const uncovered = uncoveredClinics + evening.length + myCovs.length;
         const isOpenCard = modalLeaveId===l.id;
-        const chip = l.clinicClosed!==false && evening.length===0 && otherGaps.length===0 ? {t:"العيادة مغلقة", bg:"var(--surface2)", fg:C.sub}
+        const chip = l.clinicClosed!==false && evening.length===0 && myCovs.length===0 ? {t:"العيادة مغلقة", bg:"var(--surface2)", fg:C.sub}
           : uncovered>0 ? {t:`مكشوف ${uncovered}`, bg:"var(--dangerSoft)", fg:C.err}
           : {t:"مغطّاة ✓", bg:"var(--okSoft)", fg:C.ok};
         return <div key={l.id} style={{ ...card(), padding:0, overflow:"hidden" }}>
@@ -2207,8 +2227,8 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
             const md = monthDays(+l.start.split("-")[0], +l.start.split("-")[1]-1).map(x=>x.date);
             const loadOf = id => doctorSessions(doctors.find(x=>x.id===id), yd, nightData, coverages, leaves).covers;
             const pickFor = (wi,ds,period) => getAvailable(doctors,[d.id],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null, busyType: a.status==="busy" ? (()=>{ const sl=getSlot(a.doc,wi,period); return isClinic(sl)?"عيادة":(SLOT_AR[sl]||"عيادة"); })() : null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
-            const pickForOwner = (ownerId,wi,ds,period) => getAvailable(doctors,[ownerId],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null, busyType: a.status==="busy" ? (()=>{ const sl=getSlot(a.doc,wi,period); return isClinic(sl)?"عيادة":(SLOT_AR[sl]||"عيادة"); })() : null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
-            const assignOther = (ownerId,ds,p,cid) => { setCoverages(cs=>[...cs.filter(c=>!(c.date===ds&&c.period===p&&c.absentId===ownerId)), {id:uid(),absentId:ownerId,date:ds,period:p,coverDoctorId:cid,reason:"absence"}]); logAudit&&logAudit(`بديل لعيادة د.${fd(ownerId)?.name||"؟"} (${perAr(p)} ${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`); showToast("تم تعيين البديل"); };
+            const pickForOwner = (ownerId,wi,ds,period) => getAvailable(doctors,[ownerId,d.id],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null, busyType: a.status==="busy" ? (()=>{ const sl=getSlot(a.doc,wi,period); return isClinic(sl)?"عيادة":(SLOT_AR[sl]||"عيادة"); })() : null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
+            const assignOther = (ownerId,ds,p,cid,reason="absence") => { setCoverages(cs=>[...cs.filter(c=>!(c.date===ds&&c.period===p&&c.absentId===ownerId)), {id:uid(),absentId:ownerId,date:ds,period:p,coverDoctorId:cid,reason}]); logAudit&&logAudit(`بديل لعيادة د.${fd(ownerId)?.name||"؟"} (${perAr(p)} ${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`); showToast("تم تعيين البديل"); };
             const eveLoad = id => md.reduce((a,dt)=>a+(((nightData[dt]||{}).doctors||[]).includes(id)?1:0),0);
             const evePick = ds => { const nightDocs=(nightData[ds]?.doctors)||[]; return doctors.filter(x=>x.id!==d.id&&!nightDocs.includes(x.id)).map(x=>{ const lv=onLeave(x,ds,leaves); const fixedAny=(x.nightDays||[]).length>0; return { doc:x, status: lv?"leave":fixedAny?"warn":"free", commit: (fixedAny&&!lv)?"عيادة مسائية ثابتة":null, load:eveLoad(x.id) }; }).sort((a,b)=>(({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status]))||(a.load-b.load)); };
             const assignClinic = (ds,p,cid) => { setCoverages(cs=>[...cs.filter(c=>!(c.date===ds&&c.period===p&&c.absentId===d.id)), {id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:cid,reason:"leave"}]); logAudit&&logAudit(`بديل إجازة د.${d.name} (${perAr(p)} ${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`); showToast("تم تعيين البديل"); };
@@ -2244,17 +2264,21 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
                 <CoverPicker list={pickFor(dayIdx(c.ds),c.ds,c.p)} cur={c.cov} onPick={cid=>assignClinic(c.ds,c.p,cid)} />
               </div>)}
               {clinics.length===0 && <div style={{ fontSize:12, color:C.muted }}>لا عيادات</div>}
-              {otherGaps.length>0 && <div style={{ marginTop:11, paddingTop:11, borderTop:`1px dashed ${C.line2}` }}>
-                <div style={{ fontSize:13, fontWeight:700, color:C.warn, marginBottom:3 }}>🔄 عيادات زملاء أخرى ما زالت مكشوفة بنفس الفترة ({otherGaps.length})</div>
-                <div style={{ fontSize:10.5, color:C.muted, marginBottom:6, lineHeight:1.6 }}>⚠️ لسبب خاص بكل حالة (قد لا يكون بسبب إجازة د.{d.name}) — معروضة هنا فقط لأنها تقع بنفس أيام إجازته، لتراجعها أثناء وجودك هنا.</div>
-                {otherGaps.map((g,i)=><div key={"o"+i} style={{ marginBottom:11, paddingBottom:11, borderBottom:i<otherGaps.length-1?`1px dashed ${C.line2}`:"none" }}>
-                  <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:6 }}>• {dmy(g.date)} {perAr(g.period)} — عيادة د.{fd(g.ownerId)?.name||"؟"} <span style={{ color:C.err }}>— اختر بديلاً</span></div>
-                  <CoverPicker list={pickForOwner(g.ownerId,g.di,g.date,g.period)} cur={null} onPick={cid=>assignOther(g.ownerId,g.date,g.period,cid)} />
-                </div>)}
-              </div>}
-              {evening.map((ds,i)=><div key={"e"+i} style={{ marginTop:11 }}>
-                <div style={{ fontSize:13, fontWeight:700, color:C.eve, marginBottom:6 }}>🌙 بديل المسائي — {dmy(ds)}</div>
+            </div>
+            <div style={{ background:"var(--surface2)", borderRadius:12, padding:"13px 14px", marginTop:10 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:C.eve, marginBottom:7 }}>🌙 مناوباته المسائية خلال الإجازة{evening.length>0?<span style={{ color:C.err }}> · تحتاج بديلاً {evening.length}</span>:""}</div>
+              {evening.length===0 && <div style={{ fontSize:12, color:C.muted }}>لا مناوبات تحتاج بديلاً</div>}
+              {evening.map((ds,i)=><div key={"e"+i} style={{ marginBottom:11, paddingBottom:11, borderBottom:i<evening.length-1?`1px dashed ${C.line2}`:"none" }}>
+                <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:6 }}>• {DAYS[dayIdx(ds)]||""} {dmy(ds)} <span style={{ color:C.err }}>— اختر بديل المناوبة</span></div>
                 <CoverPicker list={evePick(ds)} cur={null} onPick={cid=>assignEve(ds,cid)} />
+              </div>)}
+            </div>
+            <div style={{ background:"var(--surface2)", borderRadius:12, padding:"13px 14px", marginTop:10 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:C.warn, marginBottom:7 }}>🔄 تغطياته التي كان يؤديها خلال الإجازة{myCovs.length>0?<span style={{ color:C.err }}> · تحتاج بديلاً {myCovs.length}</span>:""}</div>
+              {myCovs.length===0 && <div style={{ fontSize:12, color:C.muted }}>لا تغطيات تحتاج بديلاً</div>}
+              {myCovs.map((x,i)=><div key={"c"+i} style={{ marginBottom:11, paddingBottom:11, borderBottom:i<myCovs.length-1?`1px dashed ${C.line2}`:"none" }}>
+                <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:6 }}>• {dmy(x.date)} {perAr(x.period)} — كان يغطّي عيادة د.{fd(x.ownerId)?.name||"؟"} <span style={{ color:C.err }}>— اختر بديلاً</span></div>
+                <CoverPicker list={pickForOwner(x.ownerId,x.di,x.date,x.period)} cur={null} onPick={cid=>assignOther(x.ownerId,x.date,x.period,cid, x.kind==="night" ? (x.slot==="nextAm"?"post_evening":"evening") : ((x.rec&&x.rec.reason)||"absence"))} />
               </div>)}
             </div>
             </div>
@@ -3406,13 +3430,20 @@ function App() {
   // ── تصحيح ذاتي دائم وشامل — بمبدأ "التحقق المستمر" بدل ملاحقة كل حدث على حدة: كل تغطية (وكل مناوبة) تُعاد التحقق من صحتها الفعلية بكل مرة، بصرف النظر كيف نشأت أو كيف تغيّر سببها لاحقاً (إضافة/حذف/تعديل إجازة، إزالة مناوبة يدوياً، إلخ) — لو لم يعد للغياب سبب حقيقي قائم الآن، تُعتبر تغطية/مناوبة يتيمة وتُزال تلقائياً، بلا أي ثغرة متبقية ──
   useEffect(()=>{
     let touchedNight=false, touchedCov=false; let fixedCount=0;
+    // ── ربط كل ما يُزال بسبب إجازة بسجل الإجازة نفسها: مناوباته (eveRemoved) وتغطياته لغيره (displaced) — لتظهر في نافذة إجازته، وتُستعاد تلقائياً لو حُذفت الإجازة ──
+    const leaveOf = (docId,ds) => leaves.find(l=>l.doctorId===docId && l.start<=ds && ds<=l.end);
+    const leaveUpd = {}; // leaveId -> { eve:Set, disp:[] }
+    const bump = (L) => (leaveUpd[L.id] = leaveUpd[L.id] || { eve:new Set(), disp:[] });
 
     // ١) مناوبته المسائية الخاصة به: يستحيل أن يكون مناوباً وهو بإجازة بنفس اليوم
     const n2 = {...nightData};
     Object.keys(n2).forEach(ds=>{
       const day = n2[ds]; if(!day || !(day.doctors||[]).length) return;
-      const stillEligible = day.doctors.filter(id=>{ const d=doctors.find(x=>x.id===id); return !(d && onLeave(d,ds,leaves)); });
-      if(stillEligible.length!==day.doctors.length){ n2[ds]={ ...day, doctors:stillEligible }; touchedNight=true; fixedCount+=(day.doctors.length-stillEligible.length); }
+      const removed = day.doctors.filter(id=>{ const d=doctors.find(x=>x.id===id); return d && onLeave(d,ds,leaves); });
+      if(removed.length){
+        n2[ds]={ ...day, doctors:day.doctors.filter(id=>!removed.includes(id)) }; touchedNight=true; fixedCount+=removed.length;
+        removed.forEach(id=>{ const L=leaveOf(id,ds); if(L) bump(L).eve.add(ds); });
+      }
     });
 
     // ١ب) تغطيات "دوام مسائي" المدمجة بجدول اليوم نفسه (am/pm/nextAm) — يتيمة لو لم يبقَ أي طبيب مناوب فعلياً تلك الفترة يملك عيادة مطابقة (بعد إزالة إجازاتهم أعلاه)
@@ -3425,10 +3456,24 @@ function App() {
       if(cvChanged){ n2[ds]={ ...n2[ds], coverages:cv }; touchedNight=true; }
     });
 
+    // ١ج) تغطيات مدمجة بالمسائي (صباح/ظهر/صباح الغد) يؤديها طبيب أصبح بإجازة ذلك اليوم — تُزال وتُربط بإجازته لإعادة تعيين بديل
+    Object.keys(n2).forEach(ds=>{
+      const day = n2[ds]; if(!day || !day.coverages) return;
+      const di0 = dayIdx(ds), nDate = nextWork(ds), ndi = dayIdx(nDate);
+      const cv = {...day.coverages}; let cvChanged=false;
+      [["am",ds,di0,"am"],["pm",ds,di0,"pm"],["nextAm",nDate,ndi,"am"]].forEach(([sl,date,sdi,per])=>{
+        const ids = cv[sl]||[];
+        const gone = ids.filter(id=>{ const d=doctors.find(x=>x.id===id); return d && onLeave(d,date,leaves); });
+        if(!gone.length) return;
+        cv[sl] = ids.filter(id=>!gone.includes(id)); cvChanged=true; fixedCount+=gone.length;
+        const owner = (day.doctors||[]).find(id=>{ const o=doctors.find(x=>x.id===id); return o && isClinic(getSlot(o,sdi,per)); });
+        gone.forEach(id=>{ const L=leaveOf(id,date); if(L) bump(L).disp.push({ kind:"night", dayKey:ds, slot:sl, date, period:per, ownerId:owner??null, coverId:id }); });
+      });
+      if(cvChanged){ n2[ds]={ ...n2[ds], coverages:cv }; touchedNight=true; }
+    });
+
     // ٢) كل تغطية: هل ما زال للطبيب الغائب سبب فعلي حقيقي يستدعيها اليوم؟ (إجازة قائمة الآن، أو مناوبة مسائية فعلية نفس اليوم، أو مناوبة اليوم السابق لراحة ما بعد المسائي)
-    const isJustified = c => {
-      const coverDoc = doctors.find(x=>x.id===c.coverDoctorId);
-      if(coverDoc && onLeave(coverDoc, c.date, leaves)) return false;                     // الطبيب المغطّي نفسه بإجازة — لا يمكنه التغطية فعلياً
+    const ownerJustified = c => {
       const d = doctors.find(x=>x.id===c.absentId); if(!d) return false;
       if(onLeave(d, c.date, leaves)) return true;                                        // غائب فعلاً بإجازة قائمة هذا اليوم
       if(((n2[c.date]||{}).doctors||[]).includes(c.absentId)) return true;                // مناوب مسائياً فعلاً نفس اليوم (عيادته تحتاج تغطية بسببها)
@@ -3436,12 +3481,22 @@ function App() {
       if(pw && ((n2[pw]||{}).doctors||[]).includes(c.absentId)) return true;              // كان مناوباً اليوم السابق (راحة ما بعد المسائي)
       return false;
     };
-    const staleIds = new Set(coverages.filter(c=>!isJustified(c)).map(c=>c.id));
+    const staleIds = new Set();
+    coverages.forEach(c=>{
+      if(!ownerJustified(c)){ staleIds.add(c.id); return; }
+      const coverDoc = doctors.find(x=>x.id===c.coverDoctorId);
+      if(coverDoc && onLeave(coverDoc, c.date, leaves)){                                  // المغطّي نفسه أصبح بإجازة — تُزال وتُربط بإجازته لإعادة تعيين بديل
+        staleIds.add(c.id);
+        const L=leaveOf(c.coverDoctorId,c.date); if(L) bump(L).disp.push({ kind:"cov", date:c.date, period:c.period, ownerId:c.absentId, coverId:c.coverDoctorId, rec:c });
+      }
+    });
     if(staleIds.size){ touchedCov=true; fixedCount+=staleIds.size; }
 
     if(!touchedNight && !touchedCov) return;
     if(touchedNight) _setNight(()=>n2);
     if(touchedCov) _setCoverages(cs=>cs.filter(c=>!staleIds.has(c.id)));
+    if(Object.keys(leaveUpd).length) _setLeaves(ls=>ls.map(l=>{ const u=leaveUpd[l.id]; if(!u) return l;
+      return { ...l, eveRemoved:[...new Set([...(l.eveRemoved||[]), ...u.eve])], displaced:[...(l.displaced||[]), ...u.disp] }; }));
     logAudit&&logAudit(`تصحيح تلقائي: إزالة ${fixedCount} تكليف (مناوبة/تغطية) لم يعد له سبب فعلي قائم`);
   },[leaves, nightData, coverages]);
 
