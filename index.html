@@ -3548,13 +3548,13 @@ function App() {
   const cur = TABS.find(t=>t[0]===page);
   const subt = { dashboard:"نظرة عامة وتنبيهات", engine:"المحرك — حلول · مسائي · تغطيات", leaves:"تسجيل الإجازات وأثرها", doctors:"بيانات الأطباء وجداولهم", stats:"العبء الوظيفي", fairness:"ترتيب الأطباء حسب المساهمة", reports:"تقارير شهرية قابلة للطباعة", alerts:"تعارضات وحدود وإجازات", audit:"توثيق العمليات", settings:"الحدود والقواعد", users:"حسابات المستخدمين والصلاحيات" };
   const pageEl = <>
-      {page==="dashboard" && <Dashboard doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} onGoto={setPage} settings={settings} />}
+      {page==="dashboard" && <Dashboard doctors={doctors} leaves={leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} onGoto={setPage} settings={settings} />}
       {page==="engine" && <EnginePage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setNight={setNight} setCoverages={setCoverages} showToast={showToast} logAudit={logAudit} settings={settings} holidays={holidays} />}
       {page==="leaves" && <LeavesPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setLeaves={setLeaves} setCoverages={setCoverages} setNight={setNight} showToast={showToast} logAudit={logAudit} />}
       {page==="doctors" && <DoctorsPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} setDoctors={setDoctors} showToast={showToast} logAudit={logAudit} />}
-      {page==="stats" && <StatsPage doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} />}
-      {page==="fairness" && <FairnessPage doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} />}
-      {page==="reports" && <ReportsPage doctors={off.doctors} leaves={off.leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} settings={settings} />}
+      {page==="stats" && <StatsPage doctors={doctors} leaves={leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} />}
+      {page==="fairness" && <FairnessPage doctors={doctors} leaves={leaves} nightData={off.nightData} coverages={off.coverages} today={today} />}
+      {page==="reports" && <ReportsPage doctors={doctors} leaves={leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} settings={settings} />}
       {page==="alerts" && <AlertsPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} settings={settings} onGoto={setPage} />}
       {page==="audit" && <AuditPage audit={audit} />}
       {page==="settings" && <SettingsPage settings={settings} setSettings={setSettings} showToast={showToast} holidays={holidays} setHolidays={setHolidays} doctors={doctors} publishNow={publishNow} leaves={leaves} nightData={nightData} coverages={coverages} audit={audit} users={users} setDoctors={setDoctors} setLeaves={setLeaves} setNight={setNight} setCoverages={setCoverages} setAudit={setAudit} setUsers={setUsers} logAudit={logAudit} />}
