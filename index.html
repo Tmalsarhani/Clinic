@@ -2187,20 +2187,19 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
           : uncovered>0 ? {t:`مكشوف ${uncovered}`, bg:"var(--dangerSoft)", fg:C.err}
           : {t:"مغطّاة ✓", bg:"var(--okSoft)", fg:C.ok};
         return <div key={l.id} style={{ ...card(), padding:0, overflow:"hidden" }}>
-          <div onClick={()=>setModalLeaveId(l.id)} style={{ display:"flex", alignItems:"center", gap:10, padding:13, cursor:"pointer" }}>
-            <Avatar doc={d} size={36}/>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontWeight:700, fontSize:14 }}>{d.name}</div>
-              <div style={{ fontSize:11.5, color:C.sub }}>{TYPES[l.type]} · {dmy(l.start)} ← {dmy(l.end)}</div>
+          <div style={{ display:"flex", alignItems:"center", gap:10, padding:13 }}>
+            <div onClick={()=>setModalLeaveId(l.id)} style={{ display:"flex", alignItems:"center", gap:10, flex:1, minWidth:0, cursor:"pointer" }}>
+              <Avatar doc={d} size={36}/>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontWeight:700, fontSize:14 }}>{d.name}</div>
+                <div style={{ fontSize:11.5, color:C.sub }}>{TYPES[l.type]} · {dmy(l.start)} ← {dmy(l.end)}</div>
+              </div>
             </div>
-            <span style={{ fontSize:10.5, fontWeight:700, background:chip.bg, color:chip.fg, borderRadius:20, padding:"4px 11px", whiteSpace:"nowrap" }}>{chip.t}</span>
-            <span onClick={e=>e.stopPropagation()}>
-              <Kebab items={[
-                (l.clinicClosed===false) && { icon:"⚡", label:"تغطية تلقائية", onClick:()=>autoCoverLeave(l) },
-                { icon:"🗑", label:"حذف الإجازة", danger:true, onClick:()=>{ if(confirm("حذف هذه الإجازة؟")) del(l.id); } },
-              ]} />
-            </span>
-            <span style={{ color:C.primary, fontSize:12, fontWeight:700 }}>التفاصيل ›</span>
+            <span onClick={()=>setModalLeaveId(l.id)} style={{ fontSize:10.5, fontWeight:700, background:chip.bg, color:chip.fg, borderRadius:20, padding:"4px 11px", whiteSpace:"nowrap", cursor:"pointer" }}>{chip.t}</span>
+            <Kebab items={[
+              (l.clinicClosed===false) && { icon:"⚡", label:"تغطية تلقائية", onClick:()=>autoCoverLeave(l) },
+              { icon:"🗑", label:"حذف الإجازة", danger:true, onClick:()=>{ if(confirm("حذف هذه الإجازة؟")) del(l.id); } },
+            ]} />
           </div>
           {isOpenCard && (()=>{ 
             const [ly] = l.start.split("-");
@@ -2209,7 +2208,7 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
             const loadOf = id => doctorSessions(doctors.find(x=>x.id===id), yd, nightData, coverages, leaves).covers;
             const pickFor = (wi,ds,period) => getAvailable(doctors,[d.id],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null, busyType: a.status==="busy" ? (()=>{ const sl=getSlot(a.doc,wi,period); return isClinic(sl)?"عيادة":(SLOT_AR[sl]||"عيادة"); })() : null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
             const pickForOwner = (ownerId,wi,ds,period) => getAvailable(doctors,[ownerId],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null, busyType: a.status==="busy" ? (()=>{ const sl=getSlot(a.doc,wi,period); return isClinic(sl)?"عيادة":(SLOT_AR[sl]||"عيادة"); })() : null })).sort((a,b)=> (({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status])) || (a.load-b.load));
-            const assignOther = (ownerId,ds,p,cid) => { setCoverages(cs=>[...cs.filter(c=>!(c.date===ds&&c.period===p&&c.absentId===ownerId)), {id:uid(),absentId:ownerId,date:ds,period:p,coverDoctorId:cid,reason:"absence"}]); logAudit&&logAudit(`بديل لعيادة د.${fd(ownerId)?.name||"؟"} (${perAr(p)} ${dmy(ds)}) ← د.${fd(cid)?.name||"؟"} — بسبب إجازة د.${d.name}`); showToast("تم تعيين البديل"); };
+            const assignOther = (ownerId,ds,p,cid) => { setCoverages(cs=>[...cs.filter(c=>!(c.date===ds&&c.period===p&&c.absentId===ownerId)), {id:uid(),absentId:ownerId,date:ds,period:p,coverDoctorId:cid,reason:"absence"}]); logAudit&&logAudit(`بديل لعيادة د.${fd(ownerId)?.name||"؟"} (${perAr(p)} ${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`); showToast("تم تعيين البديل"); };
             const eveLoad = id => md.reduce((a,dt)=>a+(((nightData[dt]||{}).doctors||[]).includes(id)?1:0),0);
             const evePick = ds => { const nightDocs=(nightData[ds]?.doctors)||[]; return doctors.filter(x=>x.id!==d.id&&!nightDocs.includes(x.id)).map(x=>{ const lv=onLeave(x,ds,leaves); const fixedAny=(x.nightDays||[]).length>0; return { doc:x, status: lv?"leave":fixedAny?"warn":"free", commit: (fixedAny&&!lv)?"عيادة مسائية ثابتة":null, load:eveLoad(x.id) }; }).sort((a,b)=>(({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status]))||(a.load-b.load)); };
             const assignClinic = (ds,p,cid) => { setCoverages(cs=>[...cs.filter(c=>!(c.date===ds&&c.period===p&&c.absentId===d.id)), {id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:cid,reason:"leave"}]); logAudit&&logAudit(`بديل إجازة د.${d.name} (${perAr(p)} ${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`); showToast("تم تعيين البديل"); };
@@ -2224,6 +2223,8 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
                 <div style={{ fontSize:12, color:C.sub }}>{TYPES[l.type]} · {dmy(l.start)} ← {dmy(l.end)}</div>
               </div>
               <span style={{ fontSize:10.5, fontWeight:700, background:chip.bg, color:chip.fg, borderRadius:20, padding:"4px 11px", whiteSpace:"nowrap" }}>{chip.t}</span>
+              {(l.clinicClosed===false) && <button onClick={()=>autoCoverLeave(l)} title="تغطية تلقائية" style={{ background:"var(--primarySoft)", border:"none", borderRadius:10, width:36, height:32, fontSize:15, color:C.primary, cursor:"pointer", flexShrink:0 }}>⚡</button>}
+              <button onClick={()=>{ if(confirm("حذف هذه الإجازة؟")){ del(l.id); setModalLeaveId(null); } }} title="حذف الإجازة" style={{ background:"var(--dangerSoft)", border:"none", borderRadius:10, width:36, height:32, fontSize:15, color:C.err, cursor:"pointer", flexShrink:0 }}>🗑</button>
               <button onClick={()=>setModalLeaveId(null)} style={{ background:"var(--surface2)", border:"none", borderRadius:10, width:32, height:32, fontSize:18, color:C.muted, cursor:"pointer", flexShrink:0 }}>×</button>
             </div>
             <div style={{ padding:"16px 18px" }}>
@@ -2244,7 +2245,8 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
               </div>)}
               {clinics.length===0 && <div style={{ fontSize:12, color:C.muted }}>لا عيادات</div>}
               {otherGaps.length>0 && <div style={{ marginTop:11, paddingTop:11, borderTop:`1px dashed ${C.line2}` }}>
-                <div style={{ fontSize:13, fontWeight:700, color:C.warn, marginBottom:6 }}>🔄 عيادات زملاء تحتاج بديلاً بسبب إجازته ({otherGaps.length})</div>
+                <div style={{ fontSize:13, fontWeight:700, color:C.warn, marginBottom:3 }}>🔄 عيادات زملاء أخرى ما زالت مكشوفة بنفس الفترة ({otherGaps.length})</div>
+                <div style={{ fontSize:10.5, color:C.muted, marginBottom:6, lineHeight:1.6 }}>⚠️ لسبب خاص بكل حالة (قد لا يكون بسبب إجازة د.{d.name}) — معروضة هنا فقط لأنها تقع بنفس أيام إجازته، لتراجعها أثناء وجودك هنا.</div>
                 {otherGaps.map((g,i)=><div key={"o"+i} style={{ marginBottom:11, paddingBottom:11, borderBottom:i<otherGaps.length-1?`1px dashed ${C.line2}`:"none" }}>
                   <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:6 }}>• {dmy(g.date)} {perAr(g.period)} — عيادة د.{fd(g.ownerId)?.name||"؟"} <span style={{ color:C.err }}>— اختر بديلاً</span></div>
                   <CoverPicker list={pickForOwner(g.ownerId,g.di,g.date,g.period)} cur={null} onPick={cid=>assignOther(g.ownerId,g.date,g.period,cid)} />
