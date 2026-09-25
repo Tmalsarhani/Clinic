@@ -3670,8 +3670,32 @@ function App() {
   </div>;
 }
 
+// ── حاجز أخطاء يعرض الخطأ الفعلي على الشاشة مباشرة بدل صفحة بيضاء صامتة — يسمح بمعرفة السبب من أي جهاز بلا أدوات مطوّرين ──
+class ErrorBoundary extends React.Component {
+  constructor(p){ super(p); this.state = { err:null, info:null }; }
+  static getDerivedStateFromError(err){ return { err }; }
+  componentDidCatch(err, info){ this.setState({ info }); console.error("Render error:", err, info); }
+  render(){
+    if(this.state.err){
+      return React.createElement("div", { style:{ direction:"rtl", fontFamily:"sans-serif", padding:22, background:"#fff5f5", minHeight:"100vh", color:"#7f1d1d" } },
+        React.createElement("div", { style:{ fontSize:18, fontWeight:800, marginBottom:10 } }, "⚠️ حدث خطأ برمجي — التقط صورة لهذه الشاشة وأرسلها"),
+        React.createElement("div", { style:{ fontSize:14, fontWeight:700, marginBottom:8, whiteSpace:"pre-wrap" } }, String(this.state.err && (this.state.err.message||this.state.err))),
+        React.createElement("pre", { style:{ fontSize:11, background:"#fff", border:"1px solid #fca5a5", borderRadius:8, padding:12, overflowX:"auto", whiteSpace:"pre-wrap", direction:"ltr", textAlign:"left" } }, String((this.state.err && this.state.err.stack) || "") + "\n\n" + String((this.state.info && this.state.info.componentStack) || "")),
+        React.createElement("button", { onClick:()=>location.reload(), style:{ marginTop:14, padding:"10px 18px", fontSize:14, fontWeight:700, background:"#dc2626", color:"#fff", border:"none", borderRadius:8, cursor:"pointer" } }, "🔄 إعادة تحميل الصفحة")
+      );
+    }
+    return this.props.children;
+  }
+}
+window.addEventListener("error", e=>{
+  const root = document.getElementById("root");
+  if(root && !root.hasChildNodes()){
+    root.innerHTML = `<div style="direction:rtl;font-family:sans-serif;padding:22px;background:#fff5f5;min-height:100vh;color:#7f1d1d"><div style="font-size:18px;font-weight:800;margin-bottom:10px">⚠️ خطأ قبل بدء التطبيق — التقط صورة لهذه الشاشة وأرسلها</div><div style="font-size:14px;font-weight:700;white-space:pre-wrap">${(e.message||"").replace(/</g,"&lt;")}</div><pre style="font-size:11px;background:#fff;border:1px solid #fca5a5;border-radius:8px;padding:12px;overflow-x:auto;white-space:pre-wrap;direction:ltr;text-align:left">${((e.error&&e.error.stack)||"").replace(/</g,"&lt;")}\nفي: ${(e.filename||"")}:${e.lineno||""}:${e.colno||""}</pre></div>`;
+  }
+});
+
 const container = document.getElementById("root");
-ReactDOM.createRoot(container).render(<App />);
+ReactDOM.createRoot(container).render(React.createElement(ErrorBoundary, null, React.createElement(App)));
 </script>
 </body>
 </html>
