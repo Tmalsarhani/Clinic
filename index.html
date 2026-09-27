@@ -744,10 +744,12 @@ function doctorSessions(doctor, dates, nightData, coverages, leaves) {
     const pw = prevWorkDay(date);
     const prevNextAm = pw ? ((nightData[pw]?.coverages||{}).nextAm || []) : [];
     const dind = (coverages||[]).filter(x => x.date === date);
-    const fixedEveHere = (doctor.nightDays||[]).includes(di);          // عيادة مسائية ثابتة (من جدول الطبيب)
+    const isFixedDay   = (doctor.nightDays||[]).includes(di);           // يومه الثابت حسب جدوله
     const assignedEve  = (nd.doctors||[]).includes(doctor.id);          // مُسند مسائياً في صفحة الدوام
+    // لو جدول ذلك اليوم مُنشأ، العبرة بمن أُسند فعلاً (طبيبان لهما نفس اليوم الثابت والمطلوب واحد → يُحسب لمن عمل فقط). بلا جدول بعد → يُفترض الثابت
+    const fixedEveHere = isFixedDay && (!nightData[date] || assignedEve);
     if (fixedEveHere && !onLv) eveningFixed += 1;                        // ثابت → رعاية (×2)
-    if (assignedEve && !fixedEveHere && !onLv) eveningExtra += 1;        // فوق الثابت → مسائي إضافي (×2)
+    if (assignedEve && !isFixedDay && !onLv) eveningExtra += 1;          // فوق الثابت → مسائي إضافي (×2)
     const worksEve = fixedEveHere || assignedEve;
     if (!worksEve) {
       ["am","pm"].forEach(per => {
@@ -773,6 +775,29 @@ function doctorSessions(doctor, dates, nightData, coverages, leaves) {
   const care = direct + covers + eveningFixed*2 + eveningExtra*2;   // الرعاية = نهاري + تغطيات + (مسائي ثابت + إضافي)×2
   const total = care + support;
   return { direct, care, carePoints:care, daytimeCare:direct, eveningCare:evening*2, fixedCare:eveningFixed*2, extraEveCare:eveningExtra*2, total, support, supportive:support, full:total, attended:direct, covers, evening, eveningFixed, eveningExtra, absentCovered };
+}
+
+// ═══ إشغال العيادات: كم عيادة شغلها الطبيب فعلاً — منها عياداته، ومنها تغطياته لزملائه، ومنها المسائي ═══
+function clinicOccupancy(doctor, dates, nightData, coverages, leaves) {
+  let own=0, scheduled=0, onLeaveMissed=0, coveredAway=0;
+  if (!doctor) return { own, scheduled, onLeaveMissed, coveredAway };
+  (dates||[]).forEach(date => {
+    const di = dayIdx(date); if (di < 0) return;
+    const nd = nightData[date] || {};
+    const onLv = onLeave(doctor, date, leaves||[]);
+    const dind = (coverages||[]).filter(x => x.date === date);
+    const assignedEve = (nd.doctors||[]).includes(doctor.id);
+    const worksEve = assignedEve || ((doctor.nightDays||[]).includes(di) && !nightData[date]);
+    ["am","pm"].forEach(per => {
+      if (!isClinic(getSlot(doctor, di, per))) return;
+      scheduled += 1;
+      if (onLv) { onLeaveMissed += 1; return; }
+      if (worksEve || dind.some(x => x.period===per && x.absentId===doctor.id)) { coveredAway += 1; return; }
+      if (dind.some(x => x.period===per && x.coverDoctorId===doctor.id)) return; // كان يغطّي زميلاً بنفس الفترة
+      own += 1;
+    });
+  });
+  return { own, scheduled, onLeaveMissed, coveredAway };
 }
 
 // Workload per doctor for a month, by ACTUAL worked periods.
@@ -2502,6 +2527,8 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
   const [anchor,setAnchor] = useState(today);
   const [sel,setSel] = useState(null);
   const [full,setFull] = useState(false);
+  const [sview,setSview] = useState(()=>{ const v=S.get("v2_stats_view"); return v==="occ"?"occ":"load"; }); // load = العبء الوظيفي · occ = إشغال العيادات
+  useEffect(()=>S.set("v2_stats_view",sview),[sview]);
   const [rangeFrom,setRangeFrom] = useState(today);
   const [rangeTo,setRangeTo] = useState(today);
   const [gridYear,setGridYear] = useState(new Date(today).getFullYear());
@@ -2528,8 +2555,21 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
     const otherLeaveDays = md.filter(dt=>dayIdx(dt)>=0 && leaves.some(l=>l.doctorId===d.id && l.type && l.type!=="annual" && dt>=l.start && dt<=l.end)).length;
     const eff = Math.max(0, workdaysN - annualDays);
     const target = Math.round(directTarget(d) * eff / 5);   // هدف اليوم = هدف الأسبوع ÷ ٥ × أيام العمل الفعلية (بلا تقريب أسابيع)
-    return { d, sess, target, annualDays, otherLeaveDays };
-  }).sort((a,b)=>b.sess.care-a.sess.care);
+    const oc = clinicOccupancy(d, md, nightData, coverages, leaves);
+    const occ = { own:oc.own, scheduled:oc.scheduled, away:oc.coveredAway+oc.onLeaveMissed, covers:sess.covers, evening:sess.evening, total:oc.own+sess.covers+sess.evening };
+    return { d, sess, target, annualDays, otherLeaveDays, occ };
+  }).sort((a,b)=> sview==="occ" ? (b.occ.total-a.occ.total || b.occ.covers-a.occ.covers) : (b.sess.care-a.sess.care));
+  const occMax = Math.max(1, ...overview.map(o=>o.occ.total));
+  const occSum = overview.reduce((a,o)=>({ own:a.own+o.occ.own, covers:a.covers+o.occ.covers, evening:a.evening+o.occ.evening, total:a.total+o.occ.total }), {own:0,covers:0,evening:0,total:0});
+  const OCC_COL = { own:C.primary, covers:"#E0982B", evening:"var(--eve)" };
+  const occBar = (o, h=10) => <div style={{ display:"flex", height:h, background:"var(--surface2)", borderRadius:6, overflow:"hidden" }}>
+    {[["own",o.own],["covers",o.covers],["evening",o.evening]].map(([k,v])=> v>0 && <div key={k} title={`${k==="own"?"عياداته":k==="covers"?"تغطياته":"مسائي"}: ${v}`} style={{ width:(v/occMax*100)+"%", background:OCC_COL[k] }} />)}
+  </div>;
+  const printOcc = (list,titleSuffix="") => {
+    const rows = list.map(({d,occ})=>`<tr><td style="text-align:start;font-weight:700">د.${d.name}</td><td><b>${occ.total}</b></td><td>${occ.own} / ${occ.scheduled}</td><td>${occ.covers}</td><td>${occ.evening}</td><td>${occ.away}</td><td>${occ.total?Math.round(occ.covers/occ.total*100):0}%</td></tr>`).join("");
+    const table = `<table><thead><tr><th style="text-align:start">الطبيب</th><th>إجمالي العيادات المشغولة</th><th>عياداته (اشتغلها / المجدولة)</th><th>تغطياته لزملائه</th><th>مسائي</th><th>عياداته التي غاب عنها</th><th>نسبة التغطيات</th></tr></thead><tbody>${rows}<tr style="background:#eef6f8;font-weight:800"><td style="text-align:start">الإجمالي</td><td>${occSum.total}</td><td>${occSum.own}</td><td>${occSum.covers}</td><td>${occSum.evening}</td><td>—</td><td>${occSum.total?Math.round(occSum.covers/occSum.total*100):0}%</td></tr></tbody></table><p style="margin-top:10px">إشغال العيادات = عياداته التي اشتغلها فعلاً + تغطياته لزملائه + العيادات المسائية (${period.label}). العيادة التي غاب عنها (إجازة/مسائي/راحة) لا تُحسب له بل لمن غطّاها.</p>`;
+    printDoc(`إشغال العيادات${titleSuffix} — ${period.label}`, table, true);
+  };
   const worked = overview.filter(o=>o.sess.attended>0||o.sess.covers>0).length;
   const absentCov = overview.reduce((a,o)=>a+o.sess.absentCovered,0);
   const totalCov = overview.reduce((a,o)=>a+o.sess.covers,0);
@@ -2547,13 +2587,19 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
   return <div className="fade">
     <div style={{ ...card(), padding:16, marginBottom:14 }}>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, flexWrap:"wrap" }}>
-        <div style={{ flex:1, fontSize:15, fontWeight:700 }}>📈 العبء الوظيفي</div>
+        <div style={{ flex:1, fontSize:15, fontWeight:700 }}>📈 الإحصائيات</div>
         <div style={{ display:"flex", border:`1px solid ${C.line}`, borderRadius:9, overflow:"hidden", flexWrap:"wrap" }}>
           {[["week","أسبوعي"],["month","شهري"]].map(([k,l])=><button key={k} onClick={()=>setMode(k)} style={{ padding:"7px 16px", border:"none", fontSize:12.5, fontWeight:700, background:mode===k?C.primary:"var(--surface)", color:mode===k?"#fff":C.sub }}>{l}</button>)}
           {[2,3,4,6,12].map(n=><button key={n} onClick={()=>{ setMode("multi"); setMonthsN(n); }} style={{ padding:"7px 13px", border:"none", borderInlineStart:`1px solid ${C.line}`, fontSize:12.5, fontWeight:700, background:(mode==="multi"&&monthsN===n)?C.primary:"var(--surface)", color:(mode==="multi"&&monthsN===n)?"#fff":C.sub }}>{n} أشهر</button>)}
           <button onClick={()=>setMode("range")} style={{ padding:"7px 13px", border:"none", borderInlineStart:`1px solid ${C.line}`, fontSize:12.5, fontWeight:700, background:mode==="range"?C.primary:"var(--surface)", color:mode==="range"?"#fff":C.sub }}>📅 من/إلى</button>
           <button onClick={()=>setMode("grid")} style={{ padding:"7px 13px", border:"none", borderInlineStart:`1px solid ${C.line}`, fontSize:12.5, fontWeight:700, background:mode==="grid"?C.primary:"var(--surface)", color:mode==="grid"?"#fff":C.sub }}>🗓 اختيار أشهر</button>
         </div>
+      </div>
+      <div style={{ display:"flex", gap:6, marginBottom:12, background:"var(--surface2)", borderRadius:12, padding:4 }}>
+        {[["load","⚖️ حسب العبء الوظيفي","الرعاية الفعلية مقابل الهدف (١٠ − SS)"],["occ","🏥 حسب إشغال العيادات","عياداته + تغطياته + المسائي"]].map(([k,l,sub])=>(
+          <button key={k} onClick={()=>setSview(k)} style={{ flex:1, border:"none", borderRadius:9, padding:"9px 8px", cursor:"pointer", background:sview===k?"var(--surface)":"transparent", boxShadow:sview===k?"0 1px 4px rgba(16,40,70,.12)":"none", color:sview===k?C.primaryD:C.sub, fontFamily:"inherit" }}>
+            <div style={{ fontSize:13, fontWeight:800 }}>{l}</div><div style={{ fontSize:10.5, fontWeight:500, color:C.muted, marginTop:2 }}>{sub}</div>
+          </button>))}
       </div>
       {mode==="range" && (
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
@@ -2582,6 +2628,21 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
         <input type="date" value={anchor} onChange={e=>e.target.value&&setAnchor(e.target.value)} style={{ ...sIn, width:"auto", padding:"6px 9px" }} />
       </div>}
       {(mode==="range"||mode==="grid") && <div style={{ textAlign:"center", fontWeight:700, fontSize:13.5, marginBottom:12, color:C.primaryD }}>{period.label}</div>}
+      {sview==="occ" ? <>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+          {[["عيادات مشغولة",occSum.total,C.text],["منها عياداتهم",occSum.own,OCC_COL.own],["منها تغطيات",occSum.covers,OCC_COL.covers],["منها مسائي",occSum.evening,OCC_COL.evening]].map(([l,v,col])=>(
+            <div key={l} style={{ flex:"1 1 110px", background:"var(--surface2)", borderRadius:10, padding:"10px", textAlign:"center" }}><div style={{ fontSize:20, fontWeight:800, color:col }}>{v}</div><div style={{ fontSize:10.5, color:C.sub, marginTop:3 }}>{l}{occSum.total&&l!=="عيادات مشغولة"?` · ${Math.round(v/occSum.total*100)}%`:""}</div></div>
+          ))}
+        </div>
+        <div style={{ display:"flex", gap:14, flexWrap:"wrap", fontSize:11, color:C.muted, marginTop:10 }}>
+          {[["own","عياداته (اشتغلها فعلاً)"],["covers","تغطياته لزملائه"],["evening","مسائي"]].map(([k,l])=><span key={k} style={{ display:"inline-flex", alignItems:"center", gap:5 }}><i style={{ width:11, height:11, borderRadius:3, background:OCC_COL[k], display:"inline-block" }} />{l}</span>)}
+          <span>· العيادة التي غاب عنها تُحسب لمن غطّاها</span>
+        </div>
+        <div style={{ display:"flex", gap:8, marginTop:10, flexWrap:"wrap" }}>
+          <button onClick={()=>printOcc(overview)} style={{ ...sGhost, flex:1, minWidth:180 }}>🖨 طباعة الإشغال — كل الأطباء</button>
+          <button onClick={()=>{ const rows=[["الطبيب","إجمالي العيادات المشغولة","عياداته (اشتغلها)","عياداته المجدولة","تغطياته","مسائي","غاب عنها","نسبة التغطيات %"]]; overview.forEach(({d,occ})=>rows.push(["د."+d.name, occ.total, occ.own, occ.scheduled, occ.covers, occ.evening, occ.away, occ.total?Math.round(occ.covers/occ.total*100):0])); downloadCSV(`إشغال-العيادات-${period.label}.csv`, rows); }} style={{ ...sGhost, flex:1, minWidth:160, color:"#16A34A" }}>📊 تصدير Excel</button>
+        </div>
+      </> : <>
       <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
         {[["أطباء عملوا بعيادة",worked,C.primary],["غياب مغطّى",absentCov,C.warn],["تغطيات منفّذة",totalCov,"var(--primary-d)"],["مناوبات مسائية",totalEve,"var(--eve)"]].map(([l,v,col])=>(
           <div key={l} style={{ flex:"1 1 110px", background:"var(--surface2)", borderRadius:10, padding:"10px", textAlign:"center" }}><div style={{ fontSize:20, fontWeight:800, color:col }}>{v}</div><div style={{ fontSize:10.5, color:C.sub, marginTop:3 }}>{l}</div></div>
@@ -2592,9 +2653,26 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
         <button onClick={()=>printWorkload(overview)} style={{ ...sGhost, flex:1, minWidth:180 }}>🖨 طباعة العبء — كل الأطباء</button>
         <button onClick={()=>{ const rows=[["الطبيب","الدرجة","الرعاية","المطلوب","النسبة %","المسائي","التغطيات","إجازة سنوية (أيام)","الحالة"]]; overview.forEach(({d,sess,target,annualDays=0})=>{ const st=loadStatus(sess.care,target); const onA=annualDays>0&&st.key==="na"; rows.push(["د."+d.name, rankLabel(rankOf(d)), sess.care, target, target?Math.round(sess.care/target*100):0, sess.evening, sess.covers, annualDays, onA?"في إجازة سنوية":st.label]); }); downloadCSV(`العبء-الوظيفي-${period.label}.csv`, rows); }} style={{ ...sGhost, flex:1, minWidth:160, color:"#16A34A" }}>📊 تصدير Excel</button>
       </div>
+      </>}
     </div>
     {doctors.length===0 ? <Empty icon="📈" title="لا بيانات بعد" /> :
-      <div className="grid-cards">{overview.map(({d,sess,target,annualDays})=>{
+      sview==="occ" ? <div className="grid-cards">{overview.map(({d,occ,annualDays})=>(
+        <div key={d.id} onClick={()=>setSel(d.id)} style={{ ...card(), padding:14, cursor:"pointer" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+            <Avatar doc={d} size={32}/>
+            <div style={{ flex:1, minWidth:0 }}><div style={{ fontWeight:700, fontSize:13.5 }}>{d.name}</div><div style={{ fontSize:11, color:C.sub }}>{rankLabel(rankOf(d))}{annualDays>0?` · 🏖 ${annualDays}ي`:""}</div></div>
+            <button onClick={e=>{ e.stopPropagation(); printOcc([{d,occ}]," — د."+d.name); }} title="طباعة إشغال هذا الطبيب" style={{ ...sGhost, padding:"5px 9px", fontSize:13 }}>🖨</button>
+            <div style={{ textAlign:"center" }}><div style={{ fontSize:18, fontWeight:800, color:C.text }}>{occ.total}</div><div style={{ fontSize:10, color:C.muted }}>عيادة</div></div>
+          </div>
+          {occBar(occ)}
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:9, flexWrap:"wrap", fontSize:11.5, color:C.sub }}>
+            <span>عياداته <b style={{ color:OCC_COL.own }}>{occ.own}</b><span style={{ color:C.muted }}>/{occ.scheduled}</span></span>
+            <span>تغطياته <b style={{ color:OCC_COL.covers }}>{occ.covers}</b></span>
+            <span>مسائي <b style={{ color:OCC_COL.evening }}>{occ.evening}</b></span>
+            {occ.away>0 && <span style={{ color:C.muted }}>غاب عن {occ.away}</span>}
+          </div>
+        </div>))}</div> :
+      <div className="grid-cards">{overview.map(({d,sess,target,annualDays,occ})=>{
         const st = loadStatus(sess.care,target);
         const onAnnual = annualDays>0 && st.key==="na";
         const badgeColor = onAnnual ? "#2563EB" : st.color;
@@ -2611,8 +2689,9 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
           <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:9, flexWrap:"wrap" }}>
             <span style={{ fontSize:10.5, fontWeight:700, color:"#fff", background:badgeColor, borderRadius:20, padding:"2px 10px" }}>{badgeLabel}</span>
             {annualDays>0 && <span style={{ fontSize:10.5, fontWeight:700, color:"#2563EB", background:"#dbeafe", borderRadius:20, padding:"2px 10px" }}>🏖 سنوية {annualDays}ي (مستثناة)</span>}
+            <span style={{ fontSize:11.5, color:C.sub }}>عياداته <b style={{ color:C.primary }}>{occ.own}</b></span>
+            <span style={{ fontSize:11.5, color:C.sub }}>تغطيات <b style={{ color:"#E0982B" }}>{sess.covers}</b></span>
             <span style={{ fontSize:11.5, color:C.sub }}>مسائي <b style={{ color:"var(--eve)" }}>{sess.evening}</b></span>
-            <span style={{ fontSize:11.5, color:C.sub }}>تغطيات <b style={{ color:"var(--primary-d)" }}>{sess.covers}</b></span>
           </div>
         </div>;
       })}</div>}
@@ -2635,11 +2714,19 @@ function StatsPage({ doctors, leaves, nightData, coverages, today, fd }) {
           <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:16 }}>
             {stat("رعاية مباشرة",sess.care,C.primary)}{stat("دعم",sess.support,"#64748b")}{stat("مسائي",sess.evening,"var(--eve)")}{stat("تغطيات",cov.length,"var(--primary-d)")}{stat("إجازات",myLeaves.length,C.warn)}{stat("إجمالي العمل",sess.total,"var(--ink)")}
           </div>
+          {(()=>{ const oc=clinicOccupancy(sd, md, nightData, coverages, leaves); const o={ own:oc.own, covers:sess.covers, evening:sess.evening }; const tot=o.own+o.covers+o.evening; return (
+          <div style={{ background:"var(--surface2)", border:`1px solid ${C.line2}`, borderRadius:12, padding:13, marginBottom:12 }}>
+            <div style={{ display:"flex", alignItems:"baseline", marginBottom:8 }}><div style={{ flex:1, fontSize:12.5, fontWeight:800 }}>🏥 إشغال العيادات</div><div style={{ fontSize:18, fontWeight:800 }}>{tot}</div></div>
+            <div style={{ display:"flex", height:10, borderRadius:6, overflow:"hidden", background:"var(--surface)" }}>{[["own",o.own],["covers",o.covers],["evening",o.evening]].map(([k,v])=>v>0&&<div key={k} style={{ width:(v/Math.max(1,tot)*100)+"%", background:OCC_COL[k] }} />)}</div>
+            <div style={{ display:"flex", gap:12, flexWrap:"wrap", fontSize:11.5, color:C.sub, marginTop:8 }}>
+              <span>عياداته <b style={{ color:OCC_COL.own }}>{o.own}</b> من {oc.scheduled} مجدولة</span><span>تغطياته <b style={{ color:OCC_COL.covers }}>{o.covers}</b></span><span>مسائي <b style={{ color:OCC_COL.evening }}>{o.evening}</b></span>{(oc.coveredAway+oc.onLeaveMissed)>0&&<span>غاب عن {oc.coveredAway+oc.onLeaveMissed} (إجازة {oc.onLeaveMissed})</span>}
+            </div>
+          </div>); })()}
           <div style={{ background:"var(--surface2)", border:`1px solid ${C.line2}`, borderRadius:12, padding:13, marginBottom:16 }}>
             <div style={{ fontSize:12.5, fontWeight:800, marginBottom:10 }}>📐 توزيع الأسبوع — WS = ١٠ فترات</div>
-            {[["DS · الرعاية المباشرة", sess.care, directTarget(sd), C.primary],["SS · الدعم", sess.support, posSS(sd.adminPosition,sd), "#64748b"]].map(([l,act,tgt,col])=>(
+            {[["DS · الرعاية المباشرة", sess.care, Math.round(directTarget(sd)*workdaysN/5), C.primary],["SS · الدعم", sess.support, Math.round(posSS(sd.adminPosition,sd)*workdaysN/5), "#64748b"]].map(([l,act,tgt,col])=>(
               <div key={l} style={{ marginBottom:10 }}>
-                <div style={{ display:"flex", fontSize:11.5, marginBottom:4 }}><span style={{ flex:1, fontWeight:700 }}>{l}</span><span style={{ color:C.sub }}>الفعلي {act} · الهدف {tgt}</span></div>
+                <div style={{ display:"flex", fontSize:11.5, marginBottom:4 }}><span style={{ flex:1, fontWeight:700 }}>{l}</span><span style={{ color:C.sub }}>الفعلي {act} · الهدف للفترة {tgt}</span></div>
                 <div style={{ height:8, background:"var(--surface2)", borderRadius:6, overflow:"hidden" }}><div style={{ width:Math.min(100, tgt? (act/tgt*100):0)+"%", height:"100%", background:col }} /></div>
               </div>
             ))}
