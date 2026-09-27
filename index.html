@@ -3771,9 +3771,11 @@ function App() {
     return diff; };
   const diffList = pending ? computeDiff() : [];
   const approve = () => { const diff=computeDiff(); logAudit(`اعتماد رسمي${diff.length?(" — "+diff.join("، ")):""}`,"معتمدة"); const a=snap(); setOfficial(a);
-    if(cloudCfg()){ showToast("✓ تم الاعتماد — جارٍ النشر للرابط الحي…"); cloudPublish(a).then(()=>{ S.set("v2_published_at", new Date().toISOString()); showToast("✓ نُشر للرابط الحي — الرابط محدَّث للجميع"); }).catch(()=>showToast("الاعتماد تم، لكن تعذّر النشر للرابط — تحقّق من إعدادات Firebase","warn")); }
+    if(cloudCfg()){ showToast("✓ تم الاعتماد — جارٍ النشر للرابط الحي…"); cloudPublish(pubPayload(a)).then(()=>{ S.set("v2_published_at", new Date().toISOString()); showToast("✓ نُشر للرابط الحي — الرابط محدَّث للجميع"); }).catch(()=>showToast("الاعتماد تم، لكن تعذّر النشر للرابط — تحقّق من إعدادات Firebase","warn")); }
     else showToast("✓ تم الاعتماد وتحديث الإحصائيات"); };
-  const publishNow = () => { if(!cloudCfg()){ showToast("فعّل الرابط الحي من الإعدادات أولاً","warn"); setPage("settings"); return; } const a=snap(); showToast("جارٍ النشر…"); cloudPublish(a).then(()=>{ S.set("v2_published_at", new Date().toISOString()); showToast("✓ نُشر — الرابط الحي يعكس الحالة الحالية"); }).catch(e=>showToast("تعذّر النشر — تحقق من الإعدادات","err")); };
+  // ── ما يُنشر للرابط الحي: الجدول المعتمد + أسماء الأطباء والإجازات (بدونها يظهر الرابط بلا أسماء «د. ◂ د.») — بلا بريد أو بيانات خاصة ──
+  const pubPayload = a => ({ ...a, doctors: doctors.map(d=>({ id:d.id, name:d.name, color:d.color, nightDays:d.nightDays||[] })), leaves: leaves.map(l=>({ id:l.id, doctorId:l.doctorId, type:l.type, start:l.start, end:l.end, clinicClosed:l.clinicClosed })), holidays: holidays||[] });
+  const publishNow = () => { if(!cloudCfg()){ showToast("فعّل الرابط الحي من الإعدادات أولاً","warn"); setPage("settings"); return; } const a=snap(); showToast("جارٍ النشر…"); cloudPublish(pubPayload(a)).then(()=>{ S.set("v2_published_at", new Date().toISOString()); showToast("✓ نُشر — الرابط الحي يعكس الحالة الحالية"); }).catch(e=>showToast("تعذّر النشر — تحقق من الإعدادات","err")); };
   const revert = () => { setNight(off.nightData); setCoverages(off.coverages); logAudit("تراجع عن التغييرات غير المعتمدة (الجدول)","ملغاة"); showToast("تم التراجع لآخر جدول معتمد"); };
   const saveDraft = () => { logAudit("حفظ كمسودة (بانتظار الاعتماد)","مسودة"); showToast("حُفظت كمسودة"); };
 
