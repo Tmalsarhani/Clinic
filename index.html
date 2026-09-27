@@ -790,8 +790,9 @@ function clinicOccupancy(doctor, dates, nightData, coverages, leaves) {
     const worksEve = assignedEve || ((doctor.nightDays||[]).includes(di) && !nightData[date]);
     ["am","pm"].forEach(per => {
       if (!isClinic(getSlot(doctor, di, per))) return;
+      if (onLv && clinicClosedOnLeave(doctor, date, leaves||[])) return; // إجازة والعيادة مغلقة → لا عيادة أصلاً، لا تُحسب مجدولة ولا غياباً
       scheduled += 1;
-      if (onLv) { onLeaveMissed += 1; return; }
+      if (onLv) { onLeaveMissed += 1; return; }                            // إجازة والعيادة قائمة → غطّاها زميل
       if (worksEve || dind.some(x => x.period===per && x.absentId===doctor.id)) { coveredAway += 1; return; }
       if (dind.some(x => x.period===per && x.coverDoctorId===doctor.id)) return; // كان يغطّي زميلاً بنفس الفترة
       own += 1;
@@ -891,7 +892,9 @@ const SLOT_AR = { clinic:"عيادة", virtual:"افتراضية", audit:"تدق
 const SLOT_STYLE = { clinic:{bg:"#ccfbf1",fg:"#0f766e",t:"عيادة"}, clinic_am:{bg:"#ccfbf1",fg:"#0f766e",t:"عيادة"}, clinic_pm:{bg:"#ccfbf1",fg:"#0f766e",t:"عيادة"}, virtual:{bg:"#dbeafe",fg:"#1d4ed8",t:"افتراضية"}, audit:{bg:"#fef3c7",fg:"#b45309",t:"تدقيق"}, training:{bg:"#ede9fe",fg:"var(--eve)",t:"تدريب"}, admin:{bg:"#e2e8f0",fg:"#475569",t:"إداري"}, "":{bg:"var(--surface2)",fg:"#94a3b8",t:"فراغ"} };
 const slotStyle = s => SLOT_STYLE[s] || SLOT_STYLE[""];
 const PALETTE = ["#0f766e","#0369a1","var(--eve)","#be123c","#b45309","#15803d","var(--primary-d)","#9333ea","#c2410c","#1d4ed8","#db2777","#4d7c0f","#0891b2","#a16207"];
-const uid = () => Date.now()*1000 + Math.floor(Math.random()*1000);
+// معرّف فريد مضمون: كان (الوقت + رقم عشوائي من ١٠٠٠) يتكرر عند إنشاء عشرات التغطيات بنفس اللحظة (مثل «حلّ الكل») — فحذف تغطية واحدة بمعرّفها كان يحذف معها تغطية أخرى لا علاقة لها
+let _uidLast = 0;
+const uid = () => { let v = Date.now()*1000 + Math.floor(Math.random()*1000); if(v <= _uidLast) v = _uidLast + 1; _uidLast = v; return v; };
 const perAr = p => p==="am"?"عيادة الصباح":p==="pm"?"عيادة الظهر":p==="nextAm"?"عيادة صباح الغد":"العيادة المسائية";
 const dmy = ds => `${ds.split("-")[2]}/${+ds.split("-")[1]}`;
 const WDAY = ["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
@@ -2250,8 +2253,9 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
   };
   const autoCoverLeave = l => { const d=fd(l.doctorId); if(!d) return; const [ly]=l.start.split("-"); const yd=[]; for(let m=0;m<12;m++) yd.push(...monthDays(+ly,m).map(x=>x.date)); const load=id=>{ const s=doctorSessions(doctors.find(x=>x.id===id),yd,nightData,coverages,leaves); return s.covers; }; const AUTO_OVERRIDE_SLOTS=["admin","audit","virtual"]; const adds=[]; const used={}; const runningLoad={}; const s=new Date(l.start),e=new Date(l.end); for(let dt=new Date(s);dt<=e;dt.setDate(dt.getDate()+1)){ const wi=dt.getDay(); if(wi>4) continue; const ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; ["am","pm"].forEach(p=>{ if(!isClinic(getSlot(d,wi,p))) return; if(coverages.some(c=>c.date===ds&&c.period===p&&c.absentId===d.id)) return; const av=getAvailable(doctors,[d.id],wi,ds,p,leaves,nightData,{},coverages,true).filter(a=>a.status!=="leave"&&(a.status==="free"||AUTO_OVERRIDE_SLOTS.includes(getSlot(a.doc,wi,p)))).map(a=>({a,L:load(a.doc.id)+(runningLoad[a.doc.id]||0)})).sort((x,y)=>x.L-y.L); const key=ds+"|"+p; const taken=used[key]||[]; const pick=av.find(x=>!taken.includes(x.a.doc.id)); if(pick){ adds.push({id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:pick.a.doc.id,reason:"leave"}); (used[key]=used[key]||[]).push(pick.a.doc.id); runningLoad[pick.a.doc.id]=(runningLoad[pick.a.doc.id]||0)+1; } }); } if(!adds.length){ showToast("لا عيادات مكشوفة أو لا متاح","warn"); return; } setCoverages(cs=>[...cs,...adds]); showToast(`تمت تغطية ${adds.length} عيادة بالأنسب`); };
   const sorted = leaves.slice().sort((a,b)=>b.start.localeCompare(a.start));
-  const [modalLeaveId,setModalLeaveId] = useState(null); // يفتح تفاصيل الإجازة بنافذة كاملة أوسع بدل توسيع مصغّر داخل القائمة
-  const [openMonths,setOpenMonths] = useState(()=>new Set([today.slice(0,7)]));
+  const [openMonths,setOpenMonths] = useState(()=>new Set([today.slice(0,7), ...leaves.filter(l=>l.end>=today).map(l=>l.start.slice(0,7))])); // الشهر الحالي + أي شهر فيه إجازة قائمة/قادمة مفتوحة تلقائياً
+  const loadCache = {}; // عبء التغطيات السنوي لكل طبيب — يُحسب مرة واحدة لكل عرض بدل تكراره لكل قائمة اختيار
+  const [editKey,setEditKey] = useState(null); // عيادة مغطّاة يجري تغيير بديلها
   const toggleMonth = key => setOpenMonths(o=>{ const n=new Set(o); n.has(key)?n.delete(key):n.add(key); return n; });
 
   return <div className="fade">
@@ -2304,118 +2308,84 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
           return gapsOn(x.date).some(g=>g.ownerId===x.ownerId && g.period===x.period);
         }).map(x=>({ ...x, di:dayIdx(x.date) })).sort((a,b)=>a.date.localeCompare(b.date));
         const uncoveredClinics = l.clinicClosed!==false?0:clinics.filter(c=>!c.cov).length;
-        const uncovered = uncoveredClinics + evening.length + myCovs.length;
-        const isOpenCard = modalLeaveId===l.id;
-        const chip = l.clinicClosed!==false && evening.length===0 && myCovs.length===0 ? {t:"العيادة مغلقة", bg:"var(--surface2)", fg:C.sub}
+        // عيادات بديل المناوبة (التي يتركها بسبب المسائي نفس اليوم + صباح الغد للراحة) ولم تُغطَّ بعد
+        const replGaps = [];
+        (l.eveRepl||[]).forEach(r=>{ if(!((nightData[r.date]||{}).doctors||[]).includes(r.docId)) return;
+          const nx=(()=>{ const x=new Date(r.date); x.setDate(x.getDate()+1); return x.toISOString().split("T")[0]; })();
+          [r.date, nx].forEach(ds=>gapsOn(ds).filter(g=>g.ownerId===r.docId && (ds===r.date || g.period==="am")).forEach(g=>{ if(!replGaps.some(x=>x.date===g.date&&x.period===g.period&&x.ownerId===g.ownerId)) replGaps.push({ ...g, reason: ds===r.date?"evening":"post_evening" }); })); });
+        replGaps.sort((a,b)=>a.date.localeCompare(b.date)||a.period.localeCompare(b.period));
+        const uncovered = uncoveredClinics + evening.length + myCovs.length + replGaps.length;
+        const chip = l.clinicClosed!==false && evening.length===0 && myCovs.length===0 && replGaps.length===0 ? {t:"العيادة مغلقة", bg:"var(--surface2)", fg:C.sub}
           : uncovered>0 ? {t:`مكشوف ${uncovered}`, bg:"var(--dangerSoft)", fg:C.err}
           : {t:"مغطّاة ✓", bg:"var(--okSoft)", fg:C.ok};
-        return <div key={l.id} style={{ ...card(), padding:0, overflow:"hidden" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:10, padding:13 }}>
-            <div onClick={()=>setModalLeaveId(l.id)} style={{ display:"flex", alignItems:"center", gap:10, flex:1, minWidth:0, cursor:"pointer" }}>
-              <Avatar doc={d} size={36}/>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontWeight:700, fontSize:14 }}>{d.name}</div>
-                <div style={{ fontSize:11.5, color:C.sub }}>{TYPES[l.type]} · {dmy(l.start)} ← {dmy(l.end)}</div>
-              </div>
+        // ── كل تفاصيل الإجازة تظهر مباشرة داخل البطاقة (بلا نافذة منبثقة) ──
+        const [ly] = l.start.split("-");
+        const yd = []; for(let m=0;m<12;m++) yd.push(...monthDays(+ly,m).map(x=>x.date));
+        const md = monthDays(+l.start.split("-")[0], +l.start.split("-")[1]-1).map(x=>x.date);
+        const loadOf = id => { const k=ly+"|"+id; if(loadCache[k]==null) loadCache[k]=doctorSessions(doctors.find(x=>x.id===id), yd, nightData, coverages, leaves).covers; return loadCache[k]; };
+        const pickFor = (wi,ds,period) => rankPickList(getAvailable(doctors,[d.id],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null, busyType: a.status==="busy" ? (()=>{ const sl=getSlot(a.doc,wi,period); return isClinic(sl)?"عيادة":(SLOT_AR[sl]||"عيادة"); })() : null })), wi, period);
+        const pickForOwner = (ownerId,wi,ds,period) => rankPickList(getAvailable(doctors,[ownerId,d.id],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null, busyType: a.status==="busy" ? (()=>{ const sl=getSlot(a.doc,wi,period); return isClinic(sl)?"عيادة":(SLOT_AR[sl]||"عيادة"); })() : null })), wi, period);
+        const assignOther = (ownerId,ds,p,cid,reason="absence") => { setCoverages(cs=>[...cs.filter(c=>!(c.date===ds&&c.period===p&&c.absentId===ownerId)), {id:uid(),absentId:ownerId,date:ds,period:p,coverDoctorId:cid,reason}]); logAudit&&logAudit(`بديل لعيادة د.${fd(ownerId)?.name||"؟"} (${perAr(p)} ${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`); showToast("تم تعيين البديل"); };
+        const eveLoad = id => md.reduce((a,dt)=>a+(((nightData[dt]||{}).doctors||[]).includes(id)?1:0),0);
+        const nextCal = ds => { const x=new Date(ds); x.setDate(x.getDate()+1); return x.toISOString().split("T")[0]; };
+        // ── بديل المناوبة: يُستبعد من الأولوية مَن عليه تغطية نهارية نفس اليوم، أو مناوبة أمس/غداً (تتالٍ)، ويُفضَّل الأقل مناوبات ثم الأقل عيادات تحتاج تغطية بسبب المناوبة ──
+        const evePick = ds => { const nightDocs=(nightData[ds]?.doctors)||[]; const prevE=((nightData[prevCalDay(ds)]||{}).doctors)||[]; const nd1=nextCal(ds); const nextE=((nightData[nd1]||{}).doctors)||[]; const wi=dayIdx(ds), nwi=dayIdx(nd1);
+          const dayDuty = id => coverages.some(c=>c.date===ds && c.coverDoctorId===id && (c.period==="am"||c.period==="pm"));
+          const cost = x => (isClinic(getSlot(x,wi,"am"))?1:0) + (isClinic(getSlot(x,wi,"pm"))?1:0) + ((restRule && nwi>=0 && isClinic(getSlot(x,nwi,"am")))?1:0);
+          const out = doctors.filter(x=>x.id!==d.id&&!nightDocs.includes(x.id)).map(x=>{ const lv=onLeave(x,ds,leaves); const fixedAny=(x.nightDays||[]).length>0;
+            const why = lv?null : fixedAny?"عيادة مسائية ثابتة" : dayDuty(x.id)?"مكلّف بتغطية نهارية نفس اليوم" : (prevE.includes(x.id)||nextE.includes(x.id))?"مناوبة متتالية" : null;
+            return { doc:x, status: lv?"leave":why?"warn":"free", commit:why, load:eveLoad(x.id), cost:cost(x) }; })
+            .sort((a,b)=>(({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status]))||(a.load-b.load)||(a.cost-b.cost));
+          if(out[0] && out[0].status==="free") out[0]={ ...out[0], best:true }; return out; };
+        const assignClinic = (ds,p,cid) => { setCoverages(cs=>[...cs.filter(c=>!(c.date===ds&&c.period===p&&c.absentId===d.id)), {id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:cid,reason:"leave"}]); logAudit&&logAudit(`بديل إجازة د.${d.name} (${perAr(p)} ${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`); showToast("تم تعيين البديل"); };
+        const assignEve = (ds,cid) => {
+          const day0 = nightData[ds]||{doctors:[],coverages:{am:[],pm:[],nextAm:[]}};
+          const docs=[...new Set((day0.doctors||[]).map(x=>x===d.id?cid:x))]; if(!docs.includes(cid)) docs.push(cid);
+          setNight&&setNight(n=>({ ...n, [ds]:{ ...(n[ds]||day0), doctors:docs } }));
+          // يُحفظ البديل بسجل الإجازة — عياداته التي يتركها بسبب المناوبة تظهر بالأسفل ليختار رئيس القسم من يغطيها (بلا تغطية تلقائية)
+          setLeaves(ls=>ls.map(x=>x.id===l.id ? { ...x, eveRepl:[...(x.eveRepl||[]).filter(r=>r.date!==ds), { date:ds, docId:cid }] } : x));
+          logAudit&&logAudit(`بديل مسائي إجازة د.${d.name} (${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`);
+          showToast("تم تعيين بديل المسائي — راجع عياداته بالأسفل واختر من يغطيها"); };
+        const openClinics = l.clinicClosed!==false ? [] : clinics;
+        const rowS = { display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", padding:"7px 0", borderTop:`1px dashed ${C.line2}` };
+        const lab = t => <span style={{ fontSize:12.5, fontWeight:700, color:C.text, minWidth:118 }}>{t}</span>;
+        const secT = (icon,t,col,n) => <div style={{ fontSize:12.5, fontWeight:800, color:col, margin:"10px 0 2px" }}>{icon} {t}{n>0&&<span style={{ color:C.err }}> · {n}</span>}</div>;
+        const pickerBox = el => <div style={{ flex:"1 1 220px", minWidth:0 }}>{el}</div>;
+        return <div key={l.id} style={{ ...card(), padding:"12px 14px", borderInlineStart:`4px solid ${uncovered>0?C.err:(chip.fg===C.ok?C.ok:C.line)}` }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <Avatar doc={d} size={36}/>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontWeight:700, fontSize:14 }}>{d.name}</div>
+              <div style={{ fontSize:11.5, color:C.sub }}>{TYPES[l.type]} · {dmy(l.start)} ← {dmy(l.end)}</div>
             </div>
-            <span onClick={()=>setModalLeaveId(l.id)} style={{ fontSize:10.5, fontWeight:700, background:chip.bg, color:chip.fg, borderRadius:20, padding:"4px 11px", whiteSpace:"nowrap", cursor:"pointer" }}>{chip.t}</span>
-            <Kebab items={[
-              (l.clinicClosed===false) && { icon:"⚡", label:"تغطية تلقائية", onClick:()=>autoCoverLeave(l) },
-              { icon:"🗑", label:"حذف الإجازة", danger:true, onClick:()=>{ if(confirm("حذف هذه الإجازة؟")) del(l.id); } },
-            ]} />
+            <span style={{ fontSize:10.5, fontWeight:700, background:chip.bg, color:chip.fg, borderRadius:20, padding:"4px 11px", whiteSpace:"nowrap" }}>{chip.t}</span>
+            {uncoveredClinics>0 && <button onClick={()=>autoCoverLeave(l)} title="تغطية عياداته بالأنسب" style={{ background:"var(--primarySoft)", border:"none", borderRadius:10, width:34, height:30, fontSize:14, color:C.primary, cursor:"pointer", flexShrink:0 }}>⚡</button>}
+            <button onClick={()=>{ if(confirm("حذف هذه الإجازة؟")) del(l.id); }} title="حذف الإجازة" style={{ background:"var(--dangerSoft)", border:"none", borderRadius:10, width:34, height:30, fontSize:14, color:C.err, cursor:"pointer", flexShrink:0 }}>🗑</button>
           </div>
-          {isOpenCard && (()=>{ 
-            const [ly] = l.start.split("-");
-            const yd = []; for(let m=0;m<12;m++) yd.push(...monthDays(+ly,m).map(x=>x.date));
-            const md = monthDays(+l.start.split("-")[0], +l.start.split("-")[1]-1).map(x=>x.date);
-            const loadOf = id => doctorSessions(doctors.find(x=>x.id===id), yd, nightData, coverages, leaves).covers;
-            const pickFor = (wi,ds,period) => rankPickList(getAvailable(doctors,[d.id],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null, busyType: a.status==="busy" ? (()=>{ const sl=getSlot(a.doc,wi,period); return isClinic(sl)?"عيادة":(SLOT_AR[sl]||"عيادة"); })() : null })), wi, period);
-            const pickForOwner = (ownerId,wi,ds,period) => rankPickList(getAvailable(doctors,[ownerId,d.id],wi,ds,period,leaves,nightData,{},coverages,true).map(a=>({ ...a, load:loadOf(a.doc.id), commit:a.status==="warn"?(SLOT_COMMIT[getSlot(a.doc,wi,period)]||"التزام"):null, busyType: a.status==="busy" ? (()=>{ const sl=getSlot(a.doc,wi,period); return isClinic(sl)?"عيادة":(SLOT_AR[sl]||"عيادة"); })() : null })), wi, period);
-            const assignOther = (ownerId,ds,p,cid,reason="absence") => { setCoverages(cs=>[...cs.filter(c=>!(c.date===ds&&c.period===p&&c.absentId===ownerId)), {id:uid(),absentId:ownerId,date:ds,period:p,coverDoctorId:cid,reason}]); logAudit&&logAudit(`بديل لعيادة د.${fd(ownerId)?.name||"؟"} (${perAr(p)} ${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`); showToast("تم تعيين البديل"); };
-            const eveLoad = id => md.reduce((a,dt)=>a+(((nightData[dt]||{}).doctors||[]).includes(id)?1:0),0);
-            const nextCal = ds => { const x=new Date(ds); x.setDate(x.getDate()+1); return x.toISOString().split("T")[0]; };
-            // ── بديل المناوبة: يُستبعد من الأولوية مَن عليه تغطية نهارية نفس اليوم، أو مناوبة أمس/غداً (تتالٍ)، ويُفضَّل الأقل مناوبات ثم الأقل عيادات تحتاج تغطية بسبب المناوبة ──
-            const evePick = ds => { const nightDocs=(nightData[ds]?.doctors)||[]; const prevE=((nightData[prevCalDay(ds)]||{}).doctors)||[]; const nd1=nextCal(ds); const nextE=((nightData[nd1]||{}).doctors)||[]; const wi=dayIdx(ds), nwi=dayIdx(nd1);
-              const dayDuty = id => coverages.some(c=>c.date===ds && c.coverDoctorId===id && (c.period==="am"||c.period==="pm"));
-              const cost = x => (isClinic(getSlot(x,wi,"am"))?1:0) + (isClinic(getSlot(x,wi,"pm"))?1:0) + ((restRule && nwi>=0 && isClinic(getSlot(x,nwi,"am")))?1:0);
-              const out = doctors.filter(x=>x.id!==d.id&&!nightDocs.includes(x.id)).map(x=>{ const lv=onLeave(x,ds,leaves); const fixedAny=(x.nightDays||[]).length>0;
-                const why = lv?null : fixedAny?"عيادة مسائية ثابتة" : dayDuty(x.id)?"مكلّف بتغطية نهارية نفس اليوم" : (prevE.includes(x.id)||nextE.includes(x.id))?"مناوبة متتالية" : null;
-                return { doc:x, status: lv?"leave":why?"warn":"free", commit:why, load:eveLoad(x.id), cost:cost(x) }; })
-                .sort((a,b)=>(({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status]))||(a.load-b.load)||(a.cost-b.cost));
-              if(out[0] && out[0].status==="free") out[0]={ ...out[0], best:true }; return out; };
-            const assignClinic = (ds,p,cid) => { setCoverages(cs=>[...cs.filter(c=>!(c.date===ds&&c.period===p&&c.absentId===d.id)), {id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:cid,reason:"leave"}]); logAudit&&logAudit(`بديل إجازة د.${d.name} (${perAr(p)} ${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}`); showToast("تم تعيين البديل"); };
-            const assignEve = (ds,cid) => {
-              const day0 = nightData[ds]||{doctors:[],coverages:{am:[],pm:[],nextAm:[]}};
-              const docs=[...new Set((day0.doctors||[]).map(x=>x===d.id?cid:x))]; if(!docs.includes(cid)) docs.push(cid);
-              setNight&&setNight(n=>({ ...n, [ds]:{ ...(n[ds]||day0), doctors:docs } }));
-              // ── البديل يترك عياداته النهارية ذلك اليوم (وصباح الغد لقاعدة الراحة) — تُغطّى تلقائياً بالأنسب مباشرة، بدل أن تظهر فجوات جديدة لاحقاً بصفحة الدوام ──
-              const n2 = { ...nightData, [ds]:{ ...day0, doctors:docs } };
-              const cd = doctors.find(x=>x.id===cid); const nd1=nextCal(ds);
-              const needs = [];
-              if(cd){ const wi=dayIdx(ds); ["am","pm"].forEach(p=>{ if(isClinic(getSlot(cd,wi,p))) needs.push([ds,p,"evening"]); });
-                const nwi=dayIdx(nd1); if(restRule && nwi>=0 && isClinic(getSlot(cd,nwi,"am")) && !onLeave(cd,nd1,leaves)) needs.push([nd1,"am","post_evening"]); }
-              const adds=[]; const run={}; let miss=0;
-              needs.forEach(([dt,p,reason])=>{
-                if(coverages.some(c=>c.date===dt && c.period===p && c.absentId===cid)) return;
-                const wi2=dayIdx(dt); const pool=[...coverages,...adds];
-                const av=getAvailable(doctors,[cid],wi2,dt,p,leaves,n2,{},pool,true).filter(a=>a.status!=="leave" && (a.status==="free" || FLEX_SLOTS.includes(getSlot(a.doc,wi2,p))))
-                  .map(a=>({ a, L:loadOf(a.doc.id)+(run[a.doc.id]||0) })).sort((x,y)=>x.L-y.L);
-                const pk=av[0]; if(!pk){ miss++; return; }
-                adds.push({ id:uid(), absentId:cid, date:dt, period:p, coverDoctorId:pk.a.doc.id, reason }); run[pk.a.doc.id]=(run[pk.a.doc.id]||0)+1; });
-              if(adds.length) setCoverages(cs=>[...cs,...adds]);
-              logAudit&&logAudit(`بديل مسائي إجازة د.${d.name} (${dmy(ds)}) ← د.${fd(cid)?.name||"؟"}${adds.length?` + تغطية ${adds.length} من عياداته تلقائياً`:""}`);
-              showToast(miss?`تم تعيين بديل المسائي — بقيت ${miss} من عيادات د.${fd(cid)?.name||""} بلا متاح، راجعها في صفحة الدوام`:(adds.length?`تم تعيين بديل المسائي وتغطية ${adds.length} من عياداته تلقائياً`:"تم تعيين بديل المسائي"), miss?"warn":undefined); };
-            const openClinics = l.clinicClosed!==false ? [] : clinics;
-            return <div style={{ position:"fixed", inset:0, zIndex:200, background:"rgba(15,23,42,.4)", display:"flex", alignItems:"flex-start", justifyContent:"center", padding:"5vh 14px", overflowY:"auto" }} onClick={()=>setModalLeaveId(null)}>
-            <div onClick={e=>e.stopPropagation()} style={{ background:"var(--surface)", borderRadius:16, boxShadow:"0 24px 60px rgba(0,0,0,.3)", width:"min(94vw, 640px)", maxHeight:"90vh", overflowY:"auto", padding:0 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:12, padding:"16px 18px", borderBottom:`1px solid ${C.line}`, position:"sticky", top:0, background:"var(--surface)", zIndex:1 }}>
-              <Avatar doc={d} size={40}/>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontWeight:800, fontSize:16 }}>{d.name}</div>
-                <div style={{ fontSize:12, color:C.sub }}>{TYPES[l.type]} · {dmy(l.start)} ← {dmy(l.end)}</div>
+          {l.clinicClosed!==false
+            ? <div style={{ fontSize:11.5, color:C.muted, marginTop:8 }}>🏥 العيادة مغلقة — {clinics.length?`${clinics.length} فترة عيادة لا تحتاج تغطية`:"لا عيادات خلال الإجازة"}</div>
+            : <>{secT("🏥","عياداته",C.text,uncoveredClinics)}
+              {openClinics.length===0 && <div style={{ fontSize:11.5, color:C.muted }}>لا عيادات خلال الإجازة</div>}
+              {openClinics.map((c,i)=>{ const k=`${l.id}|${c.ds}|${c.p}`; const editing=editKey===k; return <div key={i} style={rowS}>
+                {lab(`${DAYS[dayIdx(c.ds)]||""} ${dmy(c.ds)} · ${c.p==="am"?"صباح":"ظهر"}`)}
+                {c.cov && !editing ? <><span style={{ fontSize:12.5, color:C.ok, fontWeight:700, flex:1 }}>✓ د.{fd(c.cov)?.name}</span><button onClick={()=>setEditKey(k)} style={{ ...sGhost, padding:"3px 10px", fontSize:11 }}>تغيير</button></>
+                  : pickerBox(<CoverPicker list={pickFor(dayIdx(c.ds),c.ds,c.p)} cur={c.cov} onPick={cid=>{ assignClinic(c.ds,c.p,cid); setEditKey(null); }} />)}
+              </div>; })}</>}
+          {(evening.length>0 || replGaps.length>0) && <>
+            {secT("🌙","مناوباته المسائية",C.eve,evening.length)}
+            {evening.map((ds,i)=><div key={"e"+i} style={rowS}>{lab(`${DAYS[dayIdx(ds)]||""} ${dmy(ds)}`)}{pickerBox(<CoverPicker list={evePick(ds)} cur={null} onPick={cid=>assignEve(ds,cid)} />)}</div>)}
+            {replGaps.length>0 && <>
+              <div style={{ display:"flex", alignItems:"center", gap:8, margin:"8px 0 2px" }}>
+                <div style={{ flex:1, fontSize:12, fontWeight:700, color:C.text }}>عيادات البديل بسبب المناوبة <span style={{ color:C.err }}>· {replGaps.length}</span></div>
+                <button onClick={()=>{ let n=0; const run={}; const pool=[...coverages]; replGaps.forEach(g=>{ const list=pickForOwner(g.ownerId,g.di,g.date,g.period).filter(a=>a.status==="free"||a.flex).filter(a=>!pool.some(c=>c.date===g.date&&c.period===g.period&&c.coverDoctorId===a.doc.id)).sort((x,y)=>(x.load+(run[x.doc.id]||0))-(y.load+(run[y.doc.id]||0))); const pk=list[0]; if(!pk) return; pool.push({id:uid(),absentId:g.ownerId,date:g.date,period:g.period,coverDoctorId:pk.doc.id,reason:g.reason}); run[pk.doc.id]=(run[pk.doc.id]||0)+1; n++; }); const adds=pool.slice(coverages.length); if(adds.length) setCoverages(cs=>[...cs,...adds]); showToast(n<replGaps.length?`غُطّيت ${n} — تبقّى ${replGaps.length-n} تحتاج اختياراً يدوياً`:`غُطّيت ${n} عيادة بالأنسب`, n<replGaps.length?"warn":undefined); }} style={{ ...sBtn(C.primary), padding:"5px 11px", fontSize:11.5 }}>⚡ تغطيتها بالأنسب</button>
               </div>
-              <span style={{ fontSize:10.5, fontWeight:700, background:chip.bg, color:chip.fg, borderRadius:20, padding:"4px 11px", whiteSpace:"nowrap" }}>{chip.t}</span>
-              {(l.clinicClosed===false) && <button onClick={()=>autoCoverLeave(l)} title="تغطية تلقائية" style={{ background:"var(--primarySoft)", border:"none", borderRadius:10, width:36, height:32, fontSize:15, color:C.primary, cursor:"pointer", flexShrink:0 }}>⚡</button>}
-              <button onClick={()=>{ if(confirm("حذف هذه الإجازة؟")){ del(l.id); setModalLeaveId(null); } }} title="حذف الإجازة" style={{ background:"var(--dangerSoft)", border:"none", borderRadius:10, width:36, height:32, fontSize:15, color:C.err, cursor:"pointer", flexShrink:0 }}>🗑</button>
-              <button onClick={()=>setModalLeaveId(null)} style={{ background:"var(--surface2)", border:"none", borderRadius:10, width:32, height:32, fontSize:18, color:C.muted, cursor:"pointer", flexShrink:0 }}>×</button>
-            </div>
-            <div style={{ padding:"16px 18px" }}>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6, marginBottom:14 }}>
-              {[0,1,2,3,4].map(di=><div key={di} style={{ border:`1px solid ${C.line2}`, borderRadius:9, overflow:"hidden", textAlign:"center" }}>
-                <div style={{ background:"var(--surface2)", fontSize:10.5, fontWeight:700, color:C.sub, padding:"5px 0" }}>{DAYS[di]}</div>
-                {["am","pm"].map(p=>{ const sl=getSlot(d,di,p); const dir=DIRECT_SLOTS.includes(sl); return <div key={p} style={{ fontSize:10.5, padding:"6px 2px", color:dir?C.primary:C.muted, background:dir?"var(--primarySoft)":"var(--surface)", fontWeight:dir?700:400 }}>{SLOT_AR[sl]||"—"}</div>; })}
-                {(()=>{ const fx=(d.sched?.[di]?.eve)||((d.nightDays||[]).includes(di)?"clinic":""); return <div style={{ fontSize:10.5, padding:"6px 2px", color:fx?"var(--eve)":C.muted, background:fx?"#ECEAFE":"var(--surface)", fontWeight:fx?700:400 }}>{fx?"🌙":"—"}</div>; })()}
-              </div>)}
-            </div>
-            <div style={{ background:"var(--surface2)", borderRadius:12, padding:"13px 14px" }}>
-              <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:7 }}>🏥 عياداته خلال الإجازة ({clinics.length}){uncoveredClinics>0&&<span style={{ color:C.err }}> · مكشوف {uncoveredClinics}</span>}</div>
-              {uncoveredClinics>0 && <button onClick={()=>autoCoverLeave(l)} style={{ ...sBtn(C.primary), padding:"9px 16px", fontSize:13, marginBottom:11 }}>⚡ تغطية الكل بالأنسب</button>}
-              {l.clinicClosed!==false && clinics.length>0 && <div style={{ fontSize:12, color:C.ok, marginBottom:6 }}>العيادة مغلقة خلال الإجازة — لا تحتاج تغطية.</div>}
-              {openClinics.map((c,i)=><div key={i} style={{ marginBottom:11, paddingBottom:11, borderBottom:i<openClinics.length-1?`1px dashed ${C.line2}`:"none" }}>
-                <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:6 }}>• {dmy(c.ds)} {perAr(c.p)} {c.cov?<span style={{ color:C.ok }}>— البديل: د.{fd(c.cov)?.name} (اضغط للتغيير)</span>:<span style={{ color:C.err }}>— اختر بديلاً</span>}</div>
-                <CoverPicker list={pickFor(dayIdx(c.ds),c.ds,c.p)} cur={c.cov} onPick={cid=>assignClinic(c.ds,c.p,cid)} />
-              </div>)}
-              {clinics.length===0 && <div style={{ fontSize:12, color:C.muted }}>لا عيادات</div>}
-            </div>
-            <div style={{ background:"var(--surface2)", borderRadius:12, padding:"13px 14px", marginTop:10 }}>
-              <div style={{ fontSize:13, fontWeight:700, color:C.eve, marginBottom:7 }}>🌙 مناوباته المسائية خلال الإجازة{evening.length>0?<span style={{ color:C.err }}> · تحتاج بديلاً {evening.length}</span>:""}</div>
-              {evening.length===0 && <div style={{ fontSize:12, color:C.muted }}>لا مناوبات تحتاج بديلاً</div>}
-              {evening.map((ds,i)=><div key={"e"+i} style={{ marginBottom:11, paddingBottom:11, borderBottom:i<evening.length-1?`1px dashed ${C.line2}`:"none" }}>
-                <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:6 }}>• {DAYS[dayIdx(ds)]||""} {dmy(ds)} <span style={{ color:C.err }}>— اختر بديل المناوبة</span></div>
-                <CoverPicker list={evePick(ds)} cur={null} onPick={cid=>assignEve(ds,cid)} />
-              </div>)}
-            </div>
-            <div style={{ background:"var(--surface2)", borderRadius:12, padding:"13px 14px", marginTop:10 }}>
-              <div style={{ fontSize:13, fontWeight:700, color:C.warn, marginBottom:7 }}>🔄 تغطياته التي كان يؤديها خلال الإجازة{myCovs.length>0?<span style={{ color:C.err }}> · تحتاج بديلاً {myCovs.length}</span>:""}</div>
-              {myCovs.length===0 && <div style={{ fontSize:12, color:C.muted }}>لا تغطيات تحتاج بديلاً</div>}
-              {myCovs.map((x,i)=><div key={"c"+i} style={{ marginBottom:11, paddingBottom:11, borderBottom:i<myCovs.length-1?`1px dashed ${C.line2}`:"none" }}>
-                <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:6 }}>• {dmy(x.date)} {perAr(x.period)} — كان يغطّي عيادة د.{fd(x.ownerId)?.name||"؟"} <span style={{ color:C.err }}>— اختر بديلاً</span></div>
-                <CoverPicker list={pickForOwner(x.ownerId,x.di,x.date,x.period)} cur={null} onPick={cid=>assignOther(x.ownerId,x.date,x.period,cid, x.kind==="night" ? (x.slot==="nextAm"?"post_evening":"evening") : ((x.rec&&x.rec.reason)||"absence"))} />
-              </div>)}
-            </div>
-            </div>
-            </div>
-          </div>; })()}
+              {replGaps.map((g,i)=><div key={"r"+i} style={rowS}>{lab(`${dmy(g.date)} ${g.period==="am"?"صباح":"ظهر"} · د.${fd(g.ownerId)?.name||"؟"}`)}{pickerBox(<CoverPicker list={pickForOwner(g.ownerId,g.di,g.date,g.period)} cur={null} onPick={cid=>assignOther(g.ownerId,g.date,g.period,cid,g.reason)} />)}</div>)}
+            </>}
+          </>}
+          {myCovs.length>0 && <>
+            {secT("🔄","تغطياته التي كان يؤديها",C.warn,myCovs.length)}
+            {myCovs.map((x,i)=><div key={"c"+i} style={rowS}>{lab(`${dmy(x.date)} ${x.period==="am"?"صباح":"ظهر"} · عيادة د.${fd(x.ownerId)?.name||"؟"}`)}{pickerBox(<CoverPicker list={pickForOwner(x.ownerId,x.di,x.date,x.period)} cur={null} onPick={cid=>assignOther(x.ownerId,x.date,x.period,cid, x.kind==="night" ? (x.slot==="nextAm"?"post_evening":"evening") : ((x.rec&&x.rec.reason)||"absence"))} />)}</div>)}
+          </>}
         </div>;
       })}</div>}
           </div>;
@@ -3622,6 +3592,15 @@ function App() {
   useEffect(()=>S.set("v2_session",session),[session]);
   useEffect(()=>S.set("v2_navcollapsed",collapsed),[collapsed]);
   // ── تصحيح ذاتي دائم وشامل — بمبدأ "التحقق المستمر" بدل ملاحقة كل حدث على حدة: كل تغطية (وكل مناوبة) تُعاد التحقق من صحتها الفعلية بكل مرة، بصرف النظر كيف نشأت أو كيف تغيّر سببها لاحقاً (إضافة/حذف/تعديل إجازة، إزالة مناوبة يدوياً، إلخ) — لو لم يعد للغياب سبب حقيقي قائم الآن، تُعتبر تغطية/مناوبة يتيمة وتُزال تلقائياً، بلا أي ثغرة متبقية ──
+  // ── إصلاح بيانات قديمة: أي تغطية/إجازة تشترك بمعرّف مكرر تُعطى معرّفاً جديداً فريداً (نتيجة خلل المعرّف السابق) ──
+  useEffect(()=>{
+    const seen=new Set(); let dup=false; coverages.forEach(c=>{ if(seen.has(c.id)) dup=true; seen.add(c.id); });
+    if(dup) _setCoverages(cs=>{ const u=new Set(); return cs.map(c=>{ if(u.has(c.id)) { const n={...c,id:uid()}; u.add(n.id); return n; } u.add(c.id); return c; }); });
+  },[coverages]);
+  useEffect(()=>{
+    const seen=new Set(); let dup=false; leaves.forEach(l=>{ if(seen.has(l.id)) dup=true; seen.add(l.id); });
+    if(dup) _setLeaves(ls=>{ const u=new Set(); return ls.map(l=>{ if(u.has(l.id)) { const n={...l,id:uid()}; u.add(n.id); return n; } u.add(l.id); return l; }); });
+  },[leaves]);
   useEffect(()=>{
     let touchedNight=false, touchedCov=false; let fixedCount=0;
     // ── ربط كل ما يُزال بسبب إجازة بسجل الإجازة نفسها: مناوباته (eveRemoved) وتغطياته لغيره (displaced) — لتظهر في نافذة إجازته، وتُستعاد تلقائياً لو حُذفت الإجازة ──
@@ -3639,7 +3618,7 @@ function App() {
         n2[ds]={ ...day, doctors:day.doctors.filter(id=>!removed.includes(id)) }; touchedNight=true; fixedCount+=removed.length;
         removed.forEach(id=>{ const L=leaveOf(id,ds); if(!L) return; bump(L).eve.add(ds);
           // تغطيات عياداته بسبب هذه المناوبة (نفس اليوم + راحة صباح اليوم التالي) — تُزال معها وتُحفظ بسجل الإجازة لتعود لو أُلغيت الإجازة
-          coverages.forEach(c=>{ if(c.absentId!==id || eveCovStale.has(c.id)) return; if((c.reason==="evening" && c.date===ds) || (c.reason==="post_evening" && prevWorkDay(c.date)===ds)){ eveCovStale.add(c.id); bump(L).disp.push({ kind:"evecov", date:c.date, period:c.period, rec:c }); } }); });
+          coverages.forEach(c=>{ if(c.absentId!==id || eveCovStale.has(c)) return; if((c.reason==="evening" && c.date===ds) || (c.reason==="post_evening" && prevWorkDay(c.date)===ds)){ eveCovStale.add(c); bump(L).disp.push({ kind:"evecov", date:c.date, period:c.period, rec:c }); } }); });
       }
     });
 
@@ -3680,10 +3659,10 @@ function App() {
     };
     const staleIds = new Set(eveCovStale);
     coverages.forEach(c=>{
-      if(!ownerJustified(c)){ staleIds.add(c.id); return; }
+      if(!ownerJustified(c)){ staleIds.add(c); return; }
       const coverDoc = doctors.find(x=>x.id===c.coverDoctorId);
       if(coverDoc && onLeave(coverDoc, c.date, leaves)){                                  // المغطّي نفسه أصبح بإجازة — تُزال وتُربط بإجازته لإعادة تعيين بديل
-        staleIds.add(c.id);
+        staleIds.add(c);
         const L=leaveOf(c.coverDoctorId,c.date); if(L) bump(L).disp.push({ kind:"cov", date:c.date, period:c.period, ownerId:c.absentId, coverId:c.coverDoctorId, rec:c });
       }
     });
@@ -3691,7 +3670,7 @@ function App() {
 
     if(!touchedNight && !touchedCov) return;
     if(touchedNight) _setNight(()=>n2);
-    if(touchedCov) _setCoverages(cs=>cs.filter(c=>!staleIds.has(c.id)));
+    if(touchedCov) _setCoverages(cs=>cs.filter(c=>!staleIds.has(c))); // الحذف بالسجل نفسه لا بالمعرّف (حماية من أي معرّف مكرر قديم)
     if(Object.keys(leaveUpd).length) _setLeaves(ls=>ls.map(l=>{ const u=leaveUpd[l.id]; if(!u) return l;
       return { ...l, eveRemoved:[...new Set([...(l.eveRemoved||[]), ...u.eve])], displaced:[...(l.displaced||[]), ...u.disp] }; }));
     logAudit&&logAudit(`تصحيح تلقائي: إزالة ${fixedCount} تكليف (مناوبة/تغطية) لم يعد له سبب فعلي قائم`);
@@ -3705,8 +3684,8 @@ function App() {
       return false;
     });
     if(!orphaned.length) return;
-    const ids = new Set(orphaned.map(c=>c.id));
-    _setCoverages(cs=>cs.filter(c=>!ids.has(c.id)));
+    const ids = new Set(orphaned);
+    _setCoverages(cs=>cs.filter(c=>!ids.has(c)));
     logAudit&&logAudit(`تصحيح تلقائي: إزالة ${orphaned.length} تغطية لم يعد لها مناوبة مسائية مرتبطة بها`);
   },[nightData, coverages]);
 
