@@ -1853,32 +1853,27 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
       {ana.conflicts.length>0 && ana.conflicts.map((c,i)=>(
         <div key={"c"+i} style={{ background:"var(--dangerSoft)", border:`1px solid #fecdd3`, borderRadius:10, padding:"9px 11px", marginBottom:7, fontSize:12.5, color:C.err, fontWeight:600 }}>⛔ {c.text}</div>
       ))}
-      {(()=>{ const byDay={}; gaps.forEach(g=>{ (byDay[g.date]=byDay[g.date]||[]).push(g); }); const dayKeys=Object.keys(byDay).sort(); const allOpen=dayKeys.length>0 && dayKeys.every(k=>openGapDays.has(k)); return <>
-        {dayKeys.length>1 && <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:6 }}><button onClick={()=>setOpenGapDays(allOpen?new Set():new Set(dayKeys))} style={{ background:"none", border:"none", color:C.primary, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>{allOpen?"▲ طيّ الكل":"▼ فتح الكل"}</button></div>}
-        {dayKeys.map(ds=>{ const list=byDay[ds]; const isOpenDay=openGapDays.has(ds); const owners=[...new Set(list.map(g=>fd(g.ownerId)?.name).filter(Boolean))]; return (
-        <div key={ds} style={{ border:"1px solid #fde9c8", borderRadius:11, marginBottom:7, overflow:"hidden", background:"var(--surface)" }}>
-          <div onClick={()=>toggleGapDay(ds)} style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 12px", background:"var(--warnSoft)", cursor:"pointer", flexWrap:"wrap" }}>
-            <span style={{ fontSize:13, fontWeight:800, color:"#7c5410" }}>{DAYS[dayIdx(ds)]||""} {dmy(ds)}</span>
-            <span style={{ fontSize:11, fontWeight:800, color:C.err, background:"var(--surface)", borderRadius:20, padding:"2px 9px" }}>{list.length} {list.length===1?"عيادة مكشوفة":"عيادات مكشوفة"}</span>
-            <span style={{ flex:1, minWidth:80, fontSize:11.5, color:C.sub, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{owners.map(n=>"د."+n).join("، ")}</span>
-            <button onClick={e=>{ e.stopPropagation(); coverAll(ds); }} style={{ ...sBtn(C.primary), padding:"5px 11px", fontSize:11.5 }}>⚡ حلّ اليوم</button>
-            <span style={{ color:C.muted, fontSize:11 }}>{isOpenDay?"▲":"▼"}</span>
-          </div>
-          {isOpenDay && <div style={{ padding:"8px 10px 2px" }}>
-          {list.map(g=>{ const av=availForGap(g); const own=fd(g.ownerId); const best=bestForGap(g,av); const isPartner = best && own && best.doc.id===own.partnerId; const pl=pickListR(g.ownerId,g.di,g.date,g.period); return (
-            <div key={gapKey(g)} style={{ background:"var(--warnSoft)", border:"1px solid #fde9c8", borderRadius:10, padding:"10px 11px", marginBottom:8 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:8 }}>
-                <div style={{ flex:1, fontSize:12.5, color:"#7c5410", minWidth:140 }}>عيادة {own?peekName(own,{fontWeight:700}):"د.؟"} ({perAr(g.period)}) <span style={{ fontSize:10.5, color:C.muted }}>· {g.reason}</span></div>
-                {best ? <button onClick={()=>coverGap(g)} style={{ ...sBtn(isPartner?"var(--eve)":C.primary), padding:"6px 12px", fontSize:11.5 }}>{isPartner?"🔗 الشريك: د. ":"⭐ الأنسب: د. "}{best.doc.name}</button>
-                  : <span style={{ fontSize:11, fontWeight:700, color:C.err, background:"var(--dangerSoft)", borderRadius:20, padding:"5px 11px" }}>⚠️ لا يوجد طبيب متفرّغ تماماً — اختر يدوياً بالأسفل</span>}
-              </div>
-              <CoverPicker list={pl} cur={null} onPick={cid=>placeCover(g,cid)} />
+      {/* ── كل عيادة مكشوفة في سطر واحد مكشوف: اليوم والتاريخ · الفترة · صاحب العيادة · الأنسب · قائمة الاختيار ── */}
+      {gaps.length>0 && <div style={{ border:`1px solid ${C.line}`, borderRadius:12, overflow:"hidden" }}>
+        {gaps.map((g,i)=>{ const av=availForGap(g); const own=fd(g.ownerId); const best=bestForGap(g,av); const isPartner = best && own && best.doc.id===own.partnerId; const pl=pickListR(g.ownerId,g.di,g.date,g.period);
+          const firstOfDay = i===0 || gaps[i-1].date!==g.date; const dayCount = gaps.filter(x=>x.date===g.date).length; const am=g.period==="am";
+          return (
+          <div key={gapKey(g)} style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", padding:"10px 12px", background:i%2?"var(--surface2)":"var(--surface)", borderTop: i===0?"none":(firstOfDay?`2px solid ${C.line}`:`1px dashed ${C.line2}`) }}>
+            <div style={{ width:92, flexShrink:0, visibility:firstOfDay?"visible":"hidden" }}>
+              <div style={{ fontSize:13.5, fontWeight:800, color:C.text }}>{DAYS[dayIdx(g.date)]||""}</div>
+              <div style={{ fontSize:12, color:C.sub, fontWeight:600 }}>{dmy(g.date)}{dayCount>1 && <button onClick={()=>coverAll(g.date)} title="حلّ كل عيادات هذا اليوم بالأنسب" style={{ background:"none", border:"none", color:C.primary, fontSize:11, fontWeight:800, cursor:"pointer", padding:"0 6px", fontFamily:"inherit" }}>⚡ اليوم</button>}</div>
             </div>
+            <span style={{ flexShrink:0, fontSize:12, fontWeight:800, borderRadius:8, padding:"5px 10px", background:am?"#FEF3C7":"#E0E7FF", color:am?"#92400E":"#3730A3" }}>{am?"☀️ صباح":"🌤 ظهر"}</span>
+            <div style={{ flex:"1 1 150px", minWidth:120 }}>
+              <div style={{ fontSize:13, color:C.text }}>عيادة {own?peekName(own,{fontWeight:800}):"د.؟"}</div>
+              <div style={{ fontSize:11, color:C.muted }}>{g.reason}</div>
+            </div>
+            {best ? <button onClick={()=>coverGap(g)} style={{ ...sBtn(isPartner?"var(--eve)":C.primary), padding:"7px 12px", fontSize:12, flexShrink:0 }}>{isPartner?"🔗 ":"⭐ "}د.{best.doc.name}</button>
+              : <span style={{ fontSize:11, fontWeight:700, color:C.err, background:"var(--dangerSoft)", borderRadius:20, padding:"5px 10px", flexShrink:0 }}>⚠️ لا متفرّغ — اختر يدوياً</span>}
+            <div style={{ flex:"1 1 200px", minWidth:170 }}><CoverPicker list={pl} cur={null} onPick={cid=>placeCover(g,cid)} /></div>
+          </div>
           ); })}
-          </div>}
-        </div>
-        ); })}
-      </>; })()}
+      </div>}
     </div>
     )}
 
