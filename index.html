@@ -1180,11 +1180,11 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto, s
 // رابط القاعدة ومفتاح الويب ليسا سرَّين (حسب توثيق Firebase الرسمي — الحماية تأتي من قواعد Rules لا من إخفائهما)
 // فهما مضمَّنان هنا مباشرة، بحيث تعمل مزامنة بيانات القسم بين كل الأجهزة تلقائياً بلا أي إعداد يدوي على كل جهاز
 const FIREBASE_DEFAULT = { dbUrl:"https://restorative-department-default-rtdb.europe-west1.firebasedatabase.app", apiKey:"AIzaSyAFgGIFTVBzpVagVWLJz80xxbstkonG3j4" };
-function cloudCfg(){ const c=S.get("v2_cloud"); return (c&&c.dbUrl)?c:null; } // {dbUrl, apiKey, email, password} — يُستخدم فقط لزر "نشر رسمي" للرابط الحي العام (يحتاج حساب رئيس القسم)
+function cloudCfg(){ const c=S.get("v2_cloud"); return (c&&c.dbUrl)?c:{ dbUrl:FIREBASE_DEFAULT.dbUrl, apiKey:FIREBASE_DEFAULT.apiKey, builtin:true }; } // {dbUrl, apiKey, email, password} — يُستخدم فقط لزر "نشر رسمي" للرابط الحي العام (يحتاج حساب رئيس القسم)
 let __idTokenCache=null; // {token, exp}
 async function getIdToken(cfg){
   if(__idTokenCache && __idTokenCache.exp>Date.now()+30000) return __idTokenCache.token;
-  if(!cfg.apiKey||!cfg.email||!cfg.password) throw new Error("no-auth-config");
+  if(!cfg.apiKey||!cfg.email||!cfg.password) return getAnonToken(); // بدون حساب إداري محفوظ → دخول مجهول تلقائي (لا حاجة لزيارة الإعدادات)
   const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(cfg.apiKey)}`,{
     method:"POST", headers:{ "Content-Type":"application/json" },
     body:JSON.stringify({ email:cfg.email, password:cfg.password, returnSecureToken:true })
@@ -3954,7 +3954,7 @@ function App() {
     return diff; };
   const diffList = pending ? computeDiff() : [];
   const approve = () => { const diff=computeDiff(); logAudit(`اعتماد رسمي${diff.length?(" — "+diff.join("، ")):""}`,"معتمدة"); const a=snap(); setOfficial(a);
-    if(cloudCfg()){ showToast("✓ تم الاعتماد — جارٍ النشر للرابط الحي…"); cloudPublish(pubPayload(a)).then(()=>{ S.set("v2_published_at", new Date().toISOString()); showToast("✓ نُشر للرابط الحي — الرابط محدَّث للجميع"); }).catch(()=>showToast("الاعتماد تم، لكن تعذّر النشر للرابط — تحقّق من إعدادات Firebase","warn")); }
+    if(cloudCfg()){ showToast("✓ تم الاعتماد — جارٍ النشر للرابط الحي…"); cloudPublish(pubPayload(a)).then(()=>{ S.set("v2_published_at", new Date().toISOString()); showToast("✓ نُشر للرابط الحي — الرابط محدَّث للجميع"); }).catch(e=>showToast("الاعتماد تم، لكن تعذّر النشر للرابط — "+(/\b40[13]\b/.test(String(e&&e.message))?"قواعد Firebase تمنع الكتابة على /public/schedule":"تحقّق من الاتصال وإعدادات Firebase"),"warn")); }
     else showToast("✓ تم الاعتماد وتحديث الإحصائيات"); };
   // ── ما يُنشر للرابط الحي: الجدول المعتمد + أسماء الأطباء والإجازات (بدونها يظهر الرابط بلا أسماء «د. ◂ د.») — بلا بريد أو بيانات خاصة ──
   const pubPayload = a => ({ ...a, doctors: doctors.map(d=>({ id:d.id, name:d.name, color:d.color, nightDays:d.nightDays||[] })), leaves: leaves.map(l=>({ id:l.id, doctorId:l.doctorId, type:l.type, start:l.start, end:l.end, clinicClosed:l.clinicClosed })), holidays: holidays||[] });
