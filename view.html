@@ -168,26 +168,32 @@ function render(){
   const fd=id=>(DATA.doctors||[]).find(d=>d.id===id);
   $("list").innerHTML = viewMode==="grid"?renderGrid(y,m,fd):viewMode==="doc"?renderByDoctor(y,m,fd):renderList(y,m,fd);
 }
+let lastUpd=null;
 async function load(){
   if(DB_URL.startsWith("PASTE")){ $("list").innerHTML=`<div class="state">⚙️ لم يُهيّأ الرابط الحي بعد.<br>افتح هذا الملف وضع DB_URL (نفس رابط القاعدة في إعدادات التطبيق).</div>`; return; }
   try{
     const base=DB_URL.replace(/\/+$/,"");
+    if(DATA && lastUpd){ // تحديث خفيف: نسأل عن الختم الزمني فقط (بايتات قليلة) — ولا نحمّل الجدول كاملاً إلا لو تغيّر
+      const r0=await fetch(`${base}/public/schedule/updatedAt.json`,{cache:"no-store"});
+      if(r0.ok){ const u=await r0.json(); if(u===lastUpd) return; }
+    }
     const res=await fetch(`${base}/public/schedule.json`,{cache:"no-store"});
     if(!res.ok) throw new Error(res.status);
     const doc=await res.json();
     if(!doc||!doc.data) throw new Error("empty");
-    DATA=JSON.parse(doc.data);
+    DATA=JSON.parse(doc.data); lastUpd=doc.updatedAt||null;
     const upd=doc.updatedAt?new Date(doc.updatedAt):null;
     $("upd").textContent=upd?("آخر اعتماد ونشر: "+upd.toLocaleString("ar",{dateStyle:"full",timeStyle:"short"})):"";
     render();
-  }catch(e){ $("list").innerHTML=`<div class="state">⚠️ تعذّر تحميل الجدول — لم يُنشر بعد أو الرابط/القواعد غير صحيحة.</div>`; }
+  }catch(e){ if(DATA) return; /* فشل تحديث خلفي: نُبقي آخر جدول معروض */ $("list").innerHTML=`<div class="state">⚠️ تعذّر تحميل الجدول — لم يُنشر بعد أو الرابط/القواعد غير صحيحة.</div>`; }
 }
 function setView(v){ viewMode=v; ["grid","list","doc"].forEach(k=>{ const b=document.getElementById(k==="grid"?"t_grid":k==="list"?"t_list":"t_doc"); if(b) b.classList.toggle("on",k===v); }); render(); }
 $("t_grid").onclick=()=>setView("grid"); $("t_list").onclick=()=>setView("list"); $("t_doc").onclick=()=>setView("doc");
 $("prev").onclick=()=>{cur.setMonth(cur.getMonth()-1);render();};
 $("next").onclick=()=>{cur.setMonth(cur.getMonth()+1);render();};
 load();
-setInterval(load, 120000); // تحديث تلقائي كل دقيقتين
+setInterval(()=>{ if(!document.hidden) load(); }, 300000); // كل ٥ دقائق وفقط والصفحة ظاهرة (توفير لحصة Firebase)
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) load(); });
 </script>
 </body>
 </html>
