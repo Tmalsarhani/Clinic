@@ -1081,7 +1081,7 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto, s
   ana.gaps.forEach(g=>alerts.push({ sev:"warn", t:`عيادة د.${fd(g.ownerId)?.name||""} (${perAr(g.period)}) ${dmy(g.date)} تحتاج تغطية`, go:"engine" }));
   leaves.forEach(l=>{ const du=Math.round((new Date(l.start)-new Date(today))/864e5); if(du>0&&du<=3){ const d=fd(l.doctorId); if(d) alerts.push({ sev:"warn", t:`إجازة د.${d.name} تبدأ بعد ${du} ${du===1?"يوم":"أيام"}`, go:"leaves" }); } });
   doctors.forEach(d=>{ const has=[0,1,2,3,4].some(di=>getSlot(d,di,"am")||getSlot(d,di,"pm")); if(!has) alerts.push({ sev:"warn", t:`د.${d.name} بلا جدول عيادات`, go:"doctors" }); });
-  doctors.forEach(d=>{ let n=0; monthDays(now.getFullYear(),now.getMonth()).forEach(({date})=>{ if(((nightData[date]||{}).doctors||[]).includes(d.id)) n++; }); if(n>CAP_EVENING) alerts.push({ sev:"err", t:`د.${d.name} تجاوز حدّ المناوبات (${n}/${CAP_EVENING})`, go:"doctors" }); });
+  doctors.forEach(d=>{ let n=0; monthDays(now.getFullYear(),now.getMonth()).forEach(({date,di})=>{ if(((nightData[date]||{}).doctors||[]).includes(d.id) && !(d.nightDays||[]).includes(di)) n++; }); if(n>CAP_EVENING) alerts.push({ sev:"err", t:`د.${d.name} تجاوز حدّ المناوبات (${n}/${CAP_EVENING})`, go:"doctors" }); });
   monthDays(now.getFullYear(),now.getMonth()).forEach(({date,di})=>{ const onLv=doctors.filter(d=>onLeave(d,date,leaves)).length; if(onLv>=CAP_LEAVE_DAY) alerts.push({ sev:"warn", t:`تواجد منخفض ${dmy(date)} ${DAYS[di]} — ${onLv} في إجازة`, go:"leaves" }); });
   alerts.sort((a,b)=>(a.sev==="err"?0:1)-(b.sev==="err"?0:1));
   const dayInfo = date => { const nd=nightData[date]||{}; const cv=nd.coverages||{}; const evening=(nd.doctors||[]).map(id=>fd(id)?.name).filter(Boolean); const covs=[]; ["am","pm","nextAm"].forEach(slot=>{ (cv[slot]||[]).forEach(cid=>{ const c=fd(cid); if(c) covs.push(c.name); }); }); coverages.filter(c=>c.date===date).forEach(c=>{ const cd=fd(c.coverDoctorId); if(cd) covs.push(cd.name); }); const lv=doctors.filter(d=>onLeave(d,date,leaves)).map(d=>d.name); return {evening,covs,lv}; };
@@ -3030,7 +3030,7 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
         </span>
       </button>
     </div>
-    {field("capEvening","حدّ المناوبات المسائية شهرياً","ينبّه عند تجاوز الطبيب هذا العدد من المناوبات في الشهر.")}
+    {field("capEvening","حدّ المناوبات المسائية شهرياً","ينبّه عند تجاوز الطبيب هذا العدد من المناوبات الإضافية في الشهر. المسائي الثابت (مثل د.الحمادي) لا يدخل في العدد.")}
     {field("capLeaveDay","حدّ المُجازين في اليوم","ينبّه عند تساوي/تجاوز عدد المُجازين في يوم عمل هذا الحد.")}
     <div style={{ ...card(), padding:16, marginBottom:12 }}>
       <label style={{ ...label, marginBottom:0, display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}>
@@ -3230,7 +3230,7 @@ function AlertsPage({ doctors, leaves, nightData, coverages, today, fd, settings
   ana.conflicts.forEach(c=> al.push({ sev:"err", t:c.text, go:"engine" }));
   ana.gaps.forEach(g=>{ const o=fd(g.ownerId); al.push({ sev:"warn", t:`عيادة ${o?"د."+o.name:""} مكشوفة ${dmy(g.date)} (${g.period==="am"?"صباحاً":"ظهراً"})`, go:"engine" }); });
   leaves.forEach(l=>{ const du=Math.round((new Date(l.start)-now)/864e5); if(du>0&&du<=3){ const d=fd(l.doctorId); if(d) al.push({ sev:"warn", t:`إجازة د.${d.name} تبدأ بعد ${du} ${du===1?"يوم":"أيام"}`, go:"leaves" }); } });
-  doctors.forEach(d=>{ let n=0; monthDays(now.getFullYear(),now.getMonth()).forEach(({date})=>{ if(((nightData[date]||{}).doctors||[]).includes(d.id)) n++; }); if(n>s.capEvening) al.push({ sev:"err", t:`د.${d.name} تجاوز حدّ المناوبات (${n}/${s.capEvening})`, go:"doctors" }); });
+  doctors.forEach(d=>{ let n=0; monthDays(now.getFullYear(),now.getMonth()).forEach(({date,di})=>{ if(((nightData[date]||{}).doctors||[]).includes(d.id) && !(d.nightDays||[]).includes(di)) n++; }); if(n>s.capEvening) al.push({ sev:"err", t:`د.${d.name} تجاوز حدّ المناوبات (${n}/${s.capEvening})`, go:"doctors" }); });
   monthDays(now.getFullYear(),now.getMonth()).forEach(({date,di})=>{ const onLv=doctors.filter(d=>onLeave(d,date,leaves)).length; if(onLv>=s.capLeaveDay) al.push({ sev:"warn", t:`تواجد منخفض ${dmy(date)} ${DAYS[di]} — ${onLv} في إجازة`, go:"leaves" }); });
   al.sort((a,b)=>(a.sev==="err"?0:1)-(b.sev==="err"?0:1));
   const SEV = { err:{ fg:C.err, ic:"!", tag:"t-bad", lbl:"عاجل" }, warn:{ fg:C.warn, ic:"~", tag:"t-warn", lbl:"مراجعة" } };
