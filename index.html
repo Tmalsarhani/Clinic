@@ -876,7 +876,7 @@ function analyzeMonth(year, monthIdx, doctors, leaves, nightData, coverages, res
 
 const S = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
-  set: (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+  set: (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) { try{ window.dispatchEvent(new CustomEvent("ls-error",{detail:k})); }catch(_){} } }
 };
 
 const { useEffect } = React;
@@ -1198,16 +1198,30 @@ async function getIdToken(cfg){
 }
 // دخول مجهول (Anonymous) تلقائي — يعمل على أي جهاز بلا أي بريد أو كلمة مرور، فقط لمزامنة بيانات القسم بين الأجهزة (وليس لنشر الرابط العام)
 let __anonTokenCache=null; // {token, exp}
+let __anonInflight=null;
 async function getAnonToken(){
   if(__anonTokenCache && __anonTokenCache.exp>Date.now()+30000) return __anonTokenCache.token;
-  const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${encodeURIComponent(FIREBASE_DEFAULT.apiKey)}`,{
-    method:"POST", headers:{ "Content-Type":"application/json" },
-    body:JSON.stringify({ returnSecureToken:true })
-  });
-  if(!r.ok){ const t=await r.text(); throw new Error("anon-auth-failed: "+r.status+" "+t.slice(0,150)); }
-  const j=await r.json();
-  __anonTokenCache={ token:j.idToken, exp:Date.now()+(Number(j.expiresIn||3600)*1000) };
-  return j.idToken;
+  if(__anonInflight) return __anonInflight;
+  __anonInflight=(async()=>{
+    const key=encodeURIComponent(FIREBASE_DEFAULT.apiKey);
+    const rt=S.get("v2_anon_rt"); // نفس المستخدم المجهول يُعاد استخدامه بدل إنشاء حساب جديد عند كل فتح (يمنع تراكم الحسابات وحدّ التسجيل لكل IP)
+    if(rt){
+      try{
+        const r=await fetch(`https://securetoken.googleapis.com/v1/token?key=${key}`,{ method:"POST", headers:{ "Content-Type":"application/x-www-form-urlencoded" }, body:"grant_type=refresh_token&refresh_token="+encodeURIComponent(rt) });
+        if(r.ok){ const j=await r.json(); if(j.id_token){ __anonTokenCache={ token:j.id_token, exp:Date.now()+(Number(j.expires_in||3600)*1000) }; if(j.refresh_token) S.set("v2_anon_rt",j.refresh_token); return j.id_token; } }
+      }catch(e){}
+    }
+    const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${key}`,{
+      method:"POST", headers:{ "Content-Type":"application/json" },
+      body:JSON.stringify({ returnSecureToken:true })
+    });
+    if(!r.ok){ const t=await r.text(); throw new Error("anon-auth-failed: "+r.status+" "+t.slice(0,150)); }
+    const j=await r.json();
+    __anonTokenCache={ token:j.idToken, exp:Date.now()+(Number(j.expiresIn||3600)*1000) };
+    if(j.refreshToken) S.set("v2_anon_rt",j.refreshToken);
+    return j.idToken;
+  })();
+  try{ return await __anonInflight; } finally { __anonInflight=null; }
 }
 async function cloudPublish(officialSnap){
   const cfg=cloudCfg(); if(!cfg||!cfg.dbUrl) throw new Error("no-config");
@@ -1228,13 +1242,29 @@ async function cloudLoadState(){
   const res=await fetch(url,{cache:"no-store"});
   if(!res.ok){ const t=await res.text(); throw new Error("load-failed: "+res.status+" "+t.slice(0,150)); }
   const j=await res.json();
+  __lastRemoteAt = (j && j.updatedAt) || null;
   return j||null;
 }
+let __lastRemoteAt=null;   // آخر updatedAt عرفناه من السحابة (من تحميل أو حفظ ناجح)
+let __cloudConflict=false; // true لو رُفض الحفظ لأن جهازاً آخر حفظ بعد آخر تحميل
+async function cloudRemoteStamp(){
+  const idToken=await getAnonToken();
+  const base=FIREBASE_DEFAULT.dbUrl.replace(/\/+$/,"");
+  const r=await fetch(`${base}/app/state/updatedAt.json?auth=${encodeURIComponent(idToken)}`,{cache:"no-store"});
+  if(!r.ok) throw new Error("stamp-failed: "+r.status);
+  return await r.json(); // نص صغير فقط (≈ ٣٠ بايت)
+}
 async function cloudSaveState(state){
+  // حماية من الكتابة فوق تعديلات جهاز آخر: لو الختم الزمني في السحابة تغيّر منذ آخر تحميل → لا نكتب
+  const remoteAt=await cloudRemoteStamp();
+  if(remoteAt && remoteAt!==__lastRemoteAt){ __cloudConflict=true; return false; }
+  __cloudConflict=false;
   const idToken=await getAnonToken();
   const base=FIREBASE_DEFAULT.dbUrl.replace(/\/+$/,"");
   const url=`${base}/app/state.json?auth=${encodeURIComponent(idToken)}`;
-  const res=await fetch(url,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ ...state, updatedAt:new Date().toISOString() }) });
+  const stamp=new Date().toISOString();
+  const res=await fetch(url,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ ...state, updatedAt:stamp }) });
+  if(res.ok) __lastRemoteAt=stamp;
   return res.ok;
 }
 
@@ -1255,6 +1285,12 @@ async function cloudBackupIfDue(state){
     const r1=await fetch(backupUrl,{ method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
     if(!r1.ok) return false;
     await fetch(metaUrl,{ method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ lastAt:new Date().toISOString() }) });
+    // الاحتفاظ بآخر ١٢ نسخة فقط (≈ ٣ أشهر) — لمنع تراكم التخزين في Firebase بلا حدّ
+    try{
+      const lr=await fetch(`${base}/backups.json?shallow=true&auth=${encodeURIComponent(idToken)}`,{cache:"no-store"});
+      if(lr.ok){ const keys=Object.keys((await lr.json())||{}).filter(k=>k!=="_meta").sort(); const extra=keys.slice(0,Math.max(0,keys.length-12));
+        for(const k of extra) await fetch(`${base}/backups/${encodeURIComponent(k)}.json?auth=${encodeURIComponent(idToken)}`,{ method:"DELETE" }); }
+    }catch(e){}
     return true;
   }catch(e){ return false; } // فشل صامت — لا يعطّل الاستخدام العادي للتطبيق
 }
@@ -3947,7 +3983,7 @@ function App() {
     if(cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
     cloudSaveTimer.current = setTimeout(()=>{
       cloudSaveState({ doctors, leaves, nightData, coverages, settings, holidays, audit, users, official })
-        .then(ok=>setCloudSyncState(ok?"synced":"error"))
+        .then(ok=>{ setCloudSyncState(ok?"synced":"error"); if(!ok && __cloudConflict) showToast("⚠️ جهاز آخر حفظ تعديلات أحدث — لم يُحفظ تعديلك الأخير. اضغط ☁️ للتحديث ثم أعد التعديل","err"); })
         .catch(()=>setCloudSyncState("error"));
     }, 1500);
     return ()=>{ if(cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current); };
@@ -3971,6 +4007,18 @@ function App() {
       } else { setCloudSafeToSave(true); showToast("لا توجد بيانات سحابية محفوظة بعد — سيُنشأ أول نسخة عند أي تعديل","warn"); }
     }catch(e){ setCloudSyncState("error"); showToast("تعذّر التحديث من السحابة — الحفظ التلقائي مُعطَّل مؤقتاً لحماية بياناتك حتى تُحل المشكلة","err"); }
   };
+  // ── عند العودة للتطبيق (تبويب/شاشة): لو جهاز آخر حفظ بعدنا ولا لدينا تعديل معلّق → يُحدَّث تلقائياً (طلب صغير جداً) ──
+  const syncStateRef = React.useRef("idle"); syncStateRef.current = cloudSyncState;
+  useEffect(()=>{
+    const chk = async () => {
+      if(document.visibilityState!=="visible" || !cloudSafeToSave || syncStateRef.current!=="synced") return;
+      try{ const at = await cloudRemoteStamp(); if(at && at!==__lastRemoteAt) cloudSyncNow(); }catch(e){}
+    };
+    document.addEventListener("visibilitychange",chk);
+    return ()=>document.removeEventListener("visibilitychange",chk);
+  },[cloudSafeToSave]);
+  // ── تنبيه واحد لو تعذّر الحفظ المحلي (ذاكرة المتصفح ممتلئة أو وضع خاص) ──
+  useEffect(()=>{ let shown=false; const h=()=>{ if(shown) return; shown=true; showToast("⚠️ تعذّر الحفظ على هذا الجهاز (مساحة المتصفح ممتلئة أو وضع خاص) — البيانات تُحفظ بالسحابة فقط","warn"); }; window.addEventListener("ls-error",h); return ()=>window.removeEventListener("ls-error",h); },[]);
   const today = new Date().toISOString().split("T")[0];
   const fd = id => doctors.find(d=>d.id===id);
   const showToast = (msg,kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null), kind==="err"?6000:2200); };
