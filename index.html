@@ -408,7 +408,9 @@ function sendFor_(st, cfg, target, testOnly, when) {
 
   var items = {}; // id -> [lines]
   var add = function (id, line) { (items[id] = items[id] || []).push(line); };
-  if (cfg.evening) ((nd[target] || {}).doctors || []).forEach(function (id) { if (!onLeave(id, "eve")) add(id, "🌙 <b>عيادة مسائية</b>"); });
+  // المسائي الثابت (يومه حسب جدوله) لا يُذكَّر به — جدوله المعتاد. يُذكَّر فقط بالمسائي الإضافي خارج يومه الثابت، وبالتغطيات دائماً
+  var isFixedDay = function (id) { return ((byId[id] || {}).nightDays || []).indexOf(di) > -1; };
+  if (cfg.evening) ((nd[target] || {}).doctors || []).forEach(function (id) { if (!onLeave(id, "eve") && !isFixedDay(id)) add(id, "🌙 <b>عيادة مسائية</b>"); });
   if (cfg.coverage) cov.filter(function (c) { return c.date === target; })
     .sort(function (a, b) { return a.period < b.period ? -1 : 1; })
     .forEach(function (c) { if (!onLeave(c.coverDoctorId, c.period)) add(c.coverDoctorId, "🔄 <b>تغطية عيادة د." + nm(c.absentId) + "</b> — " + (PER_AR[c.period] || c.period) + (WHY_AR[c.reason] ? " <span style='color:#64748b'>(" + WHY_AR[c.reason] + ")</span>" : "")); });
@@ -3442,7 +3444,7 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
       const items = {};
       const di = dayIdx(pd);
       if(di>=0){
-        if(m.evening) ((sch.nightData[pd]||{}).doctors||[]).forEach(id=>{ const d=doctors.find(x=>x.id===id); if(d && !onLeave(d,pd,leaves,"eve")) (items[id]=items[id]||[]).push("🌙 عيادة مسائية"); });
+        if(m.evening) ((sch.nightData[pd]||{}).doctors||[]).forEach(id=>{ const d=doctors.find(x=>x.id===id); if(d && !onLeave(d,pd,leaves,"eve") && !(d.nightDays||[]).includes(di)) (items[id]=items[id]||[]).push("🌙 عيادة مسائية"); }); /* الثابت في يومه لا يُذكَّر بالمسائي */
         if(m.coverage) (sch.coverages||[]).filter(c=>c.date===pd).forEach(c=>{ const d=doctors.find(x=>x.id===c.coverDoctorId); if(d && !onLeave(d,pd,leaves,c.period)) (items[c.coverDoctorId]=items[c.coverDoctorId]||[]).push(`🔄 تغطية عيادة د.${nm(c.absentId)} — ${c.period==="am"?"صباحاً":"ظهراً"}`); });
       }
       const noMail = doctors.filter(d=>!String(d.email||"").includes("@"));
@@ -3474,7 +3476,7 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
             <span style={{ flex:1, fontSize:13.5, fontWeight:600 }}>☀️ التذكير الثاني — صباح نفس اليوم</span>
             <select disabled={!m.morning} value={m.morningHour} onChange={e=>setM("morningHour",+e.target.value)} style={{ ...sIn, width:"auto", opacity:m.morning?1:.5 }}>{[5,6,7,8].map(h=><option key={h} value={h}>{`${h}:00 صباحاً`}</option>)}</select>
           </div>
-          {chk("evening","🌙 تذكير بالعيادة المسائية")}
+          {chk("evening","🌙 تذكير بالعيادة المسائية (للمتغيّرين فقط — الثابت في يومه لا يُذكَّر، ويُذكَّر بتغطياته فقط)")}
           {chk("coverage","🔄 تذكير بالتغطيات")}
           {chk("summary","📋 ملخص يومي لرئيس القسم بكل ما أُرسل")}
           <div style={{ ...row, flexWrap:"wrap" }}>
