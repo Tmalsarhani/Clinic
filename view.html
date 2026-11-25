@@ -60,6 +60,29 @@ body{margin:0;font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;background
 .dr .tag{font-size:12.5px;font-weight:700;border-radius:20px;padding:4px 11px}
 .dr .line{font-size:13.5px;color:var(--text);line-height:1.75;padding:3px 0}
 @media(max-width:560px){ .hdr h1{font-size:15px} }
+
+/* ═══ ثيم «عنابي» مثل SHARP 1997 — نفس هوية لوحة الإدارة ═══ */
+:root{ --primary:#74403B; --primaryD:#5C302C; --primarySoft:#F1E6E5; --eve:#5E5A8C; --eveSoft:#ECEBF4; --bg:#F5F5F6; --surface:#fff; --line:#E0DCDC; --ink:#161515; --text:#262424; --muted:#8E8A8B; --ok:#2F7D4F; --dot:#D9D6D6; }
+body{background-color:var(--bg);background-image:radial-gradient(var(--dot) 1.15px,transparent 1.4px);background-size:26px 26px;background-attachment:fixed;color:var(--text)}
+.hdr{background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(12px);color:var(--ink);border:1.5px solid var(--line);border-radius:22px;box-shadow:none}
+.hdr .lg{background:var(--primary);border:none;color:#fff;border-radius:14px}
+.hdr .sub{color:var(--muted);opacity:1}
+.live{background:var(--primarySoft);border:1.5px solid color-mix(in srgb,var(--primary) 30%,transparent);color:var(--primary)}
+.live .dot{background:var(--ok)}
+.nav button{border-radius:16px;border:1.5px solid var(--line)}
+.card,.dr,.gc{border:1.5px solid var(--line);box-shadow:none}
+.card{border-radius:22px} .dr{border-radius:20px} .gc{border-radius:16px}
+.vtoggle button{border-radius:16px;border:1.5px solid var(--line)}
+.vtoggle button.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.wd{background:var(--primary);border-radius:12px}
+.gc.today{background:var(--primarySoft);border:1.5px solid var(--primary);box-shadow:none}
+.gnum{color:var(--primary)} .gnum.today{background:var(--primary)}
+.dn b{color:var(--primary)}
+.chip,.gchip{background:var(--eveSoft);color:var(--eve);border:none}
+.chip{border-radius:999px}
+.cov,.gcov{background:#F8F3F2;border:1.5px solid #EADFDD;color:var(--primaryD)}
+.gcov .per{background:var(--primary)} .gcov .ar{color:var(--primary)}
+.dr .av{background:var(--primary)}
 </style>
 </head>
 <body>
@@ -74,7 +97,7 @@ body{margin:0;font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;background
     <div class="m" id="mlabel">—</div>
     <button id="next">›</button>
   </div>
-  <div class="legend"><span><i style="background:#6D5DF6"></i>عيادة مسائية</span><span><i style="background:#0B7E77"></i>تغطية</span><span style="color:var(--muted)">التغطية: المغطّي <b style="color:#0e7490">◂</b> الغائب</span></div>
+  <div class="legend"><span><i style="background:#5E5A8C"></i>عيادة مسائية</span><span><i style="background:#74403B"></i>تغطية</span><span style="color:var(--muted)">التغطية: المغطّي <b style="color:#0e7490">◂</b> الغائب</span></div>
   <div class="vtoggle">
     <button id="t_grid" class="on">🗂 جدول شهري</button>
     <button id="t_list">☰ قائمة</button>
@@ -168,32 +191,26 @@ function render(){
   const fd=id=>(DATA.doctors||[]).find(d=>d.id===id);
   $("list").innerHTML = viewMode==="grid"?renderGrid(y,m,fd):viewMode==="doc"?renderByDoctor(y,m,fd):renderList(y,m,fd);
 }
-let lastUpd=null;
 async function load(){
   if(DB_URL.startsWith("PASTE")){ $("list").innerHTML=`<div class="state">⚙️ لم يُهيّأ الرابط الحي بعد.<br>افتح هذا الملف وضع DB_URL (نفس رابط القاعدة في إعدادات التطبيق).</div>`; return; }
   try{
     const base=DB_URL.replace(/\/+$/,"");
-    if(DATA && lastUpd){ // تحديث خفيف: نسأل عن الختم الزمني فقط (بايتات قليلة) — ولا نحمّل الجدول كاملاً إلا لو تغيّر
-      const r0=await fetch(`${base}/public/schedule/updatedAt.json`,{cache:"no-store"});
-      if(r0.ok){ const u=await r0.json(); if(u===lastUpd) return; }
-    }
     const res=await fetch(`${base}/public/schedule.json`,{cache:"no-store"});
     if(!res.ok) throw new Error(res.status);
     const doc=await res.json();
     if(!doc||!doc.data) throw new Error("empty");
-    DATA=JSON.parse(doc.data); lastUpd=doc.updatedAt||null;
+    DATA=JSON.parse(doc.data);
     const upd=doc.updatedAt?new Date(doc.updatedAt):null;
     $("upd").textContent=upd?("آخر اعتماد ونشر: "+upd.toLocaleString("ar",{dateStyle:"full",timeStyle:"short"})):"";
     render();
-  }catch(e){ if(DATA) return; /* فشل تحديث خلفي: نُبقي آخر جدول معروض */ $("list").innerHTML=`<div class="state">⚠️ تعذّر تحميل الجدول — لم يُنشر بعد أو الرابط/القواعد غير صحيحة.</div>`; }
+  }catch(e){ $("list").innerHTML=`<div class="state">⚠️ تعذّر تحميل الجدول — لم يُنشر بعد أو الرابط/القواعد غير صحيحة.</div>`; }
 }
 function setView(v){ viewMode=v; ["grid","list","doc"].forEach(k=>{ const b=document.getElementById(k==="grid"?"t_grid":k==="list"?"t_list":"t_doc"); if(b) b.classList.toggle("on",k===v); }); render(); }
 $("t_grid").onclick=()=>setView("grid"); $("t_list").onclick=()=>setView("list"); $("t_doc").onclick=()=>setView("doc");
 $("prev").onclick=()=>{cur.setMonth(cur.getMonth()-1);render();};
 $("next").onclick=()=>{cur.setMonth(cur.getMonth()+1);render();};
 load();
-setInterval(()=>{ if(!document.hidden) load(); }, 300000); // كل ٥ دقائق وفقط والصفحة ظاهرة (توفير لحصة Firebase)
-document.addEventListener("visibilitychange",()=>{ if(!document.hidden) load(); });
+setInterval(load, 120000); // تحديث تلقائي كل دقيقتين
 </script>
 </body>
 </html>
