@@ -491,10 +491,10 @@ function sendMonth_(st, cfg, ym, testOnly) {
     var ds = ym + "-" + (d < 10 ? "0" : "") + d;
     var dt = new Date(ds + "T00:00:00Z"); if (dt.getUTCMonth() !== mi) break;
     var di = dt.getUTCDay(); if (di >= 5 || holidays[ds]) continue;
-    // المسائي: لغير الثابتين فقط (الثابت في يومه لا يُذكر — جدوله المعتاد)
+    // المسائي: كل المناوبات، والثابتة في يومها يُكتب بجانبها «ثابت»
     if (cfg.evening) ((nd[ds] || {}).doctors || []).forEach(function (id) {
-      if (((byId[id] || {}).nightDays || []).indexOf(di) > -1) return;
-      if (!onLeave(id, ds, "eve")) add(id, ds, "🌙 عيادة مسائية");
+      var fixed = ((byId[id] || {}).nightDays || []).indexOf(di) > -1;
+      if (!onLeave(id, ds, "eve")) add(id, ds, "🌙 عيادة مسائية" + (fixed ? " <span style='display:inline-block;background:#f1e6e5;color:#74403B;border-radius:20px;padding:0 8px;font-size:12px;font-weight:bold'>ثابت</span>" : ""));
     });
     // التغطيات: للجميع (بما فيهم الثابتون)
     if (cfg.coverage) cov.filter(function (c) { return c.date === ds; }).sort(function (a, b) { return a.period < b.period ? -1 : 1; })
@@ -533,7 +533,7 @@ function monthHtml_(name, monthAr, list, ev, cv, cfg) {
     "<div style='background:#74403B;color:#fff;padding:16px 18px'><div style='font-size:12px;opacity:.85;margin-bottom:2px'>" + DEPT + "</div><div style='font-size:17px;font-weight:bold'>جدولك لشهر " + monthAr + "</div><div style='font-size:13px;opacity:.9'>" + (ev ? ev + " عيادة مسائية" : "") + (ev && cv ? " · " : "") + (cv ? cv + " تغطية" : "") + "</div></div>" +
     "<div style='padding:16px 18px;font-size:14.5px;line-height:1.9;color:#161515'>د." + name + "،<br>هذه مهامك في شهر " + monthAr + " حسب الجدول المعتمد:" +
     "<table style='width:100%;border-collapse:collapse;margin:10px 0;font-size:14px;border:1.5px solid #e0dcdc;border-radius:12px;overflow:hidden'>" + trs + "</table>" +
-    "<div style='font-size:12.5px;color:#8e8a8b'>قد يتغيّر الجدول عند الإجازات الطارئة — يصلك تذكير قبل كل مهمة بيوم وصباح نفس اليوم.</div>" +
+    "<div style='font-size:12.5px;color:#8e8a8b'>قد يتغيّر الجدول عند الإجازات الطارئة — يصلك تذكير قبل كل تغطية ومناوبة غير ثابتة بيوم، وصباح نفس اليوم.</div>" +
     "<a href='" + SITE_URL + "' style='display:inline-block;margin-top:10px;background:#74403B;color:#fff;text-decoration:none;padding:10px 18px;border-radius:14px;font-size:14px'>عرض الجدول المعتمد</a>" + sign + "</div>" +
     "<div style='padding:10px 18px;background:#f7f5f5;color:#8e8a8b;font-size:11.5px'>رسالة تلقائية من " + DEPT + " — لا حاجة للرد.</div></div></div>";
 }
@@ -3313,6 +3313,9 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
   </div>;
   const [settingsTab,setSettingsTab] = useState("site");
   const [mailPrevDate,setMailPrevDate] = useState(null);
+  const [mailPrevMode,setMailPrevMode] = useState("day");   // day = تذكير يوم · month = رسالة جدول الشهر
+  const [mailPrevMonth,setMailPrevMonth] = useState(null);  // "YYYY-MM"
+  const [mailOpenDoc,setMailOpenDoc] = useState(null);
   const [mailStatus,setMailStatus] = useState(null);
   const [codeShown,setCodeShown] = useState(null);
   return <div className="fade">
@@ -3535,6 +3538,14 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
         if(m.evening) ((sch.nightData[pd]||{}).doctors||[]).forEach(id=>{ const d=doctors.find(x=>x.id===id); if(d && !onLeave(d,pd,leaves,"eve") && !(d.nightDays||[]).includes(di)) (items[id]=items[id]||[]).push("🌙 عيادة مسائية"); }); /* الثابت في يومه لا يُذكَّر بالمسائي */
         if(m.coverage) (sch.coverages||[]).filter(c=>c.date===pd).forEach(c=>{ const d=doctors.find(x=>x.id===c.coverDoctorId); if(d && !onLeave(d,pd,leaves,c.period)) (items[c.coverDoctorId]=items[c.coverDoctorId]||[]).push(`🔄 تغطية عيادة د.${nm(c.absentId)} — ${c.period==="am"?"صباحاً":"ظهراً"}`); });
       }
+      const nxt = (()=>{ const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()+1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; })();
+      const pm = mailPrevMonth || nxt; const pmY=+pm.slice(0,4), pmM=+pm.slice(5,7)-1;
+      const monthItems = (()=>{ if(mailPrevMode!=="month") return []; const rows={}; const add=(id,r)=>{ (rows[id]=rows[id]||[]).push(r); };
+        monthDays(pmY,pmM).forEach(({date:ds})=>{ const wi=dayIdx(ds); if(wi<0) return;
+          if(m.evening) ((sch.nightData[ds]||{}).doctors||[]).forEach(id=>{ const d=doctors.find(x=>x.id===id); if(!d || onLeave(d,ds,leaves,"eve")) return; const fx=(d.nightDays||[]).includes(wi); add(id,{ ds, eve:true, fixed:fx, txt:"🌙 عيادة مسائية" }); });
+          if(m.coverage) (sch.coverages||[]).filter(c=>c.date===ds).sort((a,b)=>a.period<b.period?-1:1).forEach(c=>{ const d=doctors.find(x=>x.id===c.coverDoctorId); if(!d || onLeave(d,ds,leaves,c.period)) return; add(c.coverDoctorId,{ ds, eve:false, txt:`🔄 تغطية عيادة د.${nm(c.absentId)} — ${c.period==="am"?"صباحاً":"ظهراً"}` }); });
+        });
+        return Object.entries(rows).sort((a,b)=>b[1].length-a[1].length); })();
       const noMail = doctors.filter(d=>!String(d.email||"").includes("@"));
       const copyCode = () => {
         const raw = (document.getElementById("gas-code")||{}).textContent||"";
@@ -3597,8 +3608,14 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
         <div style={{ ...card(), padding:16, marginBottom:12 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
             <label style={{ ...label, flex:1, margin:0 }}>👁 معاينة الرسائل</label>
-            <input type="date" value={pd} onChange={e=>setMailPrevDate(e.target.value)} style={{ ...sIn, width:"auto" }} />
+            <div style={{ display:"flex", gap:4, background:"var(--surface2)", borderRadius:12, padding:3 }}>
+              {[["day","📅 تذكير يوم"],["month","🗓 جدول الشهر"]].map(([k,t])=><button key={k} onClick={()=>setMailPrevMode(k)} style={{ border:"none", borderRadius:9, padding:"7px 11px", cursor:"pointer", fontFamily:"inherit", fontSize:12.5, fontWeight:800, background:mailPrevMode===k?"var(--surface)":"transparent", color:mailPrevMode===k?C.primary:C.muted }}>{t}</button>)}
+            </div>
+            {mailPrevMode==="day"
+              ? <input type="date" value={pd} onChange={e=>setMailPrevDate(e.target.value)} style={{ ...sIn, width:"auto" }} />
+              : <input type="month" value={pm} onChange={e=>setMailPrevMonth(e.target.value)} style={{ ...sIn, width:"auto" }} />}
           </div>
+          {mailPrevMode==="day" ? <>
           <div style={{ fontSize:11.5, color:C.muted, margin:"4px 0 8px" }}>ما سيصل للأطباء عن يوم {DAYS[di]||""} {dmy(pd)} (يُرسل مساء اليوم السابق) — من الجدول المعتمد</div>
           {di<0 ? <div style={{ fontSize:12.5, color:C.muted }}>يوم إجازة/عطلة — لا رسائل.</div>
             : Object.keys(items).length===0 ? <div style={{ fontSize:12.5, color:C.muted }}>لا مناوبات ولا تغطيات معتمدة في هذا اليوم.</div>
@@ -3606,6 +3623,19 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
               <div style={{ minWidth:130 }}><div style={{ fontSize:13.5, fontWeight:800 }}>{d?.name}</div><div style={{ fontSize:11, color:ok?C.muted:C.err, direction:"ltr", textAlign:"right" }}>{ok?d.email:"⚠️ بلا بريد — لن تصله"}</div></div>
               <div style={{ flex:1, fontSize:13, lineHeight:1.8 }}>{ls.map((l,j)=><div key={j}>{l}</div>)}</div>
             </div>; })}
+          </> : <>
+            <div style={{ fontSize:11.5, color:C.muted, margin:"4px 0 8px" }}>رسالة «جدولك لشهر {MONTHS[pmM]} {pmY}» — تُرسل يوم {m.monthlyDay} من الشهر السابق الساعة {m.hour-12}:00 مساءً · كل المناوبات (الثابتة يُكتب بجانبها «ثابت») وكل التغطيات — من الجدول المعتمد{!m.monthly && <b style={{ color:C.err }}> · (رسالة الشهر متوقفة حالياً)</b>}</div>
+            {monthItems.length===0 ? <div style={{ fontSize:12.5, color:C.muted, lineHeight:1.8 }}>لا مناوبات متغيّرة ولا تغطيات في الجدول المعتمد لهذا الشهر — اعتمد جدول الشهر أولاً، وإلا لن تُرسل رسائل.</div>
+              : monthItems.map(([id,ls],i)=>{ const d=doctors.find(x=>x.id===+id); const ok=String(d?.email||"").includes("@"); const ev=ls.filter(r=>r.eve).length, cv=ls.length-ev; const open=mailOpenDoc===id; return <div key={id} style={{ borderRadius:12, background:i%2?"var(--rowAlt)":"var(--surface2)", marginBottom:6, overflow:"hidden" }}>
+                <div onClick={()=>setMailOpenDoc(open?null:id)} style={{ display:"flex", gap:10, alignItems:"center", padding:"10px 12px", cursor:"pointer" }}>
+                  <div style={{ flex:1, minWidth:0 }}><div style={{ fontSize:13.5, fontWeight:800 }}>{d?.name}</div><div style={{ fontSize:11, color:ok?C.muted:C.err, direction:"ltr", textAlign:"right" }}>{ok?d.email:"⚠️ بلا بريد — لن تصله"}</div></div>
+                  {ev>0 && <span style={{ fontSize:12, fontWeight:800, color:C.eve, background:"var(--eveSoft)", borderRadius:20, padding:"3px 10px" }}>🌙 {ev}</span>}
+                  {cv>0 && <span style={{ fontSize:12, fontWeight:800, color:C.primary, background:"var(--primarySoft)", borderRadius:20, padding:"3px 10px" }}>🔄 {cv}</span>}
+                  <span style={{ color:C.muted, fontSize:12 }}>{open?"▲":"▼"}</span>
+                </div>
+                {open && <div style={{ padding:"0 12px 10px" }}>{ls.map((r,j)=><div key={j} style={{ display:"flex", gap:10, fontSize:12.5, padding:"5px 0", borderTop:`1px dashed ${C.line2}` }}><b style={{ minWidth:62 }}>{DAYS[dayIdx(r.ds)]}</b><span style={{ minWidth:50, color:C.muted }}>{dmy(r.ds)}</span><span style={{ flex:1 }}>{r.txt}{r.fixed && <b style={{ marginInlineStart:6, fontSize:11, color:C.primary, background:"var(--primarySoft)", borderRadius:20, padding:"1px 8px" }}>ثابت</b>}</span></div>)}</div>}
+              </div>; })}
+          </>}
         </div>
 
         <div style={{ ...card(), padding:16, marginBottom:12 }}>
