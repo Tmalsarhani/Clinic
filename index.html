@@ -327,7 +327,8 @@ html.th-sharp .draftbar{ background:color-mix(in srgb,var(--surface) 92%,transpa
 <div id="root"><div class="loading">جارٍ التحميل…</div></div>
 <script type="text/plain" id="gas-code">
 /**
- * تذكير الأطباء بالبريد — قسم الأسنان الترميمي
+ * تذكير الأطباء بالبريد — قسم إصلاح الأسنان
+ * يُرسل تذكيرين: مساء اليوم السابق (افتراضياً ٦ مساءً) + صباح نفس اليوم (افتراضياً ٦ صباحاً).
  * يقرأ الجدول المعتمد من نفس قاعدة بيانات الموقع، ويرسل لكل طبيب تذكيراً بمناوبته المسائية وتغطياته لليوم التالي.
  * الإعدادات (التفعيل، ساعة الإرسال، المحتوى، بريد رئيس القسم) تُضبط من الموقع: الإعدادات ← 📧 تذكير البريد.
  *
@@ -338,6 +339,7 @@ var DB_URL   = "__DB_URL__";
 var API_KEY  = "__API_KEY__";
 var SITE_URL = "__SITE_URL__";
 var TZ       = "Asia/Riyadh";
+var DEPT     = "جدول قسم إصلاح الأسنان";
 
 var DAYS_AR = ["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
 var PER_AR  = { am:"الفترة الصباحية", pm:"فترة الظهر" };
@@ -349,7 +351,7 @@ function setup() {
   ScriptApp.newTrigger("hourly").timeBased().everyHours(1).create();
   var st = loadState_();
   var cfg = mailCfg_(st);
-  Logger.log("✓ تم التفعيل. الأطباء: " + (st.doctors || []).length + " — التذكير " + (cfg.enabled ? "مفعّل" : "غير مفعّل من الموقع") + " — ساعة الإرسال " + cfg.hour + ":00");
+  Logger.log("✓ تم التفعيل. الأطباء: " + (st.doctors || []).length + " — التذكير " + (cfg.enabled ? "مفعّل" : "غير مفعّل من الموقع") + " — التذكير: " + (cfg.hour-12) + ":00 مساءً قبلها بيوم" + (cfg.morning ? " + " + cfg.morningHour + ":00 صباحاً نفس اليوم" : ""));
 }
 
 /* ── يعمل كل ساعة: يرسل مرة واحدة يومياً عند الساعة المحددة في الموقع ── */
@@ -358,22 +360,26 @@ function hourly() {
   var cfg = mailCfg_(st);
   if (!cfg.enabled) return;
   var hour = Number(Utilities.formatDate(new Date(), TZ, "H"));
-  if (hour !== cfg.hour) return;
-  var target = addDays_(todayStr_(), 1);
   var props = PropertiesService.getScriptProperties();
-  if (props.getProperty("sent_" + target)) return;            // أُرسل مسبقاً لهذا اليوم
-  var res = sendFor_(st, cfg, target, false);
-  props.setProperty("sent_" + target, new Date().toISOString());
-  writeStatus_(target, res);
+  var runs = [];
+  if (hour === cfg.hour) runs.push({ when: "eve", target: addDays_(todayStr_(), 1) });               // مساء اليوم السابق
+  if (cfg.morning && hour === cfg.morningHour) runs.push({ when: "morning", target: todayStr_() });  // صباح نفس اليوم
+  runs.forEach(function (r) {
+    var key = "sent_" + r.when + "_" + r.target;
+    if (props.getProperty(key)) return;                         // أُرسل مسبقاً
+    var res = sendFor_(st, cfg, r.target, false, r.when);
+    props.setProperty(key, new Date().toISOString());
+    writeStatus_(r.target, res, r.when);
+  });
 }
 
 /* ── إرسال يدوي الآن لرسائل الغد (للأطباء فعلاً) ── */
 function sendTomorrowNow() {
   var st = loadState_(); var cfg = mailCfg_(st);
   var target = addDays_(todayStr_(), 1);
-  var res = sendFor_(st, cfg, target, false);
-  PropertiesService.getScriptProperties().setProperty("sent_" + target, new Date().toISOString());
-  writeStatus_(target, res);
+  var res = sendFor_(st, cfg, target, false, "eve");
+  PropertiesService.getScriptProperties().setProperty("sent_eve_" + target, new Date().toISOString());
+  writeStatus_(target, res, "eve");
   Logger.log(JSON.stringify(res));
 }
 
@@ -381,12 +387,13 @@ function sendTomorrowNow() {
 function sendTestToMe() {
   var st = loadState_(); var cfg = mailCfg_(st);
   var target = addDays_(todayStr_(), 1);
-  var res = sendFor_(st, cfg, target, true);
+  var res = sendFor_(st, cfg, target, true, "eve");
   Logger.log(JSON.stringify(res));
 }
 
 /* ═════════════════ المنطق ═════════════════ */
-function sendFor_(st, cfg, target, testOnly) {
+function sendFor_(st, cfg, target, testOnly, when) {
+  when = when || "eve"; var dayWord = when === "morning" ? "اليوم" : "غداً";
   var holidays = holidayMap_(st.holidays || []);
   var di = new Date(target + "T00:00:00Z").getUTCDay();
   var out = { date: target, sent: [], noEmail: [], skipped: "" };
@@ -411,33 +418,35 @@ function sendFor_(st, cfg, target, testOnly) {
   Object.keys(items).forEach(function (k) {
     var d = byId[k]; if (!d) return;
     var email = String(d.email || "").trim();
-    var html = mailHtml_(nm(d.id), dateAr, items[k]);
-    var subject = "تذكير: " + (items[k].length > 1 ? "مهامك" : (items[k][0].indexOf("مسائية") > -1 ? "عيادتك المسائية" : "تغطية عيادة")) + " يوم " + dateAr;
+    var html = mailHtml_(nm(d.id), dateAr, items[k], dayWord, cfg);
+    var subject = "تذكير" + (when === "morning" ? " اليوم" : "") + ": " + (items[k].length > 1 ? "مهامك" : (items[k][0].indexOf("مسائية") > -1 ? "عيادتك المسائية" : "تغطية عيادة")) + " — " + dateAr;
     if (!email || email.indexOf("@") < 0) { out.noEmail.push(nm(d.id)); preview.push("<li>⚠️ د." + nm(d.id) + " — <b>بلا بريد</b>: " + items[k].join(" · ") + "</li>"); return; }
-    if (!testOnly) MailApp.sendEmail({ to: email, subject: subject, htmlBody: html, name: "جدول قسم الترميمي" });
+    if (!testOnly) MailApp.sendEmail({ to: email, subject: subject, htmlBody: html, name: DEPT });
     out.sent.push(nm(d.id));
     preview.push("<li>د." + nm(d.id) + " &lt;" + email + "&gt;: " + items[k].join(" · ") + "</li>");
   });
 
   var head = String(cfg.headEmail || "").trim() || Session.getEffectiveUser().getEmail();
-  if (testOnly || (cfg.summary && head)) {
+  if (testOnly || (cfg.summary && head && when === "eve")) {   // ملخص رئيس القسم مرة واحدة (مع تذكير المساء)
     var body = "<div dir='rtl' style='font-family:Tahoma,Arial;font-size:14px;line-height:1.9'>" +
       "<h3 style='margin:0 0 8px'>" + (testOnly ? "🧪 معاينة (لم يُرسل شيء للأطباء)" : "📋 ملخص التذكيرات المرسلة") + " — " + dateAr + "</h3>" +
       (preview.length ? "<ul>" + preview.join("") + "</ul>" : "<p>لا مناوبات ولا تغطيات في هذا اليوم.</p>") +
       "<p style='color:#64748b;font-size:12px'>متبقٍ من حصة البريد اليوم: " + MailApp.getRemainingDailyQuota() + "</p></div>";
-    MailApp.sendEmail({ to: head, subject: (testOnly ? "🧪 معاينة تذكيرات " : "📋 ملخص تذكيرات ") + dateAr, htmlBody: body, name: "جدول قسم الترميمي" });
+    MailApp.sendEmail({ to: head, subject: (testOnly ? "🧪 معاينة تذكيرات " : "📋 ملخص تذكيرات ") + dateAr, htmlBody: body, name: DEPT });
   }
   return out;
 }
 
-function mailHtml_(name, dateAr, lines) {
-  return "<div dir='rtl' style='font-family:Tahoma,Arial;background:#f1f5f9;padding:18px'>" +
-    "<div style='max-width:520px;margin:auto;background:#fff;border-radius:14px;overflow:hidden;border:1px solid #e2e8f0'>" +
-    "<div style='background:linear-gradient(135deg,#0f766e,#6366f1);color:#fff;padding:16px 18px'><div style='font-size:17px;font-weight:bold'>تذكير بجدول الغد</div><div style='font-size:13px;opacity:.9'>" + dateAr + "</div></div>" +
-    "<div style='padding:16px 18px;font-size:15px;line-height:2;color:#0f172a'>د." + name + "،<br>لديك غداً:<ul style='margin:6px 0;padding-inline-start:18px'>" +
+function mailHtml_(name, dateAr, lines, dayWord, cfg) {
+  dayWord = dayWord || "غداً"; cfg = cfg || {};
+  var sign = (cfg.signTitle || cfg.signName) ? "<div style='margin-top:16px;padding-top:12px;border-top:1px solid #eee5e4;font-size:14px;line-height:1.8'>" + (cfg.signTitle ? cfg.signTitle + " :<br>" : "") + "<b>" + (cfg.signName || "") + "</b></div>" : "";
+  return "<div dir='rtl' style='font-family:Tahoma,Arial;background:#f5f5f6;padding:18px'>" +
+    "<div style='max-width:520px;margin:auto;background:#fff;border-radius:20px;overflow:hidden;border:1.5px solid #e0dcdc'>" +
+    "<div style='background:#74403B;color:#fff;padding:16px 18px'><div style='font-size:12px;opacity:.85;margin-bottom:2px'>" + DEPT + "</div><div style='font-size:17px;font-weight:bold'>تذكير بجدول " + (dayWord === "اليوم" ? "اليوم" : "الغد") + "</div><div style='font-size:13px;opacity:.9'>" + dateAr + "</div></div>" +
+    "<div style='padding:16px 18px;font-size:15px;line-height:2;color:#161515'>د." + name + "،<br>لديك " + dayWord + ":<ul style='margin:6px 0;padding-inline-start:18px'>" +
     lines.map(function (l) { return "<li>" + l + "</li>"; }).join("") + "</ul>" +
-    "<a href='" + SITE_URL + "' style='display:inline-block;margin-top:8px;background:#0f766e;color:#fff;text-decoration:none;padding:9px 16px;border-radius:10px;font-size:14px'>عرض الجدول المعتمد</a></div>" +
-    "<div style='padding:10px 18px;background:#f8fafc;color:#94a3b8;font-size:11.5px'>رسالة تلقائية من جدول قسم الأسنان الترميمي — لا حاجة للرد.</div></div></div>";
+    "<a href='" + SITE_URL + "' style='display:inline-block;margin-top:8px;background:#74403B;color:#fff;text-decoration:none;padding:10px 18px;border-radius:14px;font-size:14px'>عرض الجدول المعتمد</a>" + sign + "</div>" +
+    "<div style='padding:10px 18px;background:#f7f5f5;color:#8e8a8b;font-size:11.5px'>رسالة تلقائية من " + DEPT + " — لا حاجة للرد.</div></div></div>";
 }
 
 /* ═════════════════ قاعدة البيانات ═════════════════ */
@@ -457,15 +466,17 @@ function loadState_() {
   if (r.getResponseCode() !== 200) throw new Error("تعذّر قراءة الجدول: " + r.getContentText());
   return JSON.parse(r.getContentText()) || {};
 }
-function writeStatus_(target, res) {
+function writeStatus_(target, res, when) {
   try {
     UrlFetchApp.fetch(DB_URL + "/mailStatus.json?auth=" + encodeURIComponent(token_()), { method: "put", contentType: "application/json", muteHttpExceptions: true,
-      payload: JSON.stringify({ lastRun: new Date().toISOString(), date: target, sent: res.sent, noEmail: res.noEmail, skipped: res.skipped || "" }) });
+      payload: JSON.stringify({ lastRun: new Date().toISOString(), date: target, when: when || "eve", sent: res.sent, noEmail: res.noEmail, skipped: res.skipped || "" }) });
   } catch (e) {}
 }
 function mailCfg_(st) {
   var m = (st.settings && st.settings.mail) || {};
-  return { enabled: !!m.enabled, hour: (m.hour == null ? 18 : Number(m.hour)), evening: m.evening !== false, coverage: m.coverage !== false, summary: m.summary !== false, headEmail: m.headEmail || "" };
+  return { enabled: !!m.enabled, hour: (m.hour == null ? 18 : Number(m.hour)), morning: m.morning !== false, morningHour: (m.morningHour == null ? 6 : Number(m.morningHour)),
+    evening: m.evening !== false, coverage: m.coverage !== false, summary: m.summary !== false, headEmail: m.headEmail || "",
+    signTitle: m.signTitle == null ? "رئيسة القسم" : m.signTitle, signName: m.signName == null ? "د. أمل العسكر" : m.signName };
 }
 function holidayMap_(list) {
   var m = {};
@@ -3422,7 +3433,7 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
     </div>
     </>}
     {settingsTab==="mail" && (()=>{
-      const m = { enabled:false, hour:18, evening:true, coverage:true, summary:true, headEmail:"", ...(s.mail||{}) };
+      const m = { enabled:false, hour:18, morning:true, morningHour:6, evening:true, coverage:true, summary:true, headEmail:"", signTitle:"رئيسة القسم", signName:"د. أمل العسكر", ...(s.mail||{}) };
       const setM = (k,v) => setSettings(p=>({ ...p, mail:{ ...m, ...(p.mail||{}), [k]:v } }));
       const tmr = (()=>{ const d=new Date(); d.setDate(d.getDate()+1); return d.toISOString().split("T")[0]; })();
       const pd = mailPrevDate || tmr;
@@ -3449,18 +3460,28 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
       return <>
         <div style={{ ...card(), padding:16, marginBottom:12 }}>
           <label style={label}>📧 تذكير الأطباء بالبريد</label>
-          <div style={{ fontSize:12, color:C.sub, lineHeight:1.8 }}>كل يوم في الساعة المحددة يصل لكل طبيب بريد بمهامه في <b>اليوم التالي</b> من الجدول <b>المعتمد</b>: عيادته المسائية وتغطياته (عيادة من، وأي فترة). أيام الجمعة والسبت والعطل الرسمية لا تُرسل لها رسائل.</div>
+          <div style={{ fontSize:12, color:C.sub, lineHeight:1.8 }}>يصل لكل طبيب تذكيران بمهامه من الجدول <b>المعتمد</b>: مساء اليوم السابق، وصباح نفس اليوم: عيادته المسائية وتغطياته (عيادة من، وأي فترة). أيام الجمعة والسبت والعطل الرسمية لا تُرسل لها رسائل.</div>
           <div style={row}>
             <span style={{ flex:1, fontSize:14, fontWeight:800, color:m.enabled?C.ok:C.text }}>{m.enabled?"✓ التذكير مفعّل":"التذكير متوقف"}</span>
             <button onClick={()=>setM("enabled",!m.enabled)} aria-label="تفعيل التذكير" style={{ width:50, height:28, borderRadius:20, border:"none", background:m.enabled?C.ok:"var(--line)", position:"relative", cursor:"pointer", flexShrink:0 }}><span style={{ position:"absolute", top:3, insetInlineStart:m.enabled?25:3, width:22, height:22, borderRadius:"50%", background:"#fff", boxShadow:"0 1px 3px rgba(0,0,0,.25)", transition:"inset-inline-start .2s" }} /></button>
           </div>
           <div style={row}>
-            <span style={{ flex:1, fontSize:13.5, fontWeight:600 }}>⏰ وقت الإرسال (اليوم السابق)</span>
-            <select value={m.hour} onChange={e=>setM("hour",+e.target.value)} style={{ ...sIn, width:"auto" }}>{Array.from({length:17},(_,i)=>i+6).map(h=><option key={h} value={h}>{h>12?`${h-12}:00 مساءً`:h===12?"12:00 ظهراً":`${h}:00 صباحاً`}</option>)}</select>
+            <span style={{ flex:1, fontSize:13.5, fontWeight:600 }}>🌙 التذكير الأول — مساء اليوم السابق</span>
+            <select value={m.hour} onChange={e=>setM("hour",+e.target.value)} style={{ ...sIn, width:"auto" }}>{Array.from({length:10},(_,i)=>i+14).map(h=><option key={h} value={h}>{`${h-12}:00 مساءً`}</option>)}</select>
+          </div>
+          <div style={row}>
+            <input type="checkbox" checked={!!m.morning} onChange={e=>setM("morning",e.target.checked)} style={{ width:18, height:18 }} />
+            <span style={{ flex:1, fontSize:13.5, fontWeight:600 }}>☀️ التذكير الثاني — صباح نفس اليوم</span>
+            <select disabled={!m.morning} value={m.morningHour} onChange={e=>setM("morningHour",+e.target.value)} style={{ ...sIn, width:"auto", opacity:m.morning?1:.5 }}>{[5,6,7,8].map(h=><option key={h} value={h}>{`${h}:00 صباحاً`}</option>)}</select>
           </div>
           {chk("evening","🌙 تذكير بالعيادة المسائية")}
           {chk("coverage","🔄 تذكير بالتغطيات")}
           {chk("summary","📋 ملخص يومي لرئيس القسم بكل ما أُرسل")}
+          <div style={{ ...row, flexWrap:"wrap" }}>
+            <span style={{ fontSize:13.5, fontWeight:600, minWidth:120 }}>✍️ التوقيع آخر البريد</span>
+            <input value={m.signTitle} onChange={e=>setM("signTitle",e.target.value)} placeholder="رئيسة القسم" style={{ ...sIn, flex:"1 1 130px", width:"auto" }} />
+            <input value={m.signName} onChange={e=>setM("signName",e.target.value)} placeholder="د. أمل العسكر" style={{ ...sIn, flex:"1 1 160px", width:"auto" }} />
+          </div>
           {m.summary && <input type="email" value={m.headEmail} onChange={e=>setM("headEmail",e.target.value.trim())} placeholder="بريد رئيس القسم للملخص (اختياري — الافتراضي حساب Google الذي شغّل الكود)" style={{ ...sIn, marginTop:8, direction:"ltr" }} />}
         </div>
 
@@ -3511,7 +3532,7 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
           </div>
           {mailStatus && <div style={{ marginTop:10, fontSize:12.5, padding:"9px 11px", borderRadius:11, background:"var(--surface2)", lineHeight:1.8 }}>
             {mailStatus==="none" ? "لم يُسجَّل أي تشغيل بعد — تأكد من خطوة setup." : <>
-              آخر تشغيل: <b>{new Date(mailStatus.lastRun).toLocaleString("ar",{dateStyle:"medium",timeStyle:"short"})}</b> عن يوم <b>{dmy(mailStatus.date)}</b><br/>
+              آخر تشغيل: <b>{new Date(mailStatus.lastRun).toLocaleString("ar",{dateStyle:"medium",timeStyle:"short"})}</b> — {mailStatus.when==="morning"?"تذكير الصباح":"تذكير المساء"} عن يوم <b>{dmy(mailStatus.date)}</b><br/>
               {mailStatus.skipped ? `لم يُرسل: ${mailStatus.skipped}` : <>وصل إلى: {(mailStatus.sent||[]).map(n=>"د."+n).join("، ")||"—"}</>}
               {(mailStatus.noEmail||[]).length>0 && <div style={{ color:C.err }}>بلا بريد: {mailStatus.noEmail.map(n=>"د."+n).join("، ")}</div>}
             </>}
