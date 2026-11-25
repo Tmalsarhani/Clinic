@@ -245,6 +245,13 @@ html[data-theme="dark"] .tog{ background:var(--primary); } html[data-theme="dark
 .callegend span{ display:inline-flex; align-items:center; gap:6px; }
 .callegend i{ width:12px; height:12px; border-radius:4px; }
 @media(max-width:920px){ .cal-wrap{ grid-template-columns:1fr; } .cpool{ position:static; } }
+@media(max-width:760px){ /* الجوال: التقويم يلتزم بعرض الشاشة بدل أن يوسّع الصفحة أفقياً */
+  .cal-grid2{ grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; }
+  .cal-grid2 .cell{ min-width:0; padding:6px; min-height:110px; }
+  .cal-grid2 .cell *{ min-width:0; }
+  .cchip{ white-space:normal; word-break:normal; overflow-wrap:break-word; flex-wrap:wrap; justify-content:space-between; row-gap:0; font-size:11px; line-height:1.35; padding:4px 6px; }
+  .cchip .d{ display:none; }
+}
 
   .bigpick select{ font-size:15px !important; padding:11px 12px !important; }
   /* ── حجم خط الموقع كاملاً (A− / A+) ── */
@@ -255,10 +262,220 @@ html[data-theme="dark"] .tog{ background:var(--primary); } html[data-theme="dark
   .zbtn{ display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--surface); flex-shrink:0; }
   .zbtn button{ border:none; background:none; color:var(--text); font-weight:800; padding:7px 10px; cursor:pointer; font-family:inherit; line-height:1; }
   .zbtn span{ font-size:11px; color:var(--muted); min-width:34px; text-align:center; }
+  @media(max-width:760px){ .zbtn{ display:none !important; } } /* الجوال: الشريط العلوي ضيق — التكبير متاح باللمس */
+
+/* ═══════════ ثيم «عنابي» — مستوحى من SHARP 1997: خلفية فاتحة منقّطة، عنابي واحد، حدود ناعمة، زوايا كبيرة، بلا تدرّجات ═══════════ */
+html.th-sharp{
+  --primary:#74403B; --primary-d:#5C302C; --accent:#8C4E47; --eve:#5E5A8C;
+  --bg:#F5F5F6; --surface:#FFFFFF; --surface2:#F7F5F5; --hover:#F2ECEB; --card:#FFFFFF;
+  --line:#E0DCDC; --line2:#ECE8E8; --ink:#161515; --text:#262424; --sub:#5F5B5C; --muted:#8E8A8B;
+  --primarySoft:#F1E6E5; --eveSoft:#ECEBF4; --okSoft:#E9F4EC; --warnSoft:#FAF1E2; --dangerSoft:#FBEAEA;
+  --rowAlt:#F7F0EF; --ok:#2F7D4F;
+  --shadow:none; --shadowH:0 6px 18px rgba(40,20,18,.07);
+  --dot:#D9D6D6;
+}
+html.th-sharp[data-theme="dark"]{
+  --primary:#C98A82; --primary-d:#B57870; --accent:#D9A39C; --eve:#A5A0D6;
+  --bg:#121011; --surface:#1B1819; --surface2:#221E1F; --hover:#2A2526; --card:#1B1819;
+  --line:#352E2F; --line2:#2A2425; --ink:#F3EEED; --text:#DDD5D4; --sub:#A89E9D; --muted:#7F7676;
+  --primarySoft:rgba(201,138,130,.16); --eveSoft:rgba(165,160,214,.16); --okSoft:rgba(77,170,110,.16); --warnSoft:rgba(224,152,43,.16); --dangerSoft:rgba(229,72,77,.16);
+  --rowAlt:#241F20; --ok:#5DBB83; --dot:#2A2425;
+}
+html.th-sharp body{
+  background-color:var(--bg);
+  background-image:radial-gradient(var(--dot) 1.15px, transparent 1.4px);
+  background-size:26px 26px; background-attachment:fixed;
+  color:var(--text); letter-spacing:0;
+}
+html.th-sharp ::selection{ background:rgba(116,64,59,.18); }
+html.th-sharp input:focus, html.th-sharp select:focus, html.th-sharp textarea:focus{ border-color:var(--primary)!important; box-shadow:0 0 0 4px var(--primarySoft)!important; }
+html.th-sharp ::-webkit-scrollbar-thumb{ background:#cfc8c8; }
+
+/* الشريط الجانبي والعلوي: سطح أبيض/زجاجي بحد رفيع — مثل رأس SHARP */
+html.th-sharp .sidebar{ background:color-mix(in srgb,var(--surface) 92%,transparent); backdrop-filter:blur(12px); }
+html.th-sharp .brand .logo{ background:var(--primary); box-shadow:none; border-radius:14px; }
+html.th-sharp .uchip .av{ background:var(--primary); }
+html.th-sharp .navlink{ border-radius:14px; font-weight:600; }
+html.th-sharp .navlink.active{ background:var(--primarySoft); color:var(--primary); font-weight:700; }
+html.th-sharp .navlink.active::before{ background:var(--primary); }
+html.th-sharp .topbar{ background:color-mix(in srgb,var(--bg) 82%,transparent); backdrop-filter:blur(16px); box-shadow:none; }
+html.th-sharp .topbar h1{ font-weight:700; color:var(--ink); }
+html.th-sharp .icobtn, html.th-sharp .zbtn{ border-radius:16px; border:1.5px solid var(--line); background:color-mix(in srgb,var(--surface) 70%,transparent); }
+html.th-sharp .qchip{ border-radius:999px; background:var(--surface); border:1.5px solid var(--line); }
+
+/* البطاقات: بيضاء، حد ١.٥px، زوايا ٢٢، بلا ظل */
+html.th-sharp .card, html.th-sharp .cpool{ border:1.5px solid var(--line); border-radius:22px; box-shadow:none; }
+html.th-sharp .stat:hover{ transform:none; border-color:color-mix(in srgb,var(--primary) 35%,var(--line)); box-shadow:none; }
+html.th-sharp .stat .num{ color:var(--primary); }
+html.th-sharp .fill{ background:var(--primary); }
+html.th-sharp .tag{ border-radius:999px; }
+
+/* التقويم */
+html.th-sharp .cell{ background:var(--surface); border:1.5px solid var(--line); border-radius:18px; }
+html.th-sharp .cell:hover{ border-color:var(--primary); box-shadow:none; }
+html.th-sharp .cell.ok{ background:var(--okSoft); } html.th-sharp .cell.warn{ background:var(--warnSoft); } html.th-sharp .cell.bad{ background:var(--dangerSoft); }
+html.th-sharp .cell .dn{ background:var(--primarySoft); color:var(--primary); border-radius:999px; }
+html.th-sharp .cchip{ border-radius:12px; box-shadow:none; border:1.5px solid var(--line); }
+html.th-sharp .pchip{ border-radius:14px; }
+
+/* الأزرار والحقول (تكمّل الأنماط المضمّنة) */
+html.th-sharp .tog{ border-radius:999px; }
+html.th-sharp .draftbar{ background:color-mix(in srgb,var(--surface) 92%,transparent); backdrop-filter:blur(14px); box-shadow:0 -1px 0 var(--line); }
 </style>
 </head>
 <body>
 <div id="root"><div class="loading">جارٍ التحميل…</div></div>
+<script type="text/plain" id="gas-code">
+/**
+ * تذكير الأطباء بالبريد — قسم الأسنان الترميمي
+ * يقرأ الجدول المعتمد من نفس قاعدة بيانات الموقع، ويرسل لكل طبيب تذكيراً بمناوبته المسائية وتغطياته لليوم التالي.
+ * الإعدادات (التفعيل، ساعة الإرسال، المحتوى، بريد رئيس القسم) تُضبط من الموقع: الإعدادات ← 📧 تذكير البريد.
+ *
+ * التشغيل لأول مرة: اختر الدالة  setup  من القائمة بالأعلى ثم اضغط ▶ تشغيل، ووافق على الصلاحيات.
+ * تجربة فورية: اختر الدالة  sendTestToMe  ثم ▶ تشغيل (يرسل لك معاينة رسائل الغد بدون إرسال للأطباء).
+ */
+var DB_URL   = "__DB_URL__";
+var API_KEY  = "__API_KEY__";
+var SITE_URL = "__SITE_URL__";
+var TZ       = "Asia/Riyadh";
+
+var DAYS_AR = ["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
+var PER_AR  = { am:"الفترة الصباحية", pm:"فترة الظهر" };
+var WHY_AR  = { evening:"بسبب مناوبته المسائية", post_evening:"راحة بعد المسائي", leave:"إجازة", absence:"غياب" };
+
+/* ── التشغيل الأول: ينشئ مؤقّتاً كل ساعة ── */
+function setup() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === "hourly") ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger("hourly").timeBased().everyHours(1).create();
+  var st = loadState_();
+  var cfg = mailCfg_(st);
+  Logger.log("✓ تم التفعيل. الأطباء: " + (st.doctors || []).length + " — التذكير " + (cfg.enabled ? "مفعّل" : "غير مفعّل من الموقع") + " — ساعة الإرسال " + cfg.hour + ":00");
+}
+
+/* ── يعمل كل ساعة: يرسل مرة واحدة يومياً عند الساعة المحددة في الموقع ── */
+function hourly() {
+  var st = loadState_();
+  var cfg = mailCfg_(st);
+  if (!cfg.enabled) return;
+  var hour = Number(Utilities.formatDate(new Date(), TZ, "H"));
+  if (hour !== cfg.hour) return;
+  var target = addDays_(todayStr_(), 1);
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty("sent_" + target)) return;            // أُرسل مسبقاً لهذا اليوم
+  var res = sendFor_(st, cfg, target, false);
+  props.setProperty("sent_" + target, new Date().toISOString());
+  writeStatus_(target, res);
+}
+
+/* ── إرسال يدوي الآن لرسائل الغد (للأطباء فعلاً) ── */
+function sendTomorrowNow() {
+  var st = loadState_(); var cfg = mailCfg_(st);
+  var target = addDays_(todayStr_(), 1);
+  var res = sendFor_(st, cfg, target, false);
+  PropertiesService.getScriptProperties().setProperty("sent_" + target, new Date().toISOString());
+  writeStatus_(target, res);
+  Logger.log(JSON.stringify(res));
+}
+
+/* ── تجربة: يرسل لك أنت فقط معاينة كل رسائل الغد ── */
+function sendTestToMe() {
+  var st = loadState_(); var cfg = mailCfg_(st);
+  var target = addDays_(todayStr_(), 1);
+  var res = sendFor_(st, cfg, target, true);
+  Logger.log(JSON.stringify(res));
+}
+
+/* ═════════════════ المنطق ═════════════════ */
+function sendFor_(st, cfg, target, testOnly) {
+  var holidays = holidayMap_(st.holidays || []);
+  var di = new Date(target + "T00:00:00Z").getUTCDay();
+  var out = { date: target, sent: [], noEmail: [], skipped: "" };
+  if (di >= 5 || holidays[target]) { out.skipped = "ليس يوم عمل"; return out; }
+
+  var sched = (st.official && st.official.nightData) ? st.official : { nightData: st.nightData || {}, coverages: st.coverages || [] };
+  var nd = sched.nightData || {}, cov = sched.coverages || [];
+  var docs = st.doctors || [], leaves = st.leaves || [];
+  var byId = {}; docs.forEach(function (d) { byId[d.id] = d; });
+  var onLeave = function (id, per) { return leaves.some(function (l) { return l.doctorId === id && l.start <= target && target <= l.end && (!l.period || l.period === per || (l.period === "pm" && per === "eve")); }); };
+  var nm = function (id) { return byId[id] ? String(byId[id].name).replace(/^د\.\s*/, "") : "؟"; };
+
+  var items = {}; // id -> [lines]
+  var add = function (id, line) { (items[id] = items[id] || []).push(line); };
+  if (cfg.evening) ((nd[target] || {}).doctors || []).forEach(function (id) { if (!onLeave(id, "eve")) add(id, "🌙 <b>عيادة مسائية</b>"); });
+  if (cfg.coverage) cov.filter(function (c) { return c.date === target; })
+    .sort(function (a, b) { return a.period < b.period ? -1 : 1; })
+    .forEach(function (c) { if (!onLeave(c.coverDoctorId, c.period)) add(c.coverDoctorId, "🔄 <b>تغطية عيادة د." + nm(c.absentId) + "</b> — " + (PER_AR[c.period] || c.period) + (WHY_AR[c.reason] ? " <span style='color:#64748b'>(" + WHY_AR[c.reason] + ")</span>" : "")); });
+
+  var dateAr = DAYS_AR[di] + " " + target.split("-").reverse().join("/");
+  var preview = [];
+  Object.keys(items).forEach(function (k) {
+    var d = byId[k]; if (!d) return;
+    var email = String(d.email || "").trim();
+    var html = mailHtml_(nm(d.id), dateAr, items[k]);
+    var subject = "تذكير: " + (items[k].length > 1 ? "مهامك" : (items[k][0].indexOf("مسائية") > -1 ? "عيادتك المسائية" : "تغطية عيادة")) + " يوم " + dateAr;
+    if (!email || email.indexOf("@") < 0) { out.noEmail.push(nm(d.id)); preview.push("<li>⚠️ د." + nm(d.id) + " — <b>بلا بريد</b>: " + items[k].join(" · ") + "</li>"); return; }
+    if (!testOnly) MailApp.sendEmail({ to: email, subject: subject, htmlBody: html, name: "جدول قسم الترميمي" });
+    out.sent.push(nm(d.id));
+    preview.push("<li>د." + nm(d.id) + " &lt;" + email + "&gt;: " + items[k].join(" · ") + "</li>");
+  });
+
+  var head = String(cfg.headEmail || "").trim() || Session.getEffectiveUser().getEmail();
+  if (testOnly || (cfg.summary && head)) {
+    var body = "<div dir='rtl' style='font-family:Tahoma,Arial;font-size:14px;line-height:1.9'>" +
+      "<h3 style='margin:0 0 8px'>" + (testOnly ? "🧪 معاينة (لم يُرسل شيء للأطباء)" : "📋 ملخص التذكيرات المرسلة") + " — " + dateAr + "</h3>" +
+      (preview.length ? "<ul>" + preview.join("") + "</ul>" : "<p>لا مناوبات ولا تغطيات في هذا اليوم.</p>") +
+      "<p style='color:#64748b;font-size:12px'>متبقٍ من حصة البريد اليوم: " + MailApp.getRemainingDailyQuota() + "</p></div>";
+    MailApp.sendEmail({ to: head, subject: (testOnly ? "🧪 معاينة تذكيرات " : "📋 ملخص تذكيرات ") + dateAr, htmlBody: body, name: "جدول قسم الترميمي" });
+  }
+  return out;
+}
+
+function mailHtml_(name, dateAr, lines) {
+  return "<div dir='rtl' style='font-family:Tahoma,Arial;background:#f1f5f9;padding:18px'>" +
+    "<div style='max-width:520px;margin:auto;background:#fff;border-radius:14px;overflow:hidden;border:1px solid #e2e8f0'>" +
+    "<div style='background:linear-gradient(135deg,#0f766e,#6366f1);color:#fff;padding:16px 18px'><div style='font-size:17px;font-weight:bold'>تذكير بجدول الغد</div><div style='font-size:13px;opacity:.9'>" + dateAr + "</div></div>" +
+    "<div style='padding:16px 18px;font-size:15px;line-height:2;color:#0f172a'>د." + name + "،<br>لديك غداً:<ul style='margin:6px 0;padding-inline-start:18px'>" +
+    lines.map(function (l) { return "<li>" + l + "</li>"; }).join("") + "</ul>" +
+    "<a href='" + SITE_URL + "' style='display:inline-block;margin-top:8px;background:#0f766e;color:#fff;text-decoration:none;padding:9px 16px;border-radius:10px;font-size:14px'>عرض الجدول المعتمد</a></div>" +
+    "<div style='padding:10px 18px;background:#f8fafc;color:#94a3b8;font-size:11.5px'>رسالة تلقائية من جدول قسم الأسنان الترميمي — لا حاجة للرد.</div></div></div>";
+}
+
+/* ═════════════════ قاعدة البيانات ═════════════════ */
+function token_() {
+  var props = PropertiesService.getScriptProperties();
+  var rt = props.getProperty("refreshToken");
+  if (rt) {
+    var r = UrlFetchApp.fetch("https://securetoken.googleapis.com/v1/token?key=" + API_KEY, { method: "post", payload: { grant_type: "refresh_token", refresh_token: rt }, muteHttpExceptions: true });
+    if (r.getResponseCode() === 200) { var j = JSON.parse(r.getContentText()); props.setProperty("refreshToken", j.refresh_token); return j.id_token; }
+  }
+  var r2 = UrlFetchApp.fetch("https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=" + API_KEY, { method: "post", contentType: "application/json", payload: JSON.stringify({ returnSecureToken: true }), muteHttpExceptions: true });
+  if (r2.getResponseCode() !== 200) throw new Error("تعذّر الدخول لقاعدة البيانات: " + r2.getContentText());
+  var j2 = JSON.parse(r2.getContentText()); props.setProperty("refreshToken", j2.refreshToken); return j2.idToken;
+}
+function loadState_() {
+  var r = UrlFetchApp.fetch(DB_URL + "/app/state.json?auth=" + encodeURIComponent(token_()), { muteHttpExceptions: true });
+  if (r.getResponseCode() !== 200) throw new Error("تعذّر قراءة الجدول: " + r.getContentText());
+  return JSON.parse(r.getContentText()) || {};
+}
+function writeStatus_(target, res) {
+  try {
+    UrlFetchApp.fetch(DB_URL + "/mailStatus.json?auth=" + encodeURIComponent(token_()), { method: "put", contentType: "application/json", muteHttpExceptions: true,
+      payload: JSON.stringify({ lastRun: new Date().toISOString(), date: target, sent: res.sent, noEmail: res.noEmail, skipped: res.skipped || "" }) });
+  } catch (e) {}
+}
+function mailCfg_(st) {
+  var m = (st.settings && st.settings.mail) || {};
+  return { enabled: !!m.enabled, hour: (m.hour == null ? 18 : Number(m.hour)), evening: m.evening !== false, coverage: m.coverage !== false, summary: m.summary !== false, headEmail: m.headEmail || "" };
+}
+function holidayMap_(list) {
+  var m = {};
+  list.forEach(function (h) { if (!h.start) return; var d = h.start, end = h.end || h.start, g = 0; while (d <= end && g++ < 400) { m[d] = 1; d = addDays_(d, 1); } });
+  return m;
+}
+function todayStr_() { return Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd"); }
+function addDays_(ds, n) { var d = new Date(ds + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+
+</script>
 <script type="text/babel" data-presets="react">
 const { useState, useMemo } = React;
 
@@ -343,9 +560,12 @@ const wSlots   = doc => {
   count += eveDays * 2;
   return count;
 };
-const onLeave  = (doc, date, leaves) => !date||!doc ? false : leaves.some(l=>l.doctorId===doc.id&&l.start<=date&&date<=l.end);
+// إجازة/استئذان جزئي: l.period = "am" (الصباح فقط) أو "pm" (الظهر فقط — ويشمل المسائي لأنه غادر) أو بلا قيمة = يوم كامل.
+// period المطلوب: "am" | "pm" | "eve" (المسائي) | بلا قيمة = سؤال "غائب اليوم كاملاً؟" (لا يطابق الاستئذان الجزئي)
+const leaveHits = (l, period) => !l.period || (!!period && (l.period===period || (l.period==="pm" && period==="eve")));
+const onLeave  = (doc, date, leaves, period) => !date||!doc ? false : (leaves||[]).some(l=>l.doctorId===doc.id&&l.start<=date&&date<=l.end&&leaveHits(l,period));
 // True if doctor is on a leave that CLOSES the clinic on that date (no coverage needed)
-const clinicClosedOnLeave = (doc, date, leaves) => !date||!doc ? false : (leaves||[]).some(l=>l.doctorId===doc.id && l.start<=date && date<=l.end && l.clinicClosed!==false);
+const clinicClosedOnLeave = (doc, date, leaves, period) => !date||!doc ? false : (leaves||[]).some(l=>l.doctorId===doc.id && l.start<=date && date<=l.end && l.clinicClosed!==false && leaveHits(l,period));
 
 let HOLIDAYS = {};
 const isHoliday = ds => !!(HOLIDAYS && HOLIDAYS[ds]);
@@ -409,7 +629,7 @@ function getAvailable(doctors, excludeIds, di, date, period, leaves, nightData, 
   return doctors
     .filter(d => !allExclude.includes(d.id))
     .map(d => {
-      if (onLeave(d, date, leaves)) return { doc: d, status: "leave" };
+      if (onLeave(d, date, leaves, period)) return { doc: d, status: "leave" };
       const slot = getSlot(d, di, period);
       if (slot === "") return { doc: d, status: "free" };
       if (["admin","training","committee"].includes(slot)) return { doc: d, status: "warn", conflict: slot };
@@ -432,7 +652,7 @@ function autoFill(year, month, doctors, leaves, nightData) {
   Object.keys(result).forEach(date => {
     const nd = result[date];
     if (!nd?.doctors?.length) return;
-    const kept = nd.doctors.filter(id => { const d = fd(id); return d && !onLeave(d, date, leaves); });
+    const kept = nd.doctors.filter(id => { const d = fd(id); return d && !onLeave(d, date, leaves, "eve"); });
     result[date] = { ...nd, doctors: kept };
   });
 
@@ -449,7 +669,7 @@ function autoFill(year, month, doctors, leaves, nightData) {
     const need = result[date]?.eveningSlots || 1;
 
     // Fixed doctors for this weekday take priority for their slot, but never exceed the day's need
-    const fixedDocs = fixed.filter(d => d.nightDays.includes(di) && !onLeave(d, date, leaves) && !(d.blockedDays||[]).includes(di));
+    const fixedDocs = fixed.filter(d => d.nightDays.includes(di) && !onLeave(d, date, leaves, "eve") && !(d.blockedDays||[]).includes(di));
     let chosen = [...new Set([...fixedDocs.map(d=>d.id), ...existing])];
     if (chosen.length > need) chosen = chosen.slice(0, need); // don't add beyond the remaining/needed slots
 
@@ -460,7 +680,7 @@ function autoFill(year, month, doctors, leaves, nightData) {
     const workedYesterday = d => (result[prevWork]?.doctors||[]).includes(d.id);
 
     while (chosen.length < need) {
-      const avail = rotate.filter(d => !chosen.includes(d.id) && !onLeave(d, date, leaves) && !(d.blockedDays||[]).includes(di))
+      const avail = rotate.filter(d => !chosen.includes(d.id) && !onLeave(d, date, leaves, "eve") && !(d.blockedDays||[]).includes(di))
         .sort((a,b) => {
           // PRIORITY 1: FAIRNESS — least evening shifts this month comes first
           const ua = usage[a.id]||0, ub = usage[b.id]||0;
@@ -491,7 +711,7 @@ function detectConflicts(doctors, leaves, nightData, coverages) {
   Object.entries(nightData).forEach(([date,nd])=>{
     (nd.doctors||[]).forEach(id=>{
       const d = fd(id); if(!d) return;
-      if (onLeave(d, date, leaves)) conflicts.push({ type:"leave", date, text:`${d.name} له دوام مسائي يوم ${date} لكنه في إجازة` });
+      if (onLeave(d, date, leaves, "eve")) conflicts.push({ type:"leave", date, text:`${d.name} له دوام مسائي يوم ${date} لكنه في إجازة` });
     });
     // coverage doctor on leave
     const covs = nd.coverages||{};
@@ -499,14 +719,14 @@ function detectConflicts(doctors, leaves, nightData, coverages) {
       (covs[slot]||[]).forEach(id=>{
         const d = fd(id); if(!d) return;
         const covDate = slot==="nextAm" ? nextWork(date) : date;
-        if (onLeave(d, covDate, leaves)) conflicts.push({ type:"leave", date:covDate, text:`${d.name} يغطّي يوم ${covDate} لكنه في إجازة` });
+        if (onLeave(d, covDate, leaves, slot==="nextAm"?"am":slot)) conflicts.push({ type:"leave", date:covDate, text:`${d.name} يغطّي يوم ${covDate} لكنه في إجازة` });
       });
     });
   });
   // 2. Individual coverage doctor on leave
   (coverages||[]).forEach(c=>{
     const d = fd(c.coverDoctorId); if(!d) return;
-    if (onLeave(d, c.date, leaves)) conflicts.push({ type:"leave", date:c.date, text:`${d.name} يغطّي (فردي) يوم ${c.date} لكنه في إجازة` });
+    if (onLeave(d, c.date, leaves, c.period==="evening"?"eve":c.period)) conflicts.push({ type:"leave", date:c.date, text:`${d.name} يغطّي (فردي) يوم ${c.date} لكنه في إجازة` });
   });
   // 3. Double-booked: same doctor covering 2 things same real period
   const slotKey = (date, period) => `${date}__${period}`;
@@ -626,8 +846,9 @@ function analyzeDay(date, doctors, leaves, nightData, coverages, loadMap, restRu
   dayIndiv.forEach(c=>{ if(c.period==="am"||c.period==="pm") mark(c.period, c.coverDoctorId, "تغطية فردية"); else if(c.period==="evening") mark("evening", c.coverDoctorId, "تغطية مسائية"); });
 
   // ---- Determine absence per doctor (individual coverage with absentId, or on-leave) ----
-  const absentReason = {}; // docId -> reason string
-  doctors.forEach(d=>{ if(onLeave(d,date,leaves)) absentReason[d.id] = clinicClosedOnLeave(d,date,leaves) ? "إجازة (عيادة مغلقة)" : "إجازة (عيادة قائمة)"; });
+  const absentReason = {}; // docId -> reason string (غائب في أي فترة)
+  const absentP = { am:{}, pm:{}, eve:{} }; // غياب حسب الفترة (يدعم الاستئذان الجزئي)
+  doctors.forEach(d=>{ ["am","pm","eve"].forEach(p=>{ if(onLeave(d,date,leaves,p)) { const part=(leaves||[]).find(l=>l.doctorId===d.id&&l.start<=date&&date<=l.end&&l.period); const lbl = part ? "استئذان" : "إجازة"; absentP[p][d.id] = clinicClosedOnLeave(d,date,leaves,p) ? `${lbl} (عيادة مغلقة)` : `${lbl} (عيادة قائمة)`; absentReason[d.id] = absentReason[d.id] || absentP[p][d.id]; } }); });
 
   // ---- Compute gaps & conflicts per period ----
   const gaps = [];      // {date,di,period,ownerId,reason}
@@ -642,10 +863,10 @@ function analyzeDay(date, doctors, leaves, nightData, coverages, loadMap, restRu
     // each doctor who HAS a clinic this period
     doctors.forEach(d=>{
       if (!isClinic(getSlot(d,di,per))) return;
-      const closed = clinicClosedOnLeave(d,date,leaves);
+      const closed = clinicClosedOnLeave(d,date,leaves,per);
       // is this clinic owner unavailable to run their own clinic?
       const ownerEvening = eveningBusy.has(d.id);                   // took evening shift OR evening coverage
-      const ownerAbsent  = !!absentReason[d.id] && !closed;          // absent/leave-open
+      const ownerAbsent  = !!absentP[per][d.id] && !closed;          // absent/leave-open (هذه الفترة تحديداً)
       const ownerCovering = (occupied[per][d.id]||[]).some(r=>r.includes("تغطية")); // busy covering elsewhere same period
       const postEveningRest = restRule && per==="am" && prevEveningDocs.includes(d.id) && !ownerEvening && !ownerAbsent; // عمل مساءً أمس → عيادته صباح اليوم تحتاج تغطية (حسب إعداد قاعدة الراحة)
       const mustCover = (ownerEvening || ownerAbsent || ownerCovering || postEveningRest) && !closed;
@@ -660,7 +881,7 @@ function analyzeDay(date, doctors, leaves, nightData, coverages, loadMap, restRu
         return;
       }
       if (mustCover && coversForOwner.length===0) {
-        gaps.push({ date, di, period:per, ownerId:d.id, reason: ownerEvening?"دوام/تغطية مسائية":ownerAbsent?absentReason[d.id]:postEveningRest?"راحة بعد المسائي (أمس)":"مكلّف بتغطية أخرى" });
+        gaps.push({ date, di, period:per, ownerId:d.id, reason: ownerEvening?"دوام/تغطية مسائية":ownerAbsent?absentP[per][d.id]:postEveningRest?"راحة بعد المسائي (أمس)":"مكلّف بتغطية أخرى" });
         periods[per].push({ ownerId:d.id, state:"gap" });
       } else if (mustCover) {
         periods[per].push({ ownerId:d.id, state:"covered", coverIds:coversForOwner });
@@ -683,10 +904,10 @@ function analyzeDay(date, doctors, leaves, nightData, coverages, loadMap, restRu
   // CONFLICT: absent doctor still assigned a duty (any period)
   Object.keys(absentReason).forEach(idStr=>{
     const id=+idStr;
-    const dutyAm = (occupied.am[id]||[]).some(r=>r.includes("تغطية"));
-    const dutyPm = (occupied.pm[id]||[]).some(r=>r.includes("تغطية"));
-    const inNight = (nd.doctors||[]).includes(id);
-    const dutyEve = inNight || (occupied.evening[id]||[]).some(r=>r.includes("تغطية"));
+    const dutyAm = !!absentP.am[id] && (occupied.am[id]||[]).some(r=>r.includes("تغطية"));
+    const dutyPm = !!absentP.pm[id] && (occupied.pm[id]||[]).some(r=>r.includes("تغطية"));
+    const inNight = !!absentP.eve[id] && (nd.doctors||[]).includes(id);
+    const dutyEve = inNight || (!!absentP.eve[id] && (occupied.evening[id]||[]).some(r=>r.includes("تغطية")));
     if (dutyAm||dutyPm||dutyEve) conflicts.push({ type:"absent-busy", date, docId:id, inNight, text:`${fd(id)?.name||""} غائب/في إجازة يوم ${fmtDate(date)} لكنه مكلّف بتغطية/دوام نفس اليوم` });
   });
 
@@ -750,7 +971,8 @@ function doctorSessions(doctor, dates, nightData, coverages, leaves) {
   (dates||[]).forEach(date => {
     const di = dayIdx(date); if (di < 0) return;
     const nd = nightData[date] || {}; const c = nd.coverages || {};
-    const onLv = onLeave(doctor, date, leaves||[]);
+    const onLv = onLeave(doctor, date, leaves||[], "eve");
+    const onLvP = p => onLeave(doctor, date, leaves||[], p);
     const pw = prevWorkDay(date);
     const prevNextAm = pw ? ((nightData[pw]?.coverages||{}).nextAm || []) : [];
     const dind = (coverages||[]).filter(x => x.date === date);
@@ -768,7 +990,7 @@ function doctorSessions(doctor, dates, nightData, coverages, leaves) {
         const isCare = DIRECT_SLOTS.includes(slot);
         const coveredAway = dind.some(x => x.period===per && x.absentId===doctor.id); // غُطّيت عنه
         const sentToCoverElsewhere = dind.some(x => x.period===per && x.coverDoctorId===doctor.id); // كُلِّف هو نفسه بتغطية طبيب آخر بنفس الفترة
-        if (onLv)        { if (isCare) absentCovered += 1; return; }   // غاب → لا تُحسب له
+        if (onLvP(per)) { if (isCare) absentCovered += 1; return; }   // غاب (إجازة/استئذان هذه الفترة) → لا تُحسب له
         if (coveredAway) { if (isCare) absentCovered += 1; return; }   // غطّى مكانه زميل → لا تُحسب له
         if (sentToCoverElsewhere && isClinic(slot)) return;          // مستحيل التواجد بعيادتين فعليتين بنفس الوقت — العيادة الفعلية فقط لا تُحسب هنا (التغطية تُحسب له أدناه). أما الافتراضي/التدقيق فعمل مرن (إلكتروني) يمكن الجمع بينه وبين التغطية، فيُحسب دائماً كاملاً بلا نقصان
         if (isCare) direct += 1;                                  // عيادة فعلية اشتغلها
@@ -794,13 +1016,13 @@ function clinicOccupancy(doctor, dates, nightData, coverages, leaves) {
   (dates||[]).forEach(date => {
     const di = dayIdx(date); if (di < 0) return;
     const nd = nightData[date] || {};
-    const onLv = onLeave(doctor, date, leaves||[]);
     const dind = (coverages||[]).filter(x => x.date === date);
     const assignedEve = (nd.doctors||[]).includes(doctor.id);
     const worksEve = assignedEve || ((doctor.nightDays||[]).includes(di) && !nightData[date]);
     ["am","pm"].forEach(per => {
       if (!isClinic(getSlot(doctor, di, per))) return;
-      if (onLv && clinicClosedOnLeave(doctor, date, leaves||[])) return; // إجازة والعيادة مغلقة → لا عيادة أصلاً، لا تُحسب مجدولة ولا غياباً
+      const onLv = onLeave(doctor, date, leaves||[], per);
+      if (onLv && clinicClosedOnLeave(doctor, date, leaves||[], per)) return; // إجازة والعيادة مغلقة → لا عيادة أصلاً، لا تُحسب مجدولة ولا غياباً
       scheduled += 1;
       if (onLv) { onLeaveMissed += 1; return; }                            // إجازة والعيادة قائمة → غطّاها زميل
       if (worksEve || dind.some(x => x.period===per && x.absentId===doctor.id)) { coveredAway += 1; return; }
@@ -843,7 +1065,7 @@ function computeLoadMap(year, monthIdx, doctors, nightData, coverages, leaves) {
       ["am","pm"].forEach(per=>{
         if (!isClinic(getSlot(d,di,per))) return; // empty/admin/etc → 0
         // is this period covered by someone else, or doctor unavailable?
-        const onLv = onLeave(d,date,leaves||[]);
+        const onLv = onLeave(d,date,leaves||[],per);
         const isEvening = (nd.doctors||[]).includes(d.id);
         const indivCoveredForThis = dayIndiv.some(c=>c.period===per && c.absentId===d.id);
         const nightCoveredForThis = isEvening && (per==="am" ? [...(covs.am||[]),...prevNextAm].length>0 : (covs.pm||[]).length>0);
@@ -876,13 +1098,15 @@ function analyzeMonth(year, monthIdx, doctors, leaves, nightData, coverages, res
 
 const S = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
-  set: (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) { try{ window.dispatchEvent(new CustomEvent("ls-error",{detail:k})); }catch(_){} } }
+  set: (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 };
 
 const { useEffect } = React;
 
 // ── tokens & helpers ──
 const THEMES = {
+  sharp:  { name:"عنابي",       primary:"#74403B", primaryD:"#5C302C", accent:"#8C4E47", eve:"#5E5A8C", flat:true,
+            dark:{ primary:"#C98A82", primaryD:"#B57870", accent:"#D9A39C", eve:"#A5A0D6" } },
   teal:   { name:"تركوازي",     primary:"#0FA39A", primaryD:"#0B7E77", accent:"#14B8A6" },
   blue:   { name:"أزرق",        primary:"#1d4ed8", primaryD:"#1e40af", accent:"#3b82f6" },
   indigo: { name:"بنفسجي",      primary:"var(--eve)", primaryD:"#5b21b6", accent:"#8b5cf6" },
@@ -890,15 +1114,18 @@ const THEMES = {
   rose:   { name:"وردي",        primary:"#be123c", primaryD:"#9f1239", accent:"#fb7185" },
   slate:  { name:"رمادي داكن",  primary:"#334155", primaryD:"#1e293b", accent:"#64748b" }
 };
-const _tk = S.get("v2_theme") || "teal";
-const _t = THEMES[_tk] || THEMES.teal;
-try { const r=document.documentElement.style; r.setProperty("--primary",_t.primary); r.setProperty("--primary-d",_t.primaryD); r.setProperty("--accent",_t.accent); r.setProperty("--ok",_t.primary); } catch(e){}
+const _tk0 = S.get("v2_theme") || "sharp";
+const _tk = THEMES[_tk0] ? _tk0 : "sharp";
+const _isDark0 = !!S.get("v2_dark");
+const _t = { ...THEMES[_tk], ...((_isDark0 && THEMES[_tk].dark) || {}) }; // الثيم العنابي له ألوان أفتح للوضع الليلي
+try { document.documentElement.classList.add("th-"+_tk); } catch(e){}
+try { const r=document.documentElement.style; r.setProperty("--primary",_t.primary); r.setProperty("--primary-d",_t.primaryD); r.setProperty("--accent",_t.accent); if(!_t.flat) r.setProperty("--ok",_t.primary); if(_t.eve) r.setProperty("--eve",_t.eve); } catch(e){}
 try { if(S.get("v2_dark")) document.documentElement.setAttribute("data-theme","dark"); } catch(e){}
 try { const z=+S.get("v2_zoom"); if(z>=0.9&&z<=1.3){ document.documentElement.style.setProperty("--z", z); document.documentElement.classList.toggle("zbig", z>1.05); } } catch(e){}
-const C = { primary:_t.primary, primaryD:_t.primaryD, accent:_t.accent, eve:"#6D5DF6", bg:"var(--bg)", card:"var(--surface)", line:"var(--line)", line2:"var(--line2)", text:"var(--text)", sub:"var(--sub)", muted:"var(--muted)", ok:"#16A34A", warn:"#E0982B", err:"#E5484D" };
+const C = { primary:_t.primary, primaryD:_t.primaryD, accent:_t.accent, eve:_t.eve||"#6D5DF6", bg:"var(--bg)", card:"var(--surface)", line:"var(--line)", line2:"var(--line2)", text:"var(--text)", sub:"var(--sub)", muted:"var(--muted)", ok:"#16A34A", warn:"#E0982B", err:"#E5484D" };
 const SLOT_OPTS = [["","فراغ"],["clinic","عيادة"],["virtual","افتراضية"],["audit","تدقيق"],["training","تدريب"],["admin","إداري"]];
-const CAP_EVENING = 8;   // (للتوافق فقط — القيمة الفعلية من الإعدادات) حدّ المناوبات المسائية شهرياً
-const CAP_LEAVE_DAY = 4; // (للتوافق فقط — القيمة الفعلية من الإعدادات) حدّ المُجازين في اليوم قبل التنبيه
+const CAP_EVENING = 8;   // حدّ المناوبات المسائية شهرياً
+const CAP_LEAVE_DAY = 4; // حدّ المُجازين في اليوم قبل التنبيه
 const SLOT_AR = { clinic:"عيادة", virtual:"افتراضية", audit:"تدقيق", training:"تدريب", admin:"إداري" };
 const SLOT_STYLE = { clinic:{bg:"#ccfbf1",fg:"#0f766e",t:"عيادة"}, clinic_am:{bg:"#ccfbf1",fg:"#0f766e",t:"عيادة"}, clinic_pm:{bg:"#ccfbf1",fg:"#0f766e",t:"عيادة"}, virtual:{bg:"#dbeafe",fg:"#1d4ed8",t:"افتراضية"}, audit:{bg:"#fef3c7",fg:"#b45309",t:"تدقيق"}, training:{bg:"#ede9fe",fg:"var(--eve)",t:"تدريب"}, admin:{bg:"#e2e8f0",fg:"#475569",t:"إداري"}, "":{bg:"var(--surface2)",fg:"#94a3b8",t:"فراغ"} };
 const slotStyle = s => SLOT_STYLE[s] || SLOT_STYLE[""];
@@ -910,17 +1137,18 @@ const perAr = p => p==="am"?"عيادة الصباح":p==="pm"?"عيادة ال�
 const dmy = ds => `${ds.split("-")[2]}/${+ds.split("-")[1]}`;
 const WDAY = ["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
 const dmyFull = ds => `${WDAY[new Date(ds).getDay()]||""} ${dmy(ds)}`;
-const LEAVE_AR = { annual:"إجازة سنوية", sick:"إجازة مرضية", emergency:"إجازة طارئة", maternity:"إجازة وضع (ولادة)", other:"إجازة أخرى" };
-const LEAVE_ICON = { annual:"🏖", sick:"🤒", emergency:"🚨", maternity:"🤱", other:"📝" };
+const LEAVE_AR = { annual:"إجازة سنوية", sick:"إجازة مرضية", emergency:"إجازة طارئة", other:"إجازة أخرى" };
 const perFull = per => per==="am"?"العيادة الصباحية":per==="pm"?"عيادة الظهر":per==="nextAm"?"عيادة صباح الغد":(per||"");
 const coverReasonAr = (ownerId, date, reason, leaves) => { if(reason==="evening"||ownerId==null) return "دوام مسائي"; if(reason==="post_evening") return "راحة بعد دوام مسائي (أمس)"; if(reason==="absence") return "غياب"; const lv=(leaves||[]).find(l=>l.doctorId===ownerId && date>=l.start && date<=l.end); if(lv) return LEAVE_AR[lv.type]||"إجازة"; if(reason==="leave") return "إجازة"; return reason||"غياب"; };
 const monthDays = (y,m) => { const dim=new Date(y,m+1,0).getDate(); const out=[]; for(let d=1;d<=dim;d++){ const date=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; const di=dayIdx(date); if(di>=0) out.push({date,di,day:d}); } return out; };
 
 // ── shared styles ──
-const sIn = { width:"100%", padding:"10px 12px", borderRadius:10, border:`1px solid ${C.line}`, fontSize:14, background:"var(--surface)", color:C.text };
-const sBtn = (bg,fg="#fff") => ({ background:bg, color:fg, border:"none", borderRadius:10, padding:"10px 16px", fontSize:13.5, fontWeight:700 });
-const sGhost = { background:"var(--surface)", color:C.primary, border:`1px solid ${C.line}`, borderRadius:10, padding:"9px 14px", fontSize:13, fontWeight:600 };
-const card = (extra={}) => ({ background:C.card, border:`1px solid ${C.line}`, borderRadius:18, boxShadow:"0 1px 2px rgba(16,40,70,.04),0 8px 24px rgba(16,40,70,.06)", ...extra });
+const _FLAT = !!_t.flat;
+const GRAD = g => !_FLAT ? g : (/#6d28d9|#8b5cf6/i.test(g) ? "var(--eve)" : ((g.match(/linear-gradient\([^,]+,\s*([^,\s)]+(?:\([^)]*\))?)/)||[])[1] || "var(--primary)")); // ثيم SHARP: لون مسطّح بدل التدرّج // ثيم SHARP: حدود ١.٥px وزوايا أكبر وبلا ظلال
+const sIn = { width:"100%", padding:_FLAT?"11px 14px":"10px 12px", borderRadius:_FLAT?14:10, border:`${_FLAT?1.5:1}px solid ${C.line}`, fontSize:14, background:"var(--surface)", color:C.text };
+const sBtn = (bg,fg="#fff") => ({ background:bg, color:fg, border:"none", borderRadius:_FLAT?16:10, padding:_FLAT?"11px 18px":"10px 16px", fontSize:13.5, fontWeight:700 });
+const sGhost = { background:"var(--surface)", color:C.primary, border:`${_FLAT?1.5:1}px solid ${C.line}`, borderRadius:_FLAT?16:10, padding:"9px 14px", fontSize:13, fontWeight:600 };
+const card = (extra={}) => ({ background:C.card, border:`${_FLAT?1.5:1}px solid ${C.line}`, borderRadius:_FLAT?22:18, boxShadow:_FLAT?"none":"0 1px 2px rgba(16,40,70,.04),0 8px 24px rgba(16,40,70,.06)", ...extra });
 const label = { fontSize:12, fontWeight:700, color:C.sub, marginBottom:6, display:"block" };
 
 // ════════ Toast ════════
@@ -1068,7 +1296,6 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto, s
   const now = new Date();
   const [gaugeMonth, setGaugeMonth] = useState(0); // 0 = هذا الشهر، 1 = الشهر القادم
   const restRule = settings?.restRule!==false;
-  const cfgCap = { ...DEFAULT_SETTINGS, ...settings }; // حدود التنبيهات تُقرأ من الإعدادات (لا ثوابت)
   const ana = useMemo(()=>analyzeMonth(now.getFullYear(), now.getMonth(), doctors, leaves, nightData, coverages, restRule), [doctors,leaves,nightData,coverages,restRule]);
   const eveningCount = Object.keys(nightData).filter(d=>{const[y,m]=d.split("-");return +y===now.getFullYear()&&+m===now.getMonth()+1;}).reduce((a,d)=>a+((nightData[d].doctors||[]).length?1:0),0);
   const stats = [
@@ -1083,8 +1310,8 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto, s
   ana.gaps.forEach(g=>alerts.push({ sev:"warn", t:`عيادة د.${fd(g.ownerId)?.name||""} (${perAr(g.period)}) ${dmy(g.date)} تحتاج تغطية`, go:"engine" }));
   leaves.forEach(l=>{ const du=Math.round((new Date(l.start)-new Date(today))/864e5); if(du>0&&du<=3){ const d=fd(l.doctorId); if(d) alerts.push({ sev:"warn", t:`إجازة د.${d.name} تبدأ بعد ${du} ${du===1?"يوم":"أيام"}`, go:"leaves" }); } });
   doctors.forEach(d=>{ const has=[0,1,2,3,4].some(di=>getSlot(d,di,"am")||getSlot(d,di,"pm")); if(!has) alerts.push({ sev:"warn", t:`د.${d.name} بلا جدول عيادات`, go:"doctors" }); });
-  doctors.forEach(d=>{ let n=0; monthDays(now.getFullYear(),now.getMonth()).forEach(({date,di})=>{ if(((nightData[date]||{}).doctors||[]).includes(d.id) && !(d.nightDays||[]).includes(di)) n++; }); if(n>cfgCap.capEvening) alerts.push({ sev:"err", t:`د.${d.name} تجاوز حدّ المناوبات (${n}/${cfgCap.capEvening})`, go:"doctors" }); });
-  monthDays(now.getFullYear(),now.getMonth()).forEach(({date,di})=>{ const onLv=doctors.filter(d=>onLeave(d,date,leaves)).length; if(onLv>cfgCap.capLeaveDay) alerts.push({ sev:"warn", t:`تواجد منخفض ${dmy(date)} ${DAYS[di]} — ${onLv} في إجازة`, go:"leaves" }); });
+  doctors.forEach(d=>{ let n=0; monthDays(now.getFullYear(),now.getMonth()).forEach(({date})=>{ if(((nightData[date]||{}).doctors||[]).includes(d.id)) n++; }); if(n>CAP_EVENING) alerts.push({ sev:"err", t:`د.${d.name} تجاوز حدّ المناوبات (${n}/${CAP_EVENING})`, go:"doctors" }); });
+  monthDays(now.getFullYear(),now.getMonth()).forEach(({date,di})=>{ const onLv=doctors.filter(d=>onLeave(d,date,leaves)).length; if(onLv>=CAP_LEAVE_DAY) alerts.push({ sev:"warn", t:`تواجد منخفض ${dmy(date)} ${DAYS[di]} — ${onLv} في إجازة`, go:"leaves" }); });
   alerts.sort((a,b)=>(a.sev==="err"?0:1)-(b.sev==="err"?0:1));
   const dayInfo = date => { const nd=nightData[date]||{}; const cv=nd.coverages||{}; const evening=(nd.doctors||[]).map(id=>fd(id)?.name).filter(Boolean); const covs=[]; ["am","pm","nextAm"].forEach(slot=>{ (cv[slot]||[]).forEach(cid=>{ const c=fd(cid); if(c) covs.push(c.name); }); }); coverages.filter(c=>c.date===date).forEach(c=>{ const cd=fd(c.coverDoctorId); if(cd) covs.push(cd.name); }); const lv=doctors.filter(d=>onLeave(d,date,leaves)).map(d=>d.name); return {evening,covs,lv}; };
   const md = monthDays(now.getFullYear(),now.getMonth()).map(x=>x.date);
@@ -1110,7 +1337,7 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto, s
   const needs = ana.gaps.slice(0,4);
 
   return <div className="fade">
-    <div className="card" style={{ padding:"22px 24px", marginBottom:18, background:`linear-gradient(120deg,${C.primaryD},${C.primary} 65%,${C.eve})`, color:"#fff", border:"none", display:"flex", alignItems:"center", gap:14, flexWrap:"wrap", boxShadow:"0 12px 34px rgba(15,163,154,.28)" }}>
+    <div className="card" style={{ padding:"22px 24px", marginBottom:18, background:GRAD(`linear-gradient(120deg,${C.primaryD},${C.primary} 65%,${C.eve})`), color:"#fff", border:"none", display:"flex", alignItems:"center", gap:14, flexWrap:"wrap", boxShadow:_FLAT?"none":"0 12px 34px rgba(15,163,154,.28)" }}>
       <div style={{ flex:1, minWidth:200 }}>
         <div style={{ fontSize:22, fontWeight:700 }}>نظرة عامة على القسم 👋</div>
         <div style={{ fontSize:13, opacity:.92, marginTop:3 }}>{DAYS[new Date(today).getDay()]||""} · {now.getDate()} {MONTHS[now.getMonth()]} {now.getFullYear()}</div>
@@ -1182,11 +1409,11 @@ function Dashboard({ doctors, leaves, nightData, coverages, today, fd, onGoto, s
 // رابط القاعدة ومفتاح الويب ليسا سرَّين (حسب توثيق Firebase الرسمي — الحماية تأتي من قواعد Rules لا من إخفائهما)
 // فهما مضمَّنان هنا مباشرة، بحيث تعمل مزامنة بيانات القسم بين كل الأجهزة تلقائياً بلا أي إعداد يدوي على كل جهاز
 const FIREBASE_DEFAULT = { dbUrl:"https://restorative-department-default-rtdb.europe-west1.firebasedatabase.app", apiKey:"AIzaSyAFgGIFTVBzpVagVWLJz80xxbstkonG3j4" };
-function cloudCfg(){ const c=S.get("v2_cloud"); return (c&&c.dbUrl)?c:{ dbUrl:FIREBASE_DEFAULT.dbUrl, apiKey:FIREBASE_DEFAULT.apiKey, builtin:true }; } // {dbUrl, apiKey, email, password} — يُستخدم فقط لزر "نشر رسمي" للرابط الحي العام (يحتاج حساب رئيس القسم)
+function cloudCfg(){ const c=S.get("v2_cloud"); return (c&&c.dbUrl)?c:null; } // {dbUrl, apiKey, email, password} — يُستخدم فقط لزر "نشر رسمي" للرابط الحي العام (يحتاج حساب رئيس القسم)
 let __idTokenCache=null; // {token, exp}
 async function getIdToken(cfg){
   if(__idTokenCache && __idTokenCache.exp>Date.now()+30000) return __idTokenCache.token;
-  if(!cfg.apiKey||!cfg.email||!cfg.password) return getAnonToken(); // بدون حساب إداري محفوظ → دخول مجهول تلقائي (لا حاجة لزيارة الإعدادات)
+  if(!cfg.apiKey||!cfg.email||!cfg.password) throw new Error("no-auth-config");
   const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(cfg.apiKey)}`,{
     method:"POST", headers:{ "Content-Type":"application/json" },
     body:JSON.stringify({ email:cfg.email, password:cfg.password, returnSecureToken:true })
@@ -1198,30 +1425,16 @@ async function getIdToken(cfg){
 }
 // دخول مجهول (Anonymous) تلقائي — يعمل على أي جهاز بلا أي بريد أو كلمة مرور، فقط لمزامنة بيانات القسم بين الأجهزة (وليس لنشر الرابط العام)
 let __anonTokenCache=null; // {token, exp}
-let __anonInflight=null;
 async function getAnonToken(){
   if(__anonTokenCache && __anonTokenCache.exp>Date.now()+30000) return __anonTokenCache.token;
-  if(__anonInflight) return __anonInflight;
-  __anonInflight=(async()=>{
-    const key=encodeURIComponent(FIREBASE_DEFAULT.apiKey);
-    const rt=S.get("v2_anon_rt"); // نفس المستخدم المجهول يُعاد استخدامه بدل إنشاء حساب جديد عند كل فتح (يمنع تراكم الحسابات وحدّ التسجيل لكل IP)
-    if(rt){
-      try{
-        const r=await fetch(`https://securetoken.googleapis.com/v1/token?key=${key}`,{ method:"POST", headers:{ "Content-Type":"application/x-www-form-urlencoded" }, body:"grant_type=refresh_token&refresh_token="+encodeURIComponent(rt) });
-        if(r.ok){ const j=await r.json(); if(j.id_token){ __anonTokenCache={ token:j.id_token, exp:Date.now()+(Number(j.expires_in||3600)*1000) }; if(j.refresh_token) S.set("v2_anon_rt",j.refresh_token); return j.id_token; } }
-      }catch(e){}
-    }
-    const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${key}`,{
-      method:"POST", headers:{ "Content-Type":"application/json" },
-      body:JSON.stringify({ returnSecureToken:true })
-    });
-    if(!r.ok){ const t=await r.text(); throw new Error("anon-auth-failed: "+r.status+" "+t.slice(0,150)); }
-    const j=await r.json();
-    __anonTokenCache={ token:j.idToken, exp:Date.now()+(Number(j.expiresIn||3600)*1000) };
-    if(j.refreshToken) S.set("v2_anon_rt",j.refreshToken);
-    return j.idToken;
-  })();
-  try{ return await __anonInflight; } finally { __anonInflight=null; }
+  const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${encodeURIComponent(FIREBASE_DEFAULT.apiKey)}`,{
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({ returnSecureToken:true })
+  });
+  if(!r.ok){ const t=await r.text(); throw new Error("anon-auth-failed: "+r.status+" "+t.slice(0,150)); }
+  const j=await r.json();
+  __anonTokenCache={ token:j.idToken, exp:Date.now()+(Number(j.expiresIn||3600)*1000) };
+  return j.idToken;
 }
 async function cloudPublish(officialSnap){
   const cfg=cloudCfg(); if(!cfg||!cfg.dbUrl) throw new Error("no-config");
@@ -1242,29 +1455,13 @@ async function cloudLoadState(){
   const res=await fetch(url,{cache:"no-store"});
   if(!res.ok){ const t=await res.text(); throw new Error("load-failed: "+res.status+" "+t.slice(0,150)); }
   const j=await res.json();
-  __lastRemoteAt = (j && j.updatedAt) || null;
   return j||null;
 }
-let __lastRemoteAt=null;   // آخر updatedAt عرفناه من السحابة (من تحميل أو حفظ ناجح)
-let __cloudConflict=false; // true لو رُفض الحفظ لأن جهازاً آخر حفظ بعد آخر تحميل
-async function cloudRemoteStamp(){
-  const idToken=await getAnonToken();
-  const base=FIREBASE_DEFAULT.dbUrl.replace(/\/+$/,"");
-  const r=await fetch(`${base}/app/state/updatedAt.json?auth=${encodeURIComponent(idToken)}`,{cache:"no-store"});
-  if(!r.ok) throw new Error("stamp-failed: "+r.status);
-  return await r.json(); // نص صغير فقط (≈ ٣٠ بايت)
-}
 async function cloudSaveState(state){
-  // حماية من الكتابة فوق تعديلات جهاز آخر: لو الختم الزمني في السحابة تغيّر منذ آخر تحميل → لا نكتب
-  const remoteAt=await cloudRemoteStamp();
-  if(remoteAt && remoteAt!==__lastRemoteAt){ __cloudConflict=true; return false; }
-  __cloudConflict=false;
   const idToken=await getAnonToken();
   const base=FIREBASE_DEFAULT.dbUrl.replace(/\/+$/,"");
   const url=`${base}/app/state.json?auth=${encodeURIComponent(idToken)}`;
-  const stamp=new Date().toISOString();
-  const res=await fetch(url,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ ...state, updatedAt:stamp }) });
-  if(res.ok) __lastRemoteAt=stamp;
+  const res=await fetch(url,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ ...state, updatedAt:new Date().toISOString() }) });
   return res.ok;
 }
 
@@ -1285,12 +1482,6 @@ async function cloudBackupIfDue(state){
     const r1=await fetch(backupUrl,{ method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
     if(!r1.ok) return false;
     await fetch(metaUrl,{ method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ lastAt:new Date().toISOString() }) });
-    // الاحتفاظ بآخر ١٢ نسخة فقط (≈ ٣ أشهر) — لمنع تراكم التخزين في Firebase بلا حدّ
-    try{
-      const lr=await fetch(`${base}/backups.json?shallow=true&auth=${encodeURIComponent(idToken)}`,{cache:"no-store"});
-      if(lr.ok){ const keys=Object.keys((await lr.json())||{}).filter(k=>k!=="_meta").sort(); const extra=keys.slice(0,Math.max(0,keys.length-12));
-        for(const k of extra) await fetch(`${base}/backups/${encodeURIComponent(k)}.json?auth=${encodeURIComponent(idToken)}`,{ method:"DELETE" }); }
-    }catch(e){}
     return true;
   }catch(e){ return false; } // فشل صامت — لا يعطّل الاستخدام العادي للتطبيق
 }
@@ -1517,7 +1708,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     if(eveningOwner(g)&&(g.period==="am"||g.period==="pm")) setOwnerCover(g.date,g.ownerId,g.period,cid);
     else {
       const owner=fd(g.ownerId);
-      const onLv = owner && onLeave(owner,g.date,leaves);
+      const onLv = owner && onLeave(owner,g.date,leaves,g.period);
       const pcd=(()=>{ const dt=new Date(g.date); dt.setDate(dt.getDate()-1); return dt.getDay()>=5?null:dt.toISOString().split("T")[0]; })();
       const prevEve = pcd && ((nightData[pcd]||{}).doctors||[]).includes(g.ownerId);
       const reason = onLv ? "leave" : (g.period==="am" && prevEve) ? "post_evening" : "absence";
@@ -1616,7 +1807,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     days.forEach(({date,di})=>{
       const need=needOf(date); if(need<=0) return;
       const cur=(n[date]?.doctors)?[...n[date].doctors]:[];
-      const eligible = doctors.filter(d=>(d.nightDays||[]).includes(di) && !onLeave(d,date,leaves) && !(d.blockedDays||[]).includes(di) && !cur.includes(d.id));
+      const eligible = doctors.filter(d=>(d.nightDays||[]).includes(di) && !onLeave(d,date,leaves,"eve") && !(d.blockedDays||[]).includes(di) && !cur.includes(d.id));
       eligible.sort((a,b)=> (usage[a.id]-usage[b.id]) || (recency(a)-recency(b)) || a.name.localeCompare(b.name,"ar"));
       eligible.forEach(d=>{ if(cur.length<need){ cur.push(d.id); usage[d.id]++; lastAssigned[d.id]=date; } });
       n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:cur, eveningSlots:need };
@@ -1651,7 +1842,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           const nDi=dayIdx(ndd);                                                       // فهرس يوم الغد (-1 لو عطلة)
           const mornFreeNext = d => nDi<0 ? true : !DIRECT_SLOTS.includes(getSlot(d,nDi,"am")); // صباح الغد فارغ؟
           const base = d => !((d.nightDays||[]).length>0)                              // أصحاب المسائي الثابت لا يدخلون الإضافي
-                          && !cur.includes(d.id) && !onLeave(d,date,leaves) && !(d.blockedDays||[]).includes(di)
+                          && !cur.includes(d.id) && !onLeave(d,date,leaves,"eve") && !(d.blockedDays||[]).includes(di)
                           && !(settings?.capOnePerMonth && (thisMoUsage[d.id]||0)>=1); // حدّ أقصى مناوبة واحدة بالشهر (إن كان مفعَّلاً) — مَن أخذ مناوبته هذا الشهر لا يُختار مجدداً حتى لو بقيت أيام فارغة
           // ── فصل تام بين "عدد المناوبات" و"العبء النهاري": المناوبة تناوب إجباري متساوٍ بحت، لا يتأثر بعبء العيادات النهارية إطلاقاً ──
           const rank = (a,b)=> (usage[a.id]-usage[b.id])                               // ① الأقل مناوبات (هذه السنة) — المعيار الحاسم الوحيد للعدد
@@ -1686,7 +1877,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                 // ابحث عن طبيب "بالحد الأقصى" مُعيَّن هذا اليوم يمكن استبداله بالطبيب "الأقل"
                 const repeatedHere = assigned.find(id=>{ const dd=doctors.find(x=>x.id===id); return dd && (dd.nightDays||[]).length===0 && cnt[id]===maxV; });
                 if(!repeatedHere) continue;
-                if(onLeave(zd,date,leaves)) continue;
+                if(onLeave(zd,date,leaves,"eve")) continue;
                 if((zd.blockedDays||[]).includes(di)) continue;
                 if(assigned.includes(zd.id)) continue;
                 const prevEve=((n[prevCalDay(date)]||{}).doctors)||[];
@@ -1757,7 +1948,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   };
   const quickAddOptions = (date, di, assignedIds) => {
     const list = doctors.filter(d=>!assignedIds.includes(d.id) && !(d.blockedDays||[]).includes(di)).map(d=>{
-      const lv=onLeave(d,date,leaves); const fixedHere=(d.nightDays||[]).includes(di); const fixedAny=(d.nightDays||[]).length>0;
+      const lv=onLeave(d,date,leaves,"eve"); const fixedHere=(d.nightDays||[]).includes(di); const fixedAny=(d.nightDays||[]).length>0;
       const rank=lv?3:fixedHere?0:fixedAny?2:1;
       let note=null, m0=null,m1=null,m2=null;
       if(lv) note="إجازة";
@@ -1946,7 +2137,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     {/* Toolbar: أدوات التوزيع السريعة + التصدير — بطاقة واحدة مختصرة */}
     <div style={{ ...card(), padding:14, marginBottom:14 }}>
       <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:9, letterSpacing:.3 }}>⚙️ أدوات التوزيع السريعة</div>
-      <button onClick={smartComplete} disabled={smartStep!==0} style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, width:"100%", padding:"12px 14px", marginBottom:4, borderRadius:12, border:"none", cursor:smartStep!==0?"default":"pointer", fontWeight:800, fontSize:14, color:"#fff", background:`linear-gradient(120deg,${C.primaryD},${C.primary} 60%,${C.accent})`, opacity:smartStep!==0?.75:1, boxShadow:"0 8px 22px rgba(15,118,110,.25)" }}>
+      <button onClick={smartComplete} disabled={smartStep!==0} style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, width:"100%", padding:"12px 14px", marginBottom:4, borderRadius:12, border:"none", cursor:smartStep!==0?"default":"pointer", fontWeight:800, fontSize:14, color:"#fff", background:GRAD(`linear-gradient(120deg,${C.primaryD},${C.primary} 60%,${C.accent})`), opacity:smartStep!==0?.75:1, boxShadow:"0 8px 22px rgba(15,118,110,.25)" }}>
         {smartStep!==0 ? <>⏳ جارٍ الإكمال الذكي — خطوة {smartStep} من 3…</> : <>🚀 إكمال ذكي للشهر بضغطة واحدة</>}
       </button>
       <div style={{ fontSize:10.5, color:C.muted, marginBottom:9, textAlign:"center" }}>ينفّذ تلقائياً: توزيع الثابتين ← تعبئة المتفرّغين ← تغطية الشواغر — بنفس القواعد والتأكيدات المعتادة</div>
@@ -2168,7 +2359,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
               <div className="cal-grid2">
                 {Array.from({length:offset},(_,i)=><div key={"me"+i} />)}
                 {calDays.map(({date,di,day,holiday})=>{ if(holiday){ const isT=date===today; return (
-                  <div key={"m"+date} className="cell" style={{ background:"linear-gradient(135deg,#6d28d9,#8b5cf6)", color:"#fff", border:"none" }}>
+                  <div key={"m"+date} className="cell" style={{ background:GRAD("linear-gradient(135deg,#6d28d9,#8b5cf6)"), color:"#fff", border:"none" }}>
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                       <span className="dn" style={{ background:"rgba(255,255,255,.25)", color:"#fff" }}>{day}</span>
                       <span style={{ fontSize:14 }}>🎉</span>
@@ -2216,7 +2407,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
             <div className="cal-grid2">
               {Array.from({length:offset},(_,i)=><div key={"e"+i} />)}
               {calDays.map(({date,di,day,holiday})=>{ if(holiday){ return (
-                <div key={date} className="cell" style={{ background:"linear-gradient(135deg,#6d28d9,#8b5cf6)", color:"#fff", border:"none" }}>
+                <div key={date} className="cell" style={{ background:GRAD("linear-gradient(135deg,#6d28d9,#8b5cf6)"), color:"#fff", border:"none" }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                     <span className="dn" style={{ background:"rgba(255,255,255,.25)", color:"#fff" }}>{day}</span>
                     <span style={{ fontSize:14 }}>🎉</span>
@@ -2265,7 +2456,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
             <div className="cal-grid2">
               {Array.from({length:offset},(_,i)=><div key={"ce"+i} />)}
               {calDays.map(({date,di,day,holiday})=>{ if(holiday){ return (
-                <div key={"cov"+date} className="cell" style={{ background:"linear-gradient(135deg,#6d28d9,#8b5cf6)", color:"#fff", border:"none" }}>
+                <div key={"cov"+date} className="cell" style={{ background:GRAD("linear-gradient(135deg,#6d28d9,#8b5cf6)"), color:"#fff", border:"none" }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                     <span className="dn" style={{ background:"rgba(255,255,255,.25)", color:"#fff" }}>{day}</span>
                     <span style={{ fontSize:14 }}>🎉</span>
@@ -2317,7 +2508,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                 {(() => {
                   const assigned = nd.doctors||[];
                   const reqN = Math.max((nd.eveningSlots!=null?nd.eveningSlots:needOf(date))||0, assigned.length);
-                  const optList = doctors.filter(d=>!assigned.includes(d.id)).map(d=>{ const lv=onLeave(d,date,leaves); const fixedHere=(d.nightDays||[]).includes(di); const fixedAny=(d.nightDays||[]).length>0; const el=eveLoadMap[d.id]||0; const rank=lv?4:fixedHere?1:fixedAny?3:2; const note=lv?"إجازة":fixedHere?"عيادة مسائية ثابتة":fixedAny?"لديه مسائي ثابت":`متاح · مسائيات ${el}`; return { d, rank, el, note }; }).sort((a,b)=> a.rank-b.rank || a.el-b.el || a.d.name.localeCompare(b.d.name,"ar"));
+                  const optList = doctors.filter(d=>!assigned.includes(d.id)).map(d=>{ const lv=onLeave(d,date,leaves,"eve"); const fixedHere=(d.nightDays||[]).includes(di); const fixedAny=(d.nightDays||[]).length>0; const el=eveLoadMap[d.id]||0; const rank=lv?4:fixedHere?1:fixedAny?3:2; const note=lv?"إجازة":fixedHere?"عيادة مسائية ثابتة":fixedAny?"لديه مسائي ثابت":`متاح · مسائيات ${el}`; return { d, rank, el, note }; }).sort((a,b)=> a.rank-b.rank || a.el-b.el || a.d.name.localeCompare(b.d.name,"ar"));
                   const slots=[]; for(let i=0;i<Math.max(reqN,1);i++) slots.push(assigned[i]!=null?assigned[i]:null);
                   return <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:10 }}>
                     {slots.map((id,i)=>{ if(id!=null){ const d=fd(id); if(!d) return null; return (
@@ -2347,7 +2538,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
                   </div>;
                 })()}
                 {docs.map(d=>{ const needs=[]; if(isClinic(getSlot(d,di,"am")))needs.push(["am","عيادة الصباح",di]); if(isClinic(getSlot(d,di,"pm")))needs.push(["pm","عيادة الظهر",di]);
-                  if(clinicClosedOnLeave(d,date,leaves)||!needs.length) return null;
+                  if(clinicClosedOnLeave(d,date,leaves,"eve")||!needs.length) return null;
                   return <div key={d.id} style={{ background:"var(--surface2)", borderRadius:10, padding:"9px 11px", marginBottom:6 }}>
                     <div style={{ fontSize:11.5, color:C.sub, marginBottom:6 }}>تغطية عيادة د.{d.name}</div>
                     {needs.map(([slot,lbl,sdi])=>{ const isNext=slot==="nextAm"; const cur=isNext?((cv[slot]||[])[0]):ownerCover(date,d.id,slot); const pl=pickListR(d.id, sdi, isNext?nextWork(date):date, isNext?"am":slot); return (
@@ -2386,7 +2577,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
       did.sort((a,b)=>a.date.localeCompare(b.date));
       const got = coverages.filter(c=>c.absentId===pd.id && inMo(c.date)).sort((a,b)=>a.date.localeCompare(b.date)); // عياداته التي غُطّيت عنه
       const lvs = leaves.filter(l=>l.doctorId===pd.id && l.start<=pre+"-31" && l.end>=pre+"-01");
-      const TY = { annual:"سنوية", sick:"مرضية", emergency:"طارئة", maternity:"وضع (ولادة)", other:"أخرى" };
+      const TY = { annual:"سنوية", sick:"مرضية", emergency:"طارئة", other:"أخرى" };
       const tile = (n,t,c) => <div style={{ flex:"1 1 70px", background:"var(--surface2)", borderRadius:11, padding:"9px 6px", textAlign:"center" }}><div style={{ fontSize:20, fontWeight:800, color:c }}>{n}</div><div style={{ fontSize:10.5, color:C.sub, fontWeight:600 }}>{t}</div></div>;
       const sec = (title,items,empty) => <div style={{ marginTop:12 }}><div style={{ fontSize:12.5, fontWeight:800, marginBottom:6 }}>{title}</div>{items.length?items:<div style={{ fontSize:11.5, color:C.muted }}>{empty}</div>}</div>;
       const row = (k,txt) => <div key={k} style={{ fontSize:12, background:"var(--surface2)", borderRadius:8, padding:"6px 10px", marginBottom:4 }}>{txt}</div>;
@@ -2404,7 +2595,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
             {sec("🌙 مناوباته المسائية", eve.map(ds=>row(ds, `${DAYS[dayIdx(ds)]||""} ${dmy(ds)}`)), "لا مناوبات هذا الشهر")}
             {sec("🔄 تغطيات قام بها لغيره", did.map((x,i)=>row("d"+i, `${dmy(x.date)} ${perAr(x.period)} — عيادة ${x.owner?"د."+x.owner.name:"طبيب المسائي"}`)), "لا تغطيات")}
             {sec("🩺 عياداته التي غُطّيت عنه", got.map(c=>row(c.id, `${dmy(c.date)} ${perAr(c.period)} — غطّاها د.${fd(c.coverDoctorId)?.name||"؟"} · ${coverReasonAr(c.absentId,c.date,c.reason,leaves)}`)), "لا شيء")}
-            {sec("🏖 إجازاته", lvs.map(l=>row(l.id, `${LEAVE_ICON[l.type]||"🏖"} ${TY[l.type]||"إجازة"} · ${dmy(l.start)} ← ${dmy(l.end)}`)), "لا إجازات هذا الشهر")}
+            {sec("🏖 إجازاته", lvs.map(l=>row(l.id, `${TY[l.type]||"إجازة"} · ${dmy(l.start)} ← ${dmy(l.end)}`)), "لا إجازات هذا الشهر")}
           </div>
         </div>
       </div>; })()}
@@ -2414,33 +2605,33 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
 // ════════════════════════════════ LEAVES ════════════════════════════════
 function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeaves, setCoverages, setNight, showToast, logAudit, settings }) {
   const restRule = settings?.restRule!==false;
-  const TYPES = { annual:"سنوية", sick:"مرضية", emergency:"طارئة", maternity:"وضع (ولادة)", other:"أخرى" };
-  const [f, setF] = useState({ doctorId:"", type:"annual", start:"", end:"", clinicClosed:true });
+  const TYPES = { annual:"سنوية", sick:"مرضية", emergency:"طارئة", permission:"استئذان", other:"أخرى" };
+  const PERIOD_AR = { "":"اليوم كامل", am:"الصباح فقط", pm:"الظهر فقط" };
+  const [f, setF] = useState({ doctorId:"", type:"annual", start:"", end:"", clinicClosed:true, period:"" });
   const add = () => {
     if(!f.doctorId||!f.start||!f.end){showToast("أكمل الحقول","warn");return;}
     if(f.end<f.start){showToast("التواريخ غير صحيحة","err");return;}
-    const clash = leaves.find(l=>l.doctorId===+f.doctorId && l.start<=f.end && f.start<=l.end);
+    const clash = leaves.find(l=>l.doctorId===+f.doctorId && l.start<=f.end && f.start<=l.end && (!l.period || !f.period || l.period===f.period)); // استئذان صباح + استئذان ظهر لنفس اليوم مسموح
     if(clash){ showToast(`للطبيب إجازة مسجّلة تتداخل مع هذه الفترة (${dmy(clash.start)} ← ${dmy(clash.end)}) — احذفها أو عدّل التواريخ`,"warn"); return; }
-    setLeaves(ls=>[...ls,{id:uid(),doctorId:+f.doctorId,type:f.type,start:f.start,end:f.end,clinicClosed:f.clinicClosed}]);
-    setF({doctorId:"",type:"annual",start:"",end:"",clinicClosed:true});
-    logAudit&&logAudit(`تسجيل إجازة د.${fd(+f.doctorId)?.name||""} (${f.type})`);
+    setLeaves(ls=>[...ls,{id:uid(),doctorId:+f.doctorId,type:f.type,start:f.start,end:f.end,clinicClosed:f.clinicClosed, ...(f.period?{period:f.period}:{})}]);
+    setF({doctorId:"",type:"annual",start:"",end:"",clinicClosed:true,period:""});
+    logAudit&&logAudit(`تسجيل ${TYPES[f.type]||"إجازة"} د.${fd(+f.doctorId)?.name||""}${f.period?` — ${PERIOD_AR[f.period]}`:""}`);
     showToast("تم تسجيل الإجازة — سيُزال تلقائياً من أي مناوبة/تغطية متعارضة"); // التصحيح الفعلي يجري بتصحيح ذاتي شامل مستقل (App-level)، يعمل لأي مصدر تعارض لا فقط الإضافة هنا
   };
-  // release: يستعيد ما أُزيل بسبب الإجازة. newL=null → حذف كامل؛ newL=سجل معدَّل → يُستعاد فقط ما يخصّ الأيام التي خرجت من نطاق الإجازة
-  const release = (l, newL) => {
-    const id = l.id; const keepIn = ds => !!newL && ds>=newL.start && ds<=newL.end;
-    const prevD = ds=>{ const x=new Date(ds); x.setDate(x.getDate()-1); return x.toISOString().split("T")[0]; };
+  const del = id => {
+    const l = leaves.find(x=>x.id===id); if(!l) return;
     const nextDay = ds=>{ const x=new Date(ds); x.setDate(x.getDate()+1); return x.toISOString().split("T")[0]; };
     const inRange = ds => ds>=l.start && ds<=l.end;
+    setLeaves(ls=>ls.filter(x=>x.id!==id));
     // ── استعادة ما أُزيل بسبب هذه الإجازة: مناوباته المسائية وتغطياته لغيره — فقط لو مكانها ما زال شاغراً (لم يُعيَّن بديل) ──
-    const eveBack = (l.eveRemoved||[]).filter(ds=>!keepIn(ds));
-    const dispNight = (l.displaced||[]).filter(x=>x.kind==="night" && !keepIn(x.dayKey));
-    const dispCov = (l.displaced||[]).filter(x=>x.kind==="cov" && !keepIn(x.date));
+    const eveBack = l.eveRemoved||[];
+    const dispNight = (l.displaced||[]).filter(x=>x.kind==="night");
+    const dispCov = (l.displaced||[]).filter(x=>x.kind==="cov");
     const eveCov = (l.displaced||[]).filter(x=>x.kind==="evecov" && x.rec);
     // الأيام التي ستعود له مناوبتها فعلاً (نفس شرط الاستعادة أدناه) — لإرجاع تغطيات عياداته المرتبطة بتلك المناوبة
     const eveRestored = new Set(eveBack.filter(ds=>{ const day=nightData[ds]; if(!day) return false; const docs=day.doctors||[]; return !docs.includes(l.doctorId) && docs.length < (day.eveningSlots||1); }));
-    const otherLeaves = newL ? leaves.map(x=>x.id===id?newL:x) : leaves.filter(x=>x.id!==id);
-    const coverFree = (cid, ds, per, cs) => { const cd=doctors.find(x=>x.id===cid); if(!cd) return false; if(onLeave(cd,ds,otherLeaves)) return false;
+    const otherLeaves = leaves.filter(x=>x.id!==id);
+    const coverFree = (cid, ds, per, cs) => { const cd=doctors.find(x=>x.id===cid); if(!cd) return false; if(onLeave(cd,ds,otherLeaves,per)) return false;
       if(cs.some(c=>c.date===ds && c.period===per && c.coverDoctorId===cid)) return false;               // مشغول بتغطية أخرى نفس الفترة
       if(((nightData[ds]||{}).doctors||[]).includes(cid)) return false;                                  // صار مناوباً مسائياً نفس اليوم
       if(per==="am" && restRule && ((nightData[prevCalDay(ds)]||{}).doctors||[]).includes(cid)) return false; // راحة بعد مسائي
@@ -2455,8 +2646,8 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
     setCoverages(cs=>{
       const kept = cs.filter(c=>{
         if(c.absentId!==l.doctorId) return true;
-        if(c.reason==="leave" && inRange(c.date) && !keepIn(c.date)) return false;                       // تغطية الإجازة
-        if(c.reason==="post_evening" && inRange(prevD(c.date)) && !keepIn(prevD(c.date))) return false; // راحة بعد مسائي أثناء الإجازة
+        if(c.reason==="leave" && inRange(c.date)) return false;                       // تغطية الإجازة
+        if(c.reason==="post_evening" && inRange((()=>{const x=new Date(c.date);x.setDate(x.getDate()-1);return x.toISOString().split("T")[0];})())) return false; // راحة بعد مسائي أثناء الإجازة
         return true;
       });
       const back = dispCov.filter(x=>x.rec && !kept.some(c=>c.date===x.date && c.period===x.period && c.absentId===x.ownerId)).map(x=>({ ...x.rec, id:uid() }));
@@ -2468,39 +2659,10 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
         out.push({ ...r, id:uid() }); });
       return out;
     });
-  };
-  const del = id => {
-    const l = leaves.find(x=>x.id===id); if(!l) return;
-    setLeaves(ls=>ls.filter(x=>x.id!==id));
-    release(l, null);
     logAudit&&logAudit(`حذف إجازة د.${fd(l.doctorId)?.name||""} — إلغاء تغطيات عياداته، واستعادة مناوباته وتغطياته لغيره (إن لم يُعيَّن بديل)`);
     showToast&&showToast("تم حذف الإجازة — أُلغيت تغطيات عياداته، واستُعيدت مناوباته وتغطياته حيث لم يُعيَّن بديل");
   };
-  // ── تعديل إجازة مسجّلة (النوع / التواريخ / حالة العيادة) — الطبيب ثابت ──
-  const [editId,setEditId] = useState(null);
-  const blankF = { doctorId:"", type:"annual", start:"", end:"", clinicClosed:true };
-  const startEdit = l => { setEditId(l.id); setF({ doctorId:String(l.doctorId), type:l.type, start:l.start, end:l.end, clinicClosed:l.clinicClosed!==false }); setTimeout(()=>{ const el=document.getElementById("leave-form"); el&&el.scrollIntoView({behavior:"smooth",block:"start"}); },30); };
-  const cancelEdit = () => { setEditId(null); setF(blankF); };
-  const saveEdit = () => {
-    const old = leaves.find(x=>x.id===editId); if(!old){ cancelEdit(); return; }
-    if(!f.start||!f.end){ showToast("أكمل الحقول","warn"); return; }
-    if(f.end<f.start){ showToast("التواريخ غير صحيحة","err"); return; }
-    const clash = leaves.find(l=>l.id!==old.id && l.doctorId===old.doctorId && l.start<=f.end && f.start<=l.end);
-    if(clash){ showToast(`للطبيب إجازة أخرى تتداخل مع هذه الفترة (${dmy(clash.start)} ← ${dmy(clash.end)})`,"warn"); return; }
-    const inNew = ds => ds>=f.start && ds<=f.end;
-    const nl = { ...old, type:f.type, start:f.start, end:f.end, clinicClosed:f.clinicClosed };
-    if(old.eveRemoved) nl.eveRemoved = old.eveRemoved.filter(inNew);
-    if(old.displaced)  nl.displaced  = old.displaced.filter(x=>inNew(x.kind==="night"?x.dayKey:x.kind==="evecov"?(x.rec&&x.rec.date):x.date));
-    if(old.eveRepl)    nl.eveRepl    = old.eveRepl.filter(r=>inNew(r.date));
-    const shrunk = old.start<f.start || old.end>f.end;
-    setLeaves(ls=>ls.map(x=>x.id===old.id?nl:x));
-    if(shrunk) release(old, nl);   // الأيام التي خرجت من الإجازة: تُستعاد مناوباته وتُلغى تغطيات عياداته فيها
-    if(f.clinicClosed && old.clinicClosed===false) setCoverages(cs=>cs.filter(c=>!(c.absentId===old.doctorId && c.reason==="leave" && inNew(c.date)))); // صارت العيادة مغلقة → لا حاجة لتغطيات الإجازة
-    logAudit&&logAudit(`تعديل إجازة د.${fd(old.doctorId)?.name||""} (${LEAVE_AR[f.type]||f.type}) ${dmy(f.start)} ← ${dmy(f.end)}`);
-    showToast("تم تعديل الإجازة");
-    cancelEdit();
-  };
-  const autoCoverLeave = l => { const d=fd(l.doctorId); if(!d) return; const [ly]=l.start.split("-"); const yd=[]; for(let m=0;m<12;m++) yd.push(...monthDays(+ly,m).map(x=>x.date)); const load=id=>{ const s=doctorSessions(doctors.find(x=>x.id===id),yd,nightData,coverages,leaves); return s.covers; }; const AUTO_OVERRIDE_SLOTS=["admin","audit","virtual"]; const adds=[]; const used={}; const runningLoad={}; const s=new Date(l.start),e=new Date(l.end); for(let dt=new Date(s);dt<=e;dt.setDate(dt.getDate()+1)){ const wi=dt.getDay(); if(wi>4) continue; const ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; ["am","pm"].forEach(p=>{ if(!isClinic(getSlot(d,wi,p))) return; if(coverages.some(c=>c.date===ds&&c.period===p&&c.absentId===d.id)) return; const av=getAvailable(doctors,[d.id],wi,ds,p,leaves,nightData,{},coverages,true).filter(a=>a.status!=="leave"&&(a.status==="free"||AUTO_OVERRIDE_SLOTS.includes(getSlot(a.doc,wi,p)))).map(a=>({a,L:load(a.doc.id)+(runningLoad[a.doc.id]||0)})).sort((x,y)=>x.L-y.L); const key=ds+"|"+p; const taken=used[key]||[]; const pick=av.find(x=>!taken.includes(x.a.doc.id)); if(pick){ adds.push({id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:pick.a.doc.id,reason:"leave"}); (used[key]=used[key]||[]).push(pick.a.doc.id); runningLoad[pick.a.doc.id]=(runningLoad[pick.a.doc.id]||0)+1; } }); } if(!adds.length){ showToast("لا عيادات مكشوفة أو لا متاح","warn"); return; } setCoverages(cs=>[...cs,...adds]); showToast(`تمت تغطية ${adds.length} عيادة بالأنسب`); };
+  const autoCoverLeave = l => { const d=fd(l.doctorId); if(!d) return; const [ly]=l.start.split("-"); const yd=[]; for(let m=0;m<12;m++) yd.push(...monthDays(+ly,m).map(x=>x.date)); const load=id=>{ const s=doctorSessions(doctors.find(x=>x.id===id),yd,nightData,coverages,leaves); return s.covers; }; const AUTO_OVERRIDE_SLOTS=["admin","audit","virtual"]; const adds=[]; const used={}; const runningLoad={}; const s=new Date(l.start),e=new Date(l.end); for(let dt=new Date(s);dt<=e;dt.setDate(dt.getDate()+1)){ const wi=dt.getDay(); if(wi>4) continue; const ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; ["am","pm"].forEach(p=>{ if(l.period && l.period!==p) return; if(!isClinic(getSlot(d,wi,p))) return; if(coverages.some(c=>c.date===ds&&c.period===p&&c.absentId===d.id)) return; const av=getAvailable(doctors,[d.id],wi,ds,p,leaves,nightData,{},coverages,true).filter(a=>a.status!=="leave"&&(a.status==="free"||AUTO_OVERRIDE_SLOTS.includes(getSlot(a.doc,wi,p)))).map(a=>({a,L:load(a.doc.id)+(runningLoad[a.doc.id]||0)})).sort((x,y)=>x.L-y.L); const key=ds+"|"+p; const taken=used[key]||[]; const pick=av.find(x=>!taken.includes(x.a.doc.id)); if(pick){ adds.push({id:uid(),absentId:d.id,date:ds,period:p,coverDoctorId:pick.a.doc.id,reason:"leave"}); (used[key]=used[key]||[]).push(pick.a.doc.id); runningLoad[pick.a.doc.id]=(runningLoad[pick.a.doc.id]||0)+1; } }); } if(!adds.length){ showToast("لا عيادات مكشوفة أو لا متاح","warn"); return; } setCoverages(cs=>[...cs,...adds]); showToast(`تمت تغطية ${adds.length} عيادة بالأنسب`); };
   const sorted = leaves.slice().sort((a,b)=>b.start.localeCompare(a.start));
   const [openMonths,setOpenMonths] = useState(()=>new Set([today.slice(0,7), ...leaves.filter(l=>l.end>=today).map(l=>l.start.slice(0,7))])); // الشهر الحالي + أي شهر فيه إجازة قائمة/قادمة مفتوحة تلقائياً
   const loadCache = {}; // عبء التغطيات السنوي لكل طبيب — يُحسب مرة واحدة لكل عرض بدل تكراره لكل قائمة اختيار
@@ -2508,21 +2670,25 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
   const toggleMonth = key => setOpenMonths(o=>{ const n=new Set(o); n.has(key)?n.delete(key):n.add(key); return n; });
 
   return <div className="fade">
-    <div id="leave-form" style={{ ...card(), padding:16, marginBottom:16, ...(editId?{ border:"2px solid var(--primary)" }:{}) }}>
-      <div style={{ fontSize:15, fontWeight:700, marginBottom:12 }}>{editId ? `✏️ تعديل إجازة د.${fd(+f.doctorId)?.name||""}` : "🏖 تسجيل إجازة"}</div>
+    <div style={{ ...card(), padding:16, marginBottom:16 }}>
+      <div style={{ fontSize:15, fontWeight:700, marginBottom:12 }}>🏖 تسجيل إجازة</div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-        <div><label style={label}>الطبيب</label><select value={f.doctorId} disabled={!!editId} onChange={e=>setF({...f,doctorId:e.target.value})} style={sIn}><option value="">—</option>{doctors.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
-        <div><label style={label}>النوع</label><select value={f.type} onChange={e=>setF({...f,type:e.target.value})} style={sIn}>{Object.entries(TYPES).map(([k,v])=><option key={k} value={k}>{(LEAVE_ICON[k]||"")+" "+v}</option>)}</select></div>
-        <div><label style={label}>من</label><input type="date" value={f.start} onChange={e=>setF({...f,start:e.target.value})} style={sIn} /></div>
+        <div><label style={label}>الطبيب</label><select value={f.doctorId} onChange={e=>setF({...f,doctorId:e.target.value})} style={sIn}><option value="">—</option>{doctors.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
+        <div><label style={label}>النوع</label><select value={f.type} onChange={e=>{ const t=e.target.value; setF({...f,type:t, ...(t==="permission"?{ period:f.period||"pm", end:f.start||f.end, clinicClosed:false }:{})}); }} style={sIn}>{Object.entries(TYPES).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>
+        <div><label style={label}>من</label><input type="date" value={f.start} onChange={e=>setF({...f,start:e.target.value, ...((!f.end||f.end<e.target.value||f.type==="permission")?{end:e.target.value}:{})})} style={sIn} /></div>
         <div><label style={label}>إلى</label><input type="date" value={f.end} onChange={e=>setF({...f,end:e.target.value})} style={sIn} /></div>
+      </div>
+      <div style={{ marginTop:10 }}>
+        <label style={label}>الفترة</label>
+        <div style={{ display:"flex", gap:6, background:"var(--surface2)", borderRadius:12, padding:4 }}>
+          {[["","🗓 اليوم كامل"],["am","☀️ الصباح فقط"],["pm","🌤 الظهر فقط"]].map(([k,t])=><button key={k} onClick={()=>setF({...f,period:k})} style={{ flex:1, border:"none", borderRadius:9, padding:"9px 6px", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:800, background:f.period===k?"var(--surface)":"transparent", color:f.period===k?C.primaryD:C.muted, boxShadow:f.period===k?"0 1px 4px rgba(16,40,70,.12)":"none" }}>{t}</button>)}
+        </div>
+        {f.period && <div style={{ fontSize:11.5, color:C.muted, marginTop:6 }}>{f.period==="am" ? "يُغطّى فقط عيادته الصباحية — عيادة الظهر والمسائي يعمل بهما كالمعتاد." : "يُغطّى فقط عيادته الظهر — عيادته الصباحية قائمة. ولو كان مناوباً مسائياً ذلك اليوم يُعتبر غائباً عن المسائي أيضاً (غادر)."}</div>}
       </div>
       <label style={{ display:"flex", alignItems:"center", gap:8, marginTop:12, fontSize:13, color:C.sub, cursor:"pointer" }}>
         <input type="checkbox" checked={f.clinicClosed} onChange={e=>setF({...f,clinicClosed:e.target.checked})} /> العيادة مغلقة خلال الإجازة (لا تحتاج تغطية)
       </label>
-      <div style={{ display:"flex", gap:8, marginTop:12 }}>
-        <button onClick={editId?saveEdit:add} style={{ ...sBtn(C.primary), flex:1 }}>{editId?"💾 حفظ التعديل":"إضافة"}</button>
-        {editId && <button onClick={cancelEdit} style={{ ...sBtn("var(--surface2)", C.sub), flex:"0 0 auto", padding:"0 18px" }}>إلغاء</button>}
-      </div>
+      <button onClick={add} style={{ ...sBtn(C.primary), width:"100%", marginTop:12 }}>إضافة</button>
     </div>
 
     {sorted.length===0 ? <Empty icon="🏖" title="لا إجازات مسجّلة" /> :
@@ -2547,7 +2713,7 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
         const clinics=[];
         const s=new Date(l.start),e=new Date(l.end);
         for(let dt=new Date(s);dt<=e;dt.setDate(dt.getDate()+1)){ const wi=dt.getDay(); if(wi>4)continue; const ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
-          ["am","pm"].forEach(p=>{ if(isClinic(getSlot(d,wi,p))){ const ex=coverages.find(c=>c.date===ds&&c.period===p&&c.absentId===d.id); clinics.push({ds,p,cov:ex?ex.coverDoctorId:null}); } });
+          ["am","pm"].forEach(p=>{ if(l.period && l.period!==p) return; /* استئذان جزئي: عيادة الفترة الأخرى قائمة ولا تظهر هنا */ if(isClinic(getSlot(d,wi,p))){ const ex=coverages.find(c=>c.date===ds&&c.period===p&&c.absentId===d.id); clinics.push({ds,p,cov:ex?ex.coverDoctorId:null}); } });
         }
         // مناوباته المسائية التي أُزيل منها بسبب هذه الإجازة ولم يُعيَّن بديل بعد
         const evening = (l.eveRemoved||[]).filter(ds=>{ const nd=nightData[ds]||{}; return (nd.doctors||[]).length < (nd.eveningSlots||1); }).sort();
@@ -2584,7 +2750,7 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
         const evePick = ds => { const nightDocs=(nightData[ds]?.doctors)||[]; const prevE=((nightData[prevCalDay(ds)]||{}).doctors)||[]; const nd1=nextCal(ds); const nextE=((nightData[nd1]||{}).doctors)||[]; const wi=dayIdx(ds), nwi=dayIdx(nd1);
           const dayDuty = id => coverages.some(c=>c.date===ds && c.coverDoctorId===id && (c.period==="am"||c.period==="pm"));
           const cost = x => (isClinic(getSlot(x,wi,"am"))?1:0) + (isClinic(getSlot(x,wi,"pm"))?1:0) + ((restRule && nwi>=0 && isClinic(getSlot(x,nwi,"am")))?1:0);
-          const out = doctors.filter(x=>x.id!==d.id&&!nightDocs.includes(x.id)).map(x=>{ const lv=onLeave(x,ds,leaves); const fixedAny=(x.nightDays||[]).length>0;
+          const out = doctors.filter(x=>x.id!==d.id&&!nightDocs.includes(x.id)).map(x=>{ const lv=onLeave(x,ds,leaves,"eve"); const fixedAny=(x.nightDays||[]).length>0;
             const why = lv?null : fixedAny?"عيادة مسائية ثابتة" : dayDuty(x.id)?"مكلّف بتغطية نهارية نفس اليوم" : (prevE.includes(x.id)||nextE.includes(x.id))?"مناوبة متتالية" : null;
             return { doc:x, status: lv?"leave":why?"warn":"free", commit:why, load:eveLoad(x.id), cost:cost(x) }; })
             .sort((a,b)=>(({free:0,warn:1,busy:2,leave:3}[a.status])-({free:0,warn:1,busy:2,leave:3}[b.status]))||(a.load-b.load)||(a.cost-b.cost));
@@ -2608,11 +2774,10 @@ function LeavesPage({ doctors, leaves, nightData, coverages, today, fd, setLeave
             <Avatar doc={d} size={36}/>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontWeight:700, fontSize:14 }}>{d.name}</div>
-              <div style={{ fontSize:11.5, color:C.sub }}>{LEAVE_ICON[l.type]||"🏖"} {TYPES[l.type]} · {dmy(l.start)} ← {dmy(l.end)}</div>
+              <div style={{ fontSize:11.5, color:C.sub }}>{TYPES[l.type]||"إجازة"} · {l.start===l.end?dmy(l.start):<>{dmy(l.start)} ← {dmy(l.end)}</>}{l.period && <b style={{ color:l.period==="am"?"#92400E":"#3730A3", marginInlineStart:6 }}>{l.period==="am"?"☀️ الصباح فقط":"🌤 الظهر فقط"}</b>}</div>
             </div>
             <span style={{ fontSize:10.5, fontWeight:700, background:chip.bg, color:chip.fg, borderRadius:20, padding:"4px 11px", whiteSpace:"nowrap" }}>{chip.t}</span>
             {uncoveredClinics>0 && <button onClick={()=>autoCoverLeave(l)} title="تغطية عياداته بالأنسب" style={{ background:"var(--primarySoft)", border:"none", borderRadius:10, width:34, height:30, fontSize:14, color:C.primary, cursor:"pointer", flexShrink:0 }}>⚡</button>}
-            <button onClick={()=>startEdit(l)} title="تعديل الإجازة" style={{ background:"var(--surface2)", border:"none", borderRadius:10, width:34, height:30, fontSize:14, color:C.sub, cursor:"pointer", flexShrink:0 }}>✏️</button>
             <button onClick={()=>{ if(confirm("حذف هذه الإجازة؟")) del(l.id); }} title="حذف الإجازة" style={{ background:"var(--dangerSoft)", border:"none", borderRadius:10, width:34, height:30, fontSize:14, color:C.err, cursor:"pointer", flexShrink:0 }}>🗑</button>
           </div>
           {l.clinicClosed!==false
@@ -2686,11 +2851,11 @@ function DoctorsPage({ doctors, leaves, nightData, coverages, today, fd, setDoct
           <div style={{ padding:"0 14px 14px" }}>
             <div className="fbar" style={{ marginBottom:8 }}>
               <div className="top"><b>DS · رعاية مباشرة</b><span>{directTarget(d)}/10</span></div>
-              <div className="track"><div style={{ width:(directTarget(d)/10*100)+"%", height:"100%", borderRadius:6, background:`linear-gradient(90deg,${C.primary},${C.eve})` }} /></div>
+              <div className="track"><div style={{ width:(directTarget(d)/10*100)+"%", height:"100%", borderRadius:6, background:GRAD(`linear-gradient(90deg,${C.primary},${C.eve})`) }} /></div>
             </div>
             <div className="fbar" style={{ marginBottom:10 }}>
               <div className="top"><b>SS · دعم</b><span>{posSS(d.adminPosition,d)}/10</span></div>
-              <div className="track"><div style={{ width:(posSS(d.adminPosition,d)/10*100)+"%", height:"100%", borderRadius:6, background:"linear-gradient(90deg,#8A9BB0,#647189)" }} /></div>
+              <div className="track"><div style={{ width:(posSS(d.adminPosition,d)/10*100)+"%", height:"100%", borderRadius:6, background:GRAD("linear-gradient(90deg,#8A9BB0,#647189)") }} /></div>
             </div>
             <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
               <span className="tag t-pri">{rankLabel(rankOf(d))}</span>
@@ -3018,7 +3183,7 @@ function showPrintOverlay(docHtml){
 function __PW__(html){ html=String(html).replace(/<script>[\s\S]*?<\/script>/g,"").replace(/<button class="printbtn"[\s\S]*?<\/button>/g,""); showPrintOverlay(html); }
 const printDoc = (title, body, landscape=false) => { const now=new Date().toLocaleString("ar",{year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit"}); __PW__(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet"><style>*{box-sizing:border-box}body{font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif;margin:0;color:#334155;background:#f1f5f9;line-height:1.6}.wrap{max-width:1000px;margin:0 auto;padding:24px;background:#fff}.hdr{background:linear-gradient(120deg,${C.primaryD},${C.primary} 70%,${C.accent});color:#fff;padding:22px 26px;border-radius:18px;margin-bottom:20px;display:flex;align-items:center;gap:16px;box-shadow:0 10px 30px rgba(15,118,110,.18)}.hdr .lg{width:50px;height:50px;border-radius:14px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:25px;font-weight:800;border:1px solid rgba(255,255,255,.3)}.hdr h1{margin:0;font-size:21px;font-weight:800;letter-spacing:-.3px}.hdr .sub{font-size:11.5px;opacity:.92;margin-top:4px;font-weight:500}h2{font-size:14px;color:${C.primaryD};margin:24px 0 10px;font-weight:800;display:flex;align-items:center;gap:8px;letter-spacing:-.2px}h2::before{content:"";width:9px;height:9px;border-radius:50%;background:${C.accent};display:inline-block}table{width:100%;border-collapse:separate;border-spacing:0;margin-top:6px;border:1px solid #e8eef3;border-radius:14px;overflow:hidden;font-size:12.5px;box-shadow:0 1px 3px rgba(16,40,60,.04)}thead th{background:linear-gradient(135deg,${C.primary},${C.accent});color:#fff;padding:11px 12px;font-weight:700;text-align:center;font-size:12px}tbody td{padding:9px 12px;text-align:center;border-top:1px solid #eef3f8}tbody th{padding:9px 12px;text-align:start;border-top:1px solid #eef3f8;background:#f4f8fb;color:${C.primaryD};font-weight:700;white-space:nowrap}tbody tr:nth-child(even){background:#f8fbfd}p{color:#94a3b8;font-size:12px;margin:8px 0 0}.foot{margin-top:28px;padding-top:14px;border-top:1px dashed #d8e2ea;font-size:10.5px;color:#94a3b8;text-align:center;letter-spacing:.3px}.printbtn{position:fixed;left:16px;bottom:16px;z-index:99;background:${C.primary};color:#fff;border:none;border-radius:12px;padding:12px 18px;font-family:inherit;font-size:14px;font-weight:700;box-shadow:0 8px 24px rgba(15,118,110,.3);cursor:pointer}@media print{@page{size:A4 ${landscape?"landscape":"portrait"};margin:10mm}body{background:#fff}.wrap{padding:0}.hdr{box-shadow:none}.printbtn{display:none}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class="wrap"><div class="hdr"><div class="lg">ط</div><div><h1>${title}</h1><div class="sub">نظام إدارة الجداول والتغطيات · ${now}</div></div></div>${body}<div class="foot">قسم الأسنان · نظام إدارة الجداول والتغطيات</div></div><button class="printbtn" onclick="window.print()">🖨 طباعة / حفظ PDF</button><script>setTimeout(function(){try{window.print()}catch(e){}},800);<\/script></body></html>`); };
 
-function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays, doctors, publishNow, leaves, nightData, coverages, audit, users, setDoctors, setLeaves, setNight, setCoverages, setAudit, setUsers, logAudit }) {
+function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays, doctors, officialData, publishNow, leaves, nightData, coverages, audit, users, setDoctors, setLeaves, setNight, setCoverages, setAudit, setUsers, logAudit }) {
   const s = { ...DEFAULT_SETTINGS, ...settings };
   const set = (k,v)=> setSettings(p=>({ ...p, [k]:v }));
   const [dk,setDk] = useState(document.documentElement.getAttribute("data-theme")==="dark");
@@ -3046,6 +3211,9 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
     {hint&&<div style={{ fontSize:11.5, color:C.muted, marginTop:7 }}>{hint}</div>}
   </div>;
   const [settingsTab,setSettingsTab] = useState("site");
+  const [mailPrevDate,setMailPrevDate] = useState(null);
+  const [mailStatus,setMailStatus] = useState(null);
+  const [codeShown,setCodeShown] = useState(null);
   return <div className="fade">
     <div style={{ ...card(), padding:16, marginBottom:14 }}>
       <div style={{ fontSize:15, fontWeight:700 }}>⚙️ إعدادات النظام</div>
@@ -3054,6 +3222,7 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
     <div style={{ display:"flex", gap:8, marginBottom:14, background:"var(--surface2)", borderRadius:12, padding:5 }}>
       <button onClick={()=>setSettingsTab("site")} style={{ flex:1, padding:"10px 8px", borderRadius:9, border:"none", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:800, background: settingsTab==="site"?"var(--surface)":"transparent", color: settingsTab==="site"?C.primary:C.muted, boxShadow: settingsTab==="site"?"0 2px 8px rgba(0,0,0,.08)":"none" }}>⚙️ إعدادات الموقع</button>
       <button onClick={()=>setSettingsTab("publish")} style={{ flex:1, padding:"10px 8px", borderRadius:9, border:"none", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:800, background: settingsTab==="publish"?"var(--surface)":"transparent", color: settingsTab==="publish"?C.primary:C.muted, boxShadow: settingsTab==="publish"?"0 2px 8px rgba(0,0,0,.08)":"none" }}>☁️ النشر والمزامنة</button>
+      <button onClick={()=>setSettingsTab("mail")} style={{ flex:1, padding:"10px 8px", borderRadius:9, border:"none", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:800, background: settingsTab==="mail"?"var(--surface)":"transparent", color: settingsTab==="mail"?C.primary:C.muted, boxShadow: settingsTab==="mail"?"0 2px 8px rgba(0,0,0,.08)":"none" }}>📧 تذكير البريد</button>
     </div>
     {settingsTab==="site" && <>
     <div className="card" style={{ padding:16, marginBottom:12 }}>
@@ -3066,9 +3235,9 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
     <div style={{ ...card(), padding:16, marginBottom:12 }}>
       <label style={label}>🎨 لون التصميم</label>
       <div style={{ display:"flex", flexWrap:"wrap", gap:10, marginTop:4 }}>
-        {Object.entries(THEMES).map(([k,t])=>{ const active=(S.get("v2_theme")||"teal")===k; return (
+        {Object.entries(THEMES).map(([k,t])=>{ const active=_tk===k; return (
           <button key={k} onClick={()=>{ S.set("v2_theme",k); location.reload(); }} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:6, border:`2px solid ${active?t.primary:C.line}`, borderRadius:12, padding:"10px 12px", background:"var(--surface)", cursor:"pointer", minWidth:74 }}>
-            <span style={{ width:30, height:30, borderRadius:"50%", background:`linear-gradient(135deg,${t.primary},${t.accent})` }} />
+            <span style={{ width:30, height:30, borderRadius:"50%", background:GRAD(`linear-gradient(135deg,${t.primary},${t.accent})`) }} />
             <span style={{ fontSize:11, fontWeight:700, color:active?t.primary:C.sub }}>{t.name}{active?" ✓":""}</span>
           </button>
         ); })}
@@ -3102,8 +3271,8 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
         </span>
       </button>
     </div>
-    {field("capEvening","حدّ المناوبات المسائية شهرياً","ينبّه عند تجاوز الطبيب هذا العدد من المناوبات الإضافية في الشهر. المسائي الثابت (مثل د.الحمادي) لا يدخل في العدد.")}
-    {field("capLeaveDay","حدّ المُجازين في اليوم","أقصى عدد أطباء مسموح بإجازتهم في نفس اليوم. يظهر التنبيه فقط عند تجاوز هذا العدد.")}
+    {field("capEvening","حدّ المناوبات المسائية شهرياً","ينبّه عند تجاوز الطبيب هذا العدد من المناوبات في الشهر.")}
+    {field("capLeaveDay","حدّ المُجازين في اليوم","ينبّه عند تساوي/تجاوز عدد المُجازين في يوم عمل هذا الحد.")}
     <div style={{ ...card(), padding:16, marginBottom:12 }}>
       <label style={{ ...label, marginBottom:0, display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}>
         <input type="checkbox" checked={s.restRule!==false} onChange={e=>set("restRule",e.target.checked)} style={{ width:18, height:18 }} />
@@ -3252,6 +3421,105 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
       </div>}
     </div>
     </>}
+    {settingsTab==="mail" && (()=>{
+      const m = { enabled:false, hour:18, evening:true, coverage:true, summary:true, headEmail:"", ...(s.mail||{}) };
+      const setM = (k,v) => setSettings(p=>({ ...p, mail:{ ...m, ...(p.mail||{}), [k]:v } }));
+      const tmr = (()=>{ const d=new Date(); d.setDate(d.getDate()+1); return d.toISOString().split("T")[0]; })();
+      const pd = mailPrevDate || tmr;
+      const sch = officialData || { nightData, coverages };
+      const nm = id => (doctors.find(x=>x.id===id)?.name||"؟").replace(/^د\.\s*/,"");
+      const items = {};
+      const di = dayIdx(pd);
+      if(di>=0){
+        if(m.evening) ((sch.nightData[pd]||{}).doctors||[]).forEach(id=>{ const d=doctors.find(x=>x.id===id); if(d && !onLeave(d,pd,leaves,"eve")) (items[id]=items[id]||[]).push("🌙 عيادة مسائية"); });
+        if(m.coverage) (sch.coverages||[]).filter(c=>c.date===pd).forEach(c=>{ const d=doctors.find(x=>x.id===c.coverDoctorId); if(d && !onLeave(d,pd,leaves,c.period)) (items[c.coverDoctorId]=items[c.coverDoctorId]||[]).push(`🔄 تغطية عيادة د.${nm(c.absentId)} — ${c.period==="am"?"صباحاً":"ظهراً"}`); });
+      }
+      const noMail = doctors.filter(d=>!String(d.email||"").includes("@"));
+      const copyCode = () => {
+        const raw = (document.getElementById("gas-code")||{}).textContent||"";
+        const site = location.origin + location.pathname.replace(/[^/]*$/,"") + "view.html";
+        const code = raw.replace("__DB_URL__", FIREBASE_DEFAULT.dbUrl).replace("__API_KEY__", FIREBASE_DEFAULT.apiKey).replace("__SITE_URL__", site).trim();
+        const done = () => showToast("✓ نُسخ الكود — الصقه في Google Apps Script");
+        if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(done).catch(()=>{ setCodeShown(code); });
+        else setCodeShown(code);
+      };
+      const loadStatus = async () => { try{ const t=await getAnonToken(); const r=await fetch(`${FIREBASE_DEFAULT.dbUrl.replace(/\/+$/,"")}/mailStatus.json?auth=${encodeURIComponent(t)}`,{cache:"no-store"}); setMailStatus(r.ok ? (await r.json())||"none" : "none"); }catch(e){ setMailStatus("none"); } };
+      const row = { display:"flex", alignItems:"center", gap:12, padding:"11px 13px", background:"var(--surface2)", borderRadius:13, marginTop:8 };
+      const chk = (k,t) => <label style={{ ...row, cursor:"pointer" }}><input type="checkbox" checked={!!m[k]} onChange={e=>setM(k,e.target.checked)} style={{ width:18, height:18 }} /><span style={{ flex:1, fontSize:13.5, fontWeight:600 }}>{t}</span></label>;
+      return <>
+        <div style={{ ...card(), padding:16, marginBottom:12 }}>
+          <label style={label}>📧 تذكير الأطباء بالبريد</label>
+          <div style={{ fontSize:12, color:C.sub, lineHeight:1.8 }}>كل يوم في الساعة المحددة يصل لكل طبيب بريد بمهامه في <b>اليوم التالي</b> من الجدول <b>المعتمد</b>: عيادته المسائية وتغطياته (عيادة من، وأي فترة). أيام الجمعة والسبت والعطل الرسمية لا تُرسل لها رسائل.</div>
+          <div style={row}>
+            <span style={{ flex:1, fontSize:14, fontWeight:800, color:m.enabled?C.ok:C.text }}>{m.enabled?"✓ التذكير مفعّل":"التذكير متوقف"}</span>
+            <button onClick={()=>setM("enabled",!m.enabled)} aria-label="تفعيل التذكير" style={{ width:50, height:28, borderRadius:20, border:"none", background:m.enabled?C.ok:"var(--line)", position:"relative", cursor:"pointer", flexShrink:0 }}><span style={{ position:"absolute", top:3, insetInlineStart:m.enabled?25:3, width:22, height:22, borderRadius:"50%", background:"#fff", boxShadow:"0 1px 3px rgba(0,0,0,.25)", transition:"inset-inline-start .2s" }} /></button>
+          </div>
+          <div style={row}>
+            <span style={{ flex:1, fontSize:13.5, fontWeight:600 }}>⏰ وقت الإرسال (اليوم السابق)</span>
+            <select value={m.hour} onChange={e=>setM("hour",+e.target.value)} style={{ ...sIn, width:"auto" }}>{Array.from({length:17},(_,i)=>i+6).map(h=><option key={h} value={h}>{h>12?`${h-12}:00 مساءً`:h===12?"12:00 ظهراً":`${h}:00 صباحاً`}</option>)}</select>
+          </div>
+          {chk("evening","🌙 تذكير بالعيادة المسائية")}
+          {chk("coverage","🔄 تذكير بالتغطيات")}
+          {chk("summary","📋 ملخص يومي لرئيس القسم بكل ما أُرسل")}
+          {m.summary && <input type="email" value={m.headEmail} onChange={e=>setM("headEmail",e.target.value.trim())} placeholder="بريد رئيس القسم للملخص (اختياري — الافتراضي حساب Google الذي شغّل الكود)" style={{ ...sIn, marginTop:8, direction:"ltr" }} />}
+        </div>
+
+        <div style={{ ...card(), padding:16, marginBottom:12 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <label style={{ ...label, flex:1, margin:0 }}>✉️ بريد الأطباء</label>
+            <span style={{ fontSize:12, fontWeight:700, color:noMail.length?C.err:C.ok }}>{noMail.length?`${noMail.length} بلا بريد`:"✓ الكل لديه بريد"}</span>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:8, marginTop:10 }}>
+            {doctors.map(d=>{ const ok=String(d.email||"").includes("@"); return <div key={d.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", borderRadius:11, background:ok?"var(--surface2)":"var(--dangerSoft)" }}>
+              <span style={{ fontSize:13, fontWeight:700, minWidth:110 }}>{d.name}</span>
+              <input type="email" value={d.email||""} onChange={e=>setDoctors(ds=>ds.map(x=>x.id===d.id?{ ...x, email:e.target.value.trim() }:x))} placeholder="name@moh.gov.sa" style={{ ...sIn, padding:"7px 9px", fontSize:12.5, direction:"ltr" }} />
+            </div>; })}
+          </div>
+        </div>
+
+        <div style={{ ...card(), padding:16, marginBottom:12 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+            <label style={{ ...label, flex:1, margin:0 }}>👁 معاينة الرسائل</label>
+            <input type="date" value={pd} onChange={e=>setMailPrevDate(e.target.value)} style={{ ...sIn, width:"auto" }} />
+          </div>
+          <div style={{ fontSize:11.5, color:C.muted, margin:"4px 0 8px" }}>ما سيصل للأطباء عن يوم {DAYS[di]||""} {dmy(pd)} (يُرسل مساء اليوم السابق) — من الجدول المعتمد</div>
+          {di<0 ? <div style={{ fontSize:12.5, color:C.muted }}>يوم إجازة/عطلة — لا رسائل.</div>
+            : Object.keys(items).length===0 ? <div style={{ fontSize:12.5, color:C.muted }}>لا مناوبات ولا تغطيات معتمدة في هذا اليوم.</div>
+            : Object.entries(items).map(([id,ls],i)=>{ const d=doctors.find(x=>x.id===+id); const ok=String(d?.email||"").includes("@"); return <div key={id} style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"9px 11px", borderRadius:11, background:i%2?"var(--rowAlt)":"var(--surface2)", marginBottom:6 }}>
+              <div style={{ minWidth:130 }}><div style={{ fontSize:13.5, fontWeight:800 }}>{d?.name}</div><div style={{ fontSize:11, color:ok?C.muted:C.err, direction:"ltr", textAlign:"right" }}>{ok?d.email:"⚠️ بلا بريد — لن تصله"}</div></div>
+              <div style={{ flex:1, fontSize:13, lineHeight:1.8 }}>{ls.map((l,j)=><div key={j}>{l}</div>)}</div>
+            </div>; })}
+        </div>
+
+        <div style={{ ...card(), padding:16, marginBottom:12 }}>
+          <label style={label}>⚙️ التشغيل (مرة واحدة فقط — ٥ دقائق)</label>
+          <div style={{ fontSize:12.5, color:C.sub, lineHeight:2 }}>
+            الإرسال يتم من حسابك في Google (Gmail) مجاناً عبر <b>Google Apps Script</b>، لأن الموقع صفحة ثابتة لا ترسل بريداً بنفسها:
+            <ol style={{ margin:"6px 0", paddingInlineStart:20 }}>
+              <li>اضغط <b>«📋 نسخ الكود»</b> بالأسفل.</li>
+              <li>افتح <a href="https://script.google.com/home/projects/create" target="_blank" rel="noreferrer" style={{ color:C.primary, fontWeight:700 }}>script.google.com ← مشروع جديد</a> بحساب Gmail الذي تريد الإرسال منه.</li>
+              <li>امسح الموجود والصق الكود ← 💾 حفظ.</li>
+              <li>من القائمة بالأعلى اختر الدالة <b dir="ltr">setup</b> ← ▶ تشغيل ← وافق على الصلاحيات (Advanced ← Go to project).</li>
+              <li>للتجربة: اختر <b dir="ltr">sendTestToMe</b> ← ▶ تشغيل — تصلك معاينة رسائل الغد لبريدك فقط.</li>
+              <li>فعّل <b>«التذكير مفعّل»</b> أعلاه ← انتهى. يعمل تلقائياً كل يوم حتى لو كان جهازك مغلقاً.</li>
+            </ol>
+            <span style={{ color:C.muted }}>الحد: ١٠٠ رسالة يومياً لحساب Gmail العادي (القسم يحتاج ~٥–١٠).</span>
+          </div>
+          <div style={{ display:"flex", gap:8, marginTop:10, flexWrap:"wrap" }}>
+            <button onClick={copyCode} style={{ ...sBtn(C.primary), flex:1, minWidth:160 }}>📋 نسخ الكود</button>
+            <button onClick={loadStatus} style={{ ...sGhost, flex:1, minWidth:160 }}>🔎 آخر إرسال</button>
+          </div>
+          {mailStatus && <div style={{ marginTop:10, fontSize:12.5, padding:"9px 11px", borderRadius:11, background:"var(--surface2)", lineHeight:1.8 }}>
+            {mailStatus==="none" ? "لم يُسجَّل أي تشغيل بعد — تأكد من خطوة setup." : <>
+              آخر تشغيل: <b>{new Date(mailStatus.lastRun).toLocaleString("ar",{dateStyle:"medium",timeStyle:"short"})}</b> عن يوم <b>{dmy(mailStatus.date)}</b><br/>
+              {mailStatus.skipped ? `لم يُرسل: ${mailStatus.skipped}` : <>وصل إلى: {(mailStatus.sent||[]).map(n=>"د."+n).join("، ")||"—"}</>}
+              {(mailStatus.noEmail||[]).length>0 && <div style={{ color:C.err }}>بلا بريد: {mailStatus.noEmail.map(n=>"د."+n).join("، ")}</div>}
+            </>}
+          </div>}
+          {codeShown && <textarea readOnly value={codeShown} onFocus={e=>e.target.select()} style={{ ...sIn, marginTop:10, minHeight:160, fontFamily:"monospace", fontSize:11, direction:"ltr" }} />}
+        </div>
+      </>;
+    })()}
   </div>;
 }
 
@@ -3302,8 +3570,8 @@ function AlertsPage({ doctors, leaves, nightData, coverages, today, fd, settings
   ana.conflicts.forEach(c=> al.push({ sev:"err", t:c.text, go:"engine" }));
   ana.gaps.forEach(g=>{ const o=fd(g.ownerId); al.push({ sev:"warn", t:`عيادة ${o?"د."+o.name:""} مكشوفة ${dmy(g.date)} (${g.period==="am"?"صباحاً":"ظهراً"})`, go:"engine" }); });
   leaves.forEach(l=>{ const du=Math.round((new Date(l.start)-now)/864e5); if(du>0&&du<=3){ const d=fd(l.doctorId); if(d) al.push({ sev:"warn", t:`إجازة د.${d.name} تبدأ بعد ${du} ${du===1?"يوم":"أيام"}`, go:"leaves" }); } });
-  doctors.forEach(d=>{ let n=0; monthDays(now.getFullYear(),now.getMonth()).forEach(({date,di})=>{ if(((nightData[date]||{}).doctors||[]).includes(d.id) && !(d.nightDays||[]).includes(di)) n++; }); if(n>s.capEvening) al.push({ sev:"err", t:`د.${d.name} تجاوز حدّ المناوبات (${n}/${s.capEvening})`, go:"doctors" }); });
-  monthDays(now.getFullYear(),now.getMonth()).forEach(({date,di})=>{ const onLv=doctors.filter(d=>onLeave(d,date,leaves)).length; if(onLv>s.capLeaveDay) al.push({ sev:"warn", t:`تواجد منخفض ${dmy(date)} ${DAYS[di]} — ${onLv} في إجازة`, go:"leaves" }); });
+  doctors.forEach(d=>{ let n=0; monthDays(now.getFullYear(),now.getMonth()).forEach(({date})=>{ if(((nightData[date]||{}).doctors||[]).includes(d.id)) n++; }); if(n>s.capEvening) al.push({ sev:"err", t:`د.${d.name} تجاوز حدّ المناوبات (${n}/${s.capEvening})`, go:"doctors" }); });
+  monthDays(now.getFullYear(),now.getMonth()).forEach(({date,di})=>{ const onLv=doctors.filter(d=>onLeave(d,date,leaves)).length; if(onLv>=s.capLeaveDay) al.push({ sev:"warn", t:`تواجد منخفض ${dmy(date)} ${DAYS[di]} — ${onLv} في إجازة`, go:"leaves" }); });
   al.sort((a,b)=>(a.sev==="err"?0:1)-(b.sev==="err"?0:1));
   const SEV = { err:{ fg:C.err, ic:"!", tag:"t-bad", lbl:"عاجل" }, warn:{ fg:C.warn, ic:"~", tag:"t-warn", lbl:"مراجعة" } };
   return <div className="fade">
@@ -3518,16 +3786,16 @@ function ReportsPage({ doctors, leaves, nightData, coverages, today, fd, setting
       if(di<0){ const h=holidayInfo(date); const txt = h ? `🎉 ${h.name}${h.onCall?(" · مناوب: د."+(fd(h.onCall)?.name||"")):" · بدون مناوب"}` : "عطلة نهاية الأسبوع"; rows.push(`<tr class="we"><td>${dmy(date)}</td><td>${WK[jsDay]}</td><td colspan="6" style="color:${h?"#6d28d9":"#94a3b8"};font-weight:${h?"700":"400"}">${txt}</td></tr>`); continue; }
       const nd = nightData[date]||{};
       const isEve = (nd.doctors||[]).includes(d.id);
-      const onLv = onLeave(d,date,leaves); const closed = clinicClosedOnLeave(d,date,leaves);
+      const onLvP = p => onLeave(d,date,leaves,p); const closedP = p => clinicClosedOnLeave(d,date,leaves,p);
       const indiv = coverages.filter(c=>c.date===date);
-      const cellFor = per => { const slot=getSlot(d,di,per); const away=indiv.some(x=>x.period===per && x.absentId===d.id); if(onLv) return closed?`<span class="lv">إجازة</span>`:(slot?(SLOT_AR[slot]||slot):"—"); if(away) return `<span class="aw">غُطّيت عنه</span>`; if(!slot) return "—"; return SLOT_AR[slot]||slot; };
+      const cellFor = per => { const slot=getSlot(d,di,per); const away=indiv.some(x=>x.period===per && x.absentId===d.id); if(onLvP(per)) return closedP(per)?`<span class="lv">إجازة</span>`:(slot?(SLOT_AR[slot]||slot):"—"); if(away) return `<span class="aw">غُطّيت عنه</span>`; if(!slot) return "—"; return SLOT_AR[slot]||slot; };
       const amC=cellFor("am"), pmC=cellFor("pm");
       const eveC = isEve?`<span class="ev">عيادة مسائية</span>`:"—";
       const covs=[];
       indiv.forEach(x=>{ if(x.coverDoctorId===d.id) covs.push(`${perFull(x.period)} (${TIMES[x.period]||""}) لـ د.${fd(x.absentId)?.name||"—"} بسبب ${coverReasonAr(x.absentId,date,x.reason,leaves)}`); });
       ["am","pm","nextAm"].forEach(sl=>{ (nd.coverages?.[sl]||[]).forEach(id=>{ if(id===d.id) covs.push(`${perFull(sl)} (${TIMES[sl]||""}) لطبيب المسائي بسبب دوام مسائي`); }); });
       let clin=0;
-      if(!onLv){ const a=getSlot(d,di,"am"), b=getSlot(d,di,"pm"); if(a&&DIRECT_SLOTS.includes(a)&&!indiv.some(x=>x.period==="am"&&x.absentId===d.id)) clin++; if(b&&DIRECT_SLOTS.includes(b)&&!indiv.some(x=>x.period==="pm"&&x.absentId===d.id)) clin++; }
+      { const a=getSlot(d,di,"am"), b=getSlot(d,di,"pm"); if(!onLvP("am")&&a&&DIRECT_SLOTS.includes(a)&&!indiv.some(x=>x.period==="am"&&x.absentId===d.id)) clin++; if(!onLvP("pm")&&b&&DIRECT_SLOTS.includes(b)&&!indiv.some(x=>x.period==="pm"&&x.absentId===d.id)) clin++; }
       if(isEve) clin+=2;
       const covCnt=covs.length;
       totClin+=clin; totCov+=covCnt;
@@ -3655,10 +3923,10 @@ function LoginScreen({ users, onLogin }) {
   const [p,setP] = useState("");
   const [err,setErr] = useState("");
   const go = () => { const f=users.find(x=>x.username.trim().toLowerCase()===u.trim().toLowerCase() && String(x.pin)===String(p)); if(f){ setErr(""); onLogin(f); } else setErr("اسم المستخدم أو الرمز غير صحيح"); };
-  return <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:`linear-gradient(135deg,${C.primaryD},${C.primary})`, padding:20 }}>
+  return <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:GRAD(`linear-gradient(135deg,${C.primaryD},${C.primary})`), padding:20 }}>
     <div style={{ background:"var(--surface)", borderRadius:20, padding:"30px 26px", width:"100%", maxWidth:360, boxShadow:"0 20px 60px rgba(0,0,0,.25)" }}>
       <div style={{ textAlign:"center", marginBottom:22 }}>
-        <div style={{ width:58, height:58, borderRadius:16, background:`linear-gradient(135deg,${C.primary},${C.accent})`, color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, fontWeight:800, margin:"0 auto 12px" }}>ط</div>
+        <div style={{ width:58, height:58, borderRadius:16, background:GRAD(`linear-gradient(135deg,${C.primary},${C.accent})`), color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, fontWeight:800, margin:"0 auto 12px" }}>ط</div>
         <div style={{ fontSize:18, fontWeight:800, color:C.text }}>نظام إدارة التغطيات</div>
         <div style={{ fontSize:12, color:C.sub, marginTop:3 }}>تسجيل الدخول</div>
       </div>
@@ -3831,7 +4099,7 @@ function App() {
   const [,forceDark] = useState(0);
   const [zoom,setZoom] = useState(()=>{ const z=+S.get("v2_zoom"); return (z>=0.9&&z<=1.3)?z:1; });
   const changeZoom = d => setZoom(z=>{ const n=Math.round(Math.min(1.3,Math.max(0.9,z+d))*100)/100; document.documentElement.style.setProperty("--z", n); document.documentElement.classList.toggle("zbig", n>1.05); S.set("v2_zoom", n); return n; });
-  const toggleDark = () => { const dk=document.documentElement.getAttribute("data-theme")==="dark"; document.documentElement.setAttribute("data-theme", dk?"light":"dark"); S.set("v2_dark", !dk); forceDark(x=>x+1); };
+  const toggleDark = () => { const dk=document.documentElement.getAttribute("data-theme")==="dark"; document.documentElement.setAttribute("data-theme", dk?"light":"dark"); S.set("v2_dark", !dk); if(THEMES[_tk]&&THEMES[_tk].dark){ setTimeout(()=>location.reload(),60); return; } forceDark(x=>x+1); };
   const [page, setPage]           = useState("dashboard");
   const [toast, setToast]         = useState(null);
   const [cloudReady, setCloudReady] = useState(false); // true بعد محاولة التحميل الأولى من السحابة (نجحت أو فشلت)
@@ -3859,7 +4127,7 @@ function App() {
   useEffect(()=>{
     let touchedNight=false, touchedCov=false; let fixedCount=0;
     // ── ربط كل ما يُزال بسبب إجازة بسجل الإجازة نفسها: مناوباته (eveRemoved) وتغطياته لغيره (displaced) — لتظهر في نافذة إجازته، وتُستعاد تلقائياً لو حُذفت الإجازة ──
-    const leaveOf = (docId,ds) => leaves.find(l=>l.doctorId===docId && l.start<=ds && ds<=l.end);
+    const leaveOf = (docId,ds,per) => leaves.find(l=>l.doctorId===docId && l.start<=ds && ds<=l.end && leaveHits(l,per));
     const leaveUpd = {}; // leaveId -> { eve:Set, disp:[] }
     const bump = (L) => (leaveUpd[L.id] = leaveUpd[L.id] || { eve:new Set(), disp:[] });
 
@@ -3868,10 +4136,10 @@ function App() {
     const eveCovStale = new Set();
     Object.keys(n2).forEach(ds=>{
       const day = n2[ds]; if(!day || !(day.doctors||[]).length) return;
-      const removed = day.doctors.filter(id=>{ const d=doctors.find(x=>x.id===id); return d && onLeave(d,ds,leaves); });
+      const removed = day.doctors.filter(id=>{ const d=doctors.find(x=>x.id===id); return d && onLeave(d,ds,leaves,"eve"); });
       if(removed.length){
         n2[ds]={ ...day, doctors:day.doctors.filter(id=>!removed.includes(id)) }; touchedNight=true; fixedCount+=removed.length;
-        removed.forEach(id=>{ const L=leaveOf(id,ds); if(!L) return; bump(L).eve.add(ds);
+        removed.forEach(id=>{ const L=leaveOf(id,ds,"eve"); if(!L) return; bump(L).eve.add(ds);
           // تغطيات عياداته بسبب هذه المناوبة (نفس اليوم + راحة صباح اليوم التالي) — تُزال معها وتُحفظ بسجل الإجازة لتعود لو أُلغيت الإجازة
           coverages.forEach(c=>{ if(c.absentId!==id || eveCovStale.has(c)) return; if((c.reason==="evening" && c.date===ds) || (c.reason==="post_evening" && prevWorkDay(c.date)===ds)){ eveCovStale.add(c); bump(L).disp.push({ kind:"evecov", date:c.date, period:c.period, rec:c }); } }); });
       }
@@ -3894,11 +4162,11 @@ function App() {
       const cv = {...day.coverages}; let cvChanged=false;
       [["am",ds,di0,"am"],["pm",ds,di0,"pm"],["nextAm",nDate,ndi,"am"]].forEach(([sl,date,sdi,per])=>{
         const ids = cv[sl]||[];
-        const gone = ids.filter(id=>{ const d=doctors.find(x=>x.id===id); return d && onLeave(d,date,leaves); });
+        const gone = ids.filter(id=>{ const d=doctors.find(x=>x.id===id); return d && onLeave(d,date,leaves,per); });
         if(!gone.length) return;
         cv[sl] = ids.filter(id=>!gone.includes(id)); cvChanged=true; fixedCount+=gone.length;
         const owner = (day.doctors||[]).find(id=>{ const o=doctors.find(x=>x.id===id); return o && isClinic(getSlot(o,sdi,per)); });
-        gone.forEach(id=>{ const L=leaveOf(id,date); if(L) bump(L).disp.push({ kind:"night", dayKey:ds, slot:sl, date, period:per, ownerId:owner??null, coverId:id }); });
+        gone.forEach(id=>{ const L=leaveOf(id,date,per); if(L) bump(L).disp.push({ kind:"night", dayKey:ds, slot:sl, date, period:per, ownerId:owner??null, coverId:id }); });
       });
       if(cvChanged){ n2[ds]={ ...n2[ds], coverages:cv }; touchedNight=true; }
     });
@@ -3906,7 +4174,7 @@ function App() {
     // ٢) كل تغطية: هل ما زال للطبيب الغائب سبب فعلي حقيقي يستدعيها اليوم؟ (إجازة قائمة الآن، أو مناوبة مسائية فعلية نفس اليوم، أو مناوبة اليوم السابق لراحة ما بعد المسائي)
     const ownerJustified = c => {
       const d = doctors.find(x=>x.id===c.absentId); if(!d) return false;
-      if(onLeave(d, c.date, leaves)) return true;                                        // غائب فعلاً بإجازة قائمة هذا اليوم
+      if(onLeave(d, c.date, leaves, c.period)) return true;                                        // غائب فعلاً بإجازة قائمة هذا اليوم
       if(((n2[c.date]||{}).doctors||[]).includes(c.absentId)) return true;                // مناوب مسائياً فعلاً نفس اليوم (عيادته تحتاج تغطية بسببها)
       const pw = prevWorkDay(c.date);
       if(pw && ((n2[pw]||{}).doctors||[]).includes(c.absentId)) return true;              // كان مناوباً اليوم السابق (راحة ما بعد المسائي)
@@ -3916,9 +4184,9 @@ function App() {
     coverages.forEach(c=>{
       if(!ownerJustified(c)){ staleIds.add(c); return; }
       const coverDoc = doctors.find(x=>x.id===c.coverDoctorId);
-      if(coverDoc && onLeave(coverDoc, c.date, leaves)){                                  // المغطّي نفسه أصبح بإجازة — تُزال وتُربط بإجازته لإعادة تعيين بديل
+      if(coverDoc && onLeave(coverDoc, c.date, leaves, c.period)){                                  // المغطّي نفسه أصبح بإجازة — تُزال وتُربط بإجازته لإعادة تعيين بديل
         staleIds.add(c);
-        const L=leaveOf(c.coverDoctorId,c.date); if(L) bump(L).disp.push({ kind:"cov", date:c.date, period:c.period, ownerId:c.absentId, coverId:c.coverDoctorId, rec:c });
+        const L=leaveOf(c.coverDoctorId,c.date,c.period); if(L) bump(L).disp.push({ kind:"cov", date:c.date, period:c.period, ownerId:c.absentId, coverId:c.coverDoctorId, rec:c });
       }
     });
     if(staleIds.size){ touchedCov=true; fixedCount+=staleIds.size; }
@@ -3983,7 +4251,7 @@ function App() {
     if(cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
     cloudSaveTimer.current = setTimeout(()=>{
       cloudSaveState({ doctors, leaves, nightData, coverages, settings, holidays, audit, users, official })
-        .then(ok=>{ setCloudSyncState(ok?"synced":"error"); if(!ok && __cloudConflict) showToast("⚠️ جهاز آخر حفظ تعديلات أحدث — لم يُحفظ تعديلك الأخير. اضغط ☁️ للتحديث ثم أعد التعديل","err"); })
+        .then(ok=>setCloudSyncState(ok?"synced":"error"))
         .catch(()=>setCloudSyncState("error"));
     }, 1500);
     return ()=>{ if(cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current); };
@@ -4007,18 +4275,6 @@ function App() {
       } else { setCloudSafeToSave(true); showToast("لا توجد بيانات سحابية محفوظة بعد — سيُنشأ أول نسخة عند أي تعديل","warn"); }
     }catch(e){ setCloudSyncState("error"); showToast("تعذّر التحديث من السحابة — الحفظ التلقائي مُعطَّل مؤقتاً لحماية بياناتك حتى تُحل المشكلة","err"); }
   };
-  // ── عند العودة للتطبيق (تبويب/شاشة): لو جهاز آخر حفظ بعدنا ولا لدينا تعديل معلّق → يُحدَّث تلقائياً (طلب صغير جداً) ──
-  const syncStateRef = React.useRef("idle"); syncStateRef.current = cloudSyncState;
-  useEffect(()=>{
-    const chk = async () => {
-      if(document.visibilityState!=="visible" || !cloudSafeToSave || syncStateRef.current!=="synced") return;
-      try{ const at = await cloudRemoteStamp(); if(at && at!==__lastRemoteAt) cloudSyncNow(); }catch(e){}
-    };
-    document.addEventListener("visibilitychange",chk);
-    return ()=>document.removeEventListener("visibilitychange",chk);
-  },[cloudSafeToSave]);
-  // ── تنبيه واحد لو تعذّر الحفظ المحلي (ذاكرة المتصفح ممتلئة أو وضع خاص) ──
-  useEffect(()=>{ let shown=false; const h=()=>{ if(shown) return; shown=true; showToast("⚠️ تعذّر الحفظ على هذا الجهاز (مساحة المتصفح ممتلئة أو وضع خاص) — البيانات تُحفظ بالسحابة فقط","warn"); }; window.addEventListener("ls-error",h); return ()=>window.removeEventListener("ls-error",h); },[]);
   const today = new Date().toISOString().split("T")[0];
   const fd = id => doctors.find(d=>d.id===id);
   const showToast = (msg,kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null), kind==="err"?6000:2200); };
@@ -4038,7 +4294,7 @@ function App() {
     return diff; };
   const diffList = pending ? computeDiff() : [];
   const approve = () => { const diff=computeDiff(); logAudit(`اعتماد رسمي${diff.length?(" — "+diff.join("، ")):""}`,"معتمدة"); const a=snap(); setOfficial(a);
-    if(cloudCfg()){ showToast("✓ تم الاعتماد — جارٍ النشر للرابط الحي…"); cloudPublish(pubPayload(a)).then(()=>{ S.set("v2_published_at", new Date().toISOString()); showToast("✓ نُشر للرابط الحي — الرابط محدَّث للجميع"); }).catch(e=>showToast("الاعتماد تم، لكن تعذّر النشر للرابط — "+(/\b40[13]\b/.test(String(e&&e.message))?"قواعد Firebase تمنع الكتابة على /public/schedule":"تحقّق من الاتصال وإعدادات Firebase"),"warn")); }
+    if(cloudCfg()){ showToast("✓ تم الاعتماد — جارٍ النشر للرابط الحي…"); cloudPublish(pubPayload(a)).then(()=>{ S.set("v2_published_at", new Date().toISOString()); showToast("✓ نُشر للرابط الحي — الرابط محدَّث للجميع"); }).catch(()=>showToast("الاعتماد تم، لكن تعذّر النشر للرابط — تحقّق من إعدادات Firebase","warn")); }
     else showToast("✓ تم الاعتماد وتحديث الإحصائيات"); };
   // ── ما يُنشر للرابط الحي: الجدول المعتمد + أسماء الأطباء والإجازات (بدونها يظهر الرابط بلا أسماء «د. ◂ د.») — بلا بريد أو بيانات خاصة ──
   const pubPayload = a => ({ ...a, doctors: doctors.map(d=>({ id:d.id, name:d.name, color:d.color, nightDays:d.nightDays||[] })), leaves: leaves.map(l=>({ id:l.id, doctorId:l.doctorId, type:l.type, start:l.start, end:l.end, clinicClosed:l.clinicClosed })), holidays: holidays||[] });
@@ -4059,7 +4315,7 @@ function App() {
       {page==="reports" && <ReportsPage doctors={doctors} leaves={leaves} nightData={off.nightData} coverages={off.coverages} today={today} fd={fd} settings={settings} />}
       {page==="alerts" && <AlertsPage doctors={doctors} leaves={leaves} nightData={nightData} coverages={coverages} today={today} fd={fd} settings={settings} onGoto={setPage} />}
       {page==="audit" && <AuditPage audit={audit} />}
-      {page==="settings" && <SettingsPage settings={settings} setSettings={setSettings} showToast={showToast} holidays={holidays} setHolidays={setHolidays} doctors={doctors} publishNow={publishNow} leaves={leaves} nightData={nightData} coverages={coverages} audit={audit} users={users} setDoctors={setDoctors} setLeaves={setLeaves} setNight={setNight} setCoverages={setCoverages} setAudit={setAudit} setUsers={setUsers} logAudit={logAudit} />}
+      {page==="settings" && <SettingsPage settings={settings} setSettings={setSettings} showToast={showToast} holidays={holidays} setHolidays={setHolidays} doctors={doctors} officialData={off} publishNow={publishNow} leaves={leaves} nightData={nightData} coverages={coverages} audit={audit} users={users} setDoctors={setDoctors} setLeaves={setLeaves} setNight={setNight} setCoverages={setCoverages} setAudit={setAudit} setUsers={setUsers} logAudit={logAudit} />}
       {page==="users" && role==="head" && <UsersPage users={users} setUsers={setUsers} doctors={doctors} currentUser={currentUser} showToast={showToast} />}
   </>;
 
@@ -4067,7 +4323,7 @@ function App() {
   // ── انتظار تحميل السحابة أولاً (لو كانت مفعّلة) قبل عرض أي بيانات، لتفادي ظهور نسخة محلية قديمة ثم استبدالها فجأة ──
   if(!cloudReady){
     return <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:14, background:"var(--bg)" }}>
-      <div style={{ width:52, height:52, borderRadius:16, background:`linear-gradient(135deg,${C.primary},${C.accent})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, color:"#fff", fontWeight:800, animation:"fade 1.2s ease-in-out infinite alternate" }}>ط</div>
+      <div style={{ width:52, height:52, borderRadius:16, background:GRAD(`linear-gradient(135deg,${C.primary},${C.accent})`), display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, color:"#fff", fontWeight:800, animation:"fade 1.2s ease-in-out infinite alternate" }}>ط</div>
       <div style={{ fontSize:13.5, color:C.sub, fontWeight:600 }}>جارٍ تحميل أحدث بيانات القسم…</div>
     </div>;
   }
@@ -4154,7 +4410,7 @@ function App() {
             <div style={{ display:"flex", gap:8, marginInlineStart:"auto", flexWrap:"wrap" }}>
               <button onClick={()=>{ if(confirm("تراجع عن كل التغييرات غير المعتمدة؟")) revert(); }} style={{ ...sGhost, color:C.err, borderColor:"#fecaca", padding:"8px 14px", fontSize:12.5 }}>↩︎ تراجع</button>
               {canApprove
-                ? <button onClick={approve} style={{ display:"flex", alignItems:"center", gap:8, background:`linear-gradient(135deg,${C.primary},var(--primary-d))`, color:"#fff", border:"none", borderRadius:12, padding:"10px 20px", fontSize:14, fontWeight:800, cursor:"pointer", boxShadow:"0 6px 16px rgba(15,163,154,.35)", fontFamily:"inherit" }}>
+                ? <button onClick={approve} style={{ display:"flex", alignItems:"center", gap:8, background:GRAD(`linear-gradient(135deg,${C.primary},var(--primary-d))`), color:"#fff", border:"none", borderRadius:12, padding:"10px 20px", fontSize:14, fontWeight:800, cursor:"pointer", boxShadow:_FLAT?"none":"0 6px 16px rgba(15,163,154,.35)", fontFamily:"inherit" }}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width:19, height:19 }}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
                     حفظ واعتماد{cloudCfg()?" ونشر":""}
                   </button>
