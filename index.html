@@ -364,6 +364,13 @@ function hourly() {
   var runs = [];
   if (hour === cfg.hour) runs.push({ when: "eve", target: addDays_(todayStr_(), 1) });               // مساء اليوم السابق
   if (cfg.morning && hour === cfg.morningHour) runs.push({ when: "morning", target: todayStr_() });  // صباح نفس اليوم
+  // ── جدول الشهر القادم: يوم ٢٥ من كل شهر مع تذكير المساء ──
+  var dom = Number(Utilities.formatDate(new Date(), TZ, "d"));
+  if (cfg.monthly && dom === cfg.monthlyDay && hour === cfg.hour) {
+    var ym = nextMonth_(todayStr_());
+    var mk = "sent_month_" + ym;
+    if (!props.getProperty(mk)) { var mres = sendMonth_(st, cfg, ym, false); props.setProperty(mk, new Date().toISOString()); writeStatus_(ym, mres, "month"); }
+  }
   runs.forEach(function (r) {
     var key = "sent_" + r.when + "_" + r.target;
     if (props.getProperty(key)) return;                         // أُرسل مسبقاً
@@ -381,6 +388,19 @@ function sendTomorrowNow() {
   PropertiesService.getScriptProperties().setProperty("sent_eve_" + target, new Date().toISOString());
   writeStatus_(target, res, "eve");
   Logger.log(JSON.stringify(res));
+}
+
+/* ── تجربة: يرسل لك أنت فقط معاينة جدول الشهر القادم لكل طبيب ── */
+function sendMonthTestToMe() {
+  var st = loadState_(); var cfg = mailCfg_(st);
+  Logger.log(JSON.stringify(sendMonth_(st, cfg, nextMonth_(todayStr_()), true)));
+}
+/* ── إرسال جدول الشهر القادم للأطباء الآن (بدون انتظار يوم ٢٥) ── */
+function sendMonthNow() {
+  var st = loadState_(); var cfg = mailCfg_(st); var ym = nextMonth_(todayStr_());
+  var res = sendMonth_(st, cfg, ym, false);
+  PropertiesService.getScriptProperties().setProperty("sent_month_" + ym, new Date().toISOString());
+  writeStatus_(ym, res, "month"); Logger.log(JSON.stringify(res));
 }
 
 /* ── تجربة: يرسل لك أنت فقط معاينة كل رسائل الغد ── */
@@ -451,6 +471,73 @@ function mailHtml_(name, dateAr, lines, dayWord, cfg) {
     "<div style='padding:10px 18px;background:#f7f5f5;color:#8e8a8b;font-size:11.5px'>رسالة تلقائية من " + DEPT + " — لا حاجة للرد.</div></div></div>";
 }
 
+
+/* ═════════════════ جدول الشهر القادم لكل طبيب ═════════════════ */
+var MONTHS_AR = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+function nextMonth_(ds) { var y = +ds.slice(0, 4), m = +ds.slice(5, 7); m++; if (m > 12) { m = 1; y++; } return y + "-" + (m < 10 ? "0" : "") + m; }
+function sendMonth_(st, cfg, ym, testOnly) {
+  var holidays = holidayMap_(st.holidays || []);
+  var sched = (st.official && st.official.nightData) ? st.official : { nightData: st.nightData || {}, coverages: st.coverages || [] };
+  var nd = sched.nightData || {}, cov = sched.coverages || [];
+  var docs = st.doctors || [], leaves = st.leaves || [];
+  var byId = {}; docs.forEach(function (d) { byId[d.id] = d; });
+  var nm = function (id) { return byId[id] ? String(byId[id].name).replace(/^د\.\s*/, "") : "؟"; };
+  var onLeave = function (id, ds, per) { return leaves.some(function (l) { return l.doctorId === id && l.start <= ds && ds <= l.end && (!l.period || l.period === per || (l.period === "pm" && per === "eve")); }); };
+  var y = +ym.slice(0, 4), mi = +ym.slice(5, 7) - 1;
+  var monthAr = MONTHS_AR[mi] + " " + y;
+  var rows = {}; // id -> [{ds, txt}]
+  var add = function (id, ds, txt) { (rows[id] = rows[id] || []).push({ ds: ds, txt: txt }); };
+  for (var d = 1; d <= 31; d++) {
+    var ds = ym + "-" + (d < 10 ? "0" : "") + d;
+    var dt = new Date(ds + "T00:00:00Z"); if (dt.getUTCMonth() !== mi) break;
+    var di = dt.getUTCDay(); if (di >= 5 || holidays[ds]) continue;
+    // المسائي: لغير الثابتين فقط (الثابت في يومه لا يُذكر — جدوله المعتاد)
+    if (cfg.evening) ((nd[ds] || {}).doctors || []).forEach(function (id) {
+      if (((byId[id] || {}).nightDays || []).indexOf(di) > -1) return;
+      if (!onLeave(id, ds, "eve")) add(id, ds, "🌙 عيادة مسائية");
+    });
+    // التغطيات: للجميع (بما فيهم الثابتون)
+    if (cfg.coverage) cov.filter(function (c) { return c.date === ds; }).sort(function (a, b) { return a.period < b.period ? -1 : 1; })
+      .forEach(function (c) { if (!onLeave(c.coverDoctorId, ds, c.period)) add(c.coverDoctorId, ds, "🔄 تغطية عيادة د." + nm(c.absentId) + " — " + (PER_AR[c.period] || c.period)); });
+  }
+  var out = { date: ym, sent: [], noEmail: [], skipped: "" }, preview = [];
+  Object.keys(rows).forEach(function (k) {
+    var doc = byId[k]; if (!doc) return;
+    var list = rows[k].sort(function (a, b) { return a.ds < b.ds ? -1 : 1; });
+    var ev = list.filter(function (r) { return r.txt.indexOf("مسائية") > -1; }).length, cv = list.length - ev;
+    var email = String(doc.email || "").trim();
+    var line = "د." + nm(doc.id) + ": " + (ev ? ev + " مسائي" : "") + (ev && cv ? " · " : "") + (cv ? cv + " تغطية" : "");
+    if (!email || email.indexOf("@") < 0) { out.noEmail.push(nm(doc.id)); preview.push("<li>⚠️ " + line + " — <b>بلا بريد</b></li>"); return; }
+    if (!testOnly) MailApp.sendEmail({ to: email, subject: "جدولك لشهر " + monthAr + " — " + DEPT, htmlBody: monthHtml_(nm(doc.id), monthAr, list, ev, cv, cfg), name: DEPT });
+    out.sent.push(nm(doc.id)); preview.push("<li>" + line + " &lt;" + email + "&gt;</li>");
+  });
+  var head = String(cfg.headEmail || "").trim() || Session.getEffectiveUser().getEmail();
+  if (testOnly || (cfg.summary && head)) {
+    var sample = "";
+    if (testOnly) { var k0 = Object.keys(rows)[0]; if (k0) { var l0 = rows[k0]; var e0 = l0.filter(function (r) { return r.txt.indexOf("مسائية") > -1; }).length; sample = "<hr><p style='color:#64748b'>مثال لما يصل للطبيب:</p>" + monthHtml_(nm(+k0), monthAr, l0, e0, l0.length - e0, cfg); } }
+    MailApp.sendEmail({ to: head, name: DEPT, subject: (testOnly ? "🧪 معاينة جدول " : "📅 أُرسل جدول ") + monthAr,
+      htmlBody: "<div dir='rtl' style='font-family:Tahoma,Arial;font-size:14px;line-height:1.9'><h3 style='margin:0 0 8px'>" + (testOnly ? "🧪 معاينة (لم يُرسل شيء للأطباء)" : "📅 جدول الشهر القادم أُرسل للأطباء") + " — " + monthAr + "</h3>" +
+        (preview.length ? "<ul>" + preview.join("") + "</ul>" : "<p>لا مناوبات متغيّرة ولا تغطيات معتمدة لهذا الشهر بعد — تأكد من اعتماد جدول الشهر.</p>") + sample + "</div>" });
+  }
+  if (!Object.keys(rows).length) out.skipped = "لا جدول معتمد للشهر القادم بعد";
+  return out;
+}
+function monthHtml_(name, monthAr, list, ev, cv, cfg) {
+  var sign = (cfg.signTitle || cfg.signName) ? "<div style='margin-top:16px;padding-top:12px;border-top:1px solid #eee5e4;font-size:14px;line-height:1.8'>" + (cfg.signTitle ? cfg.signTitle + " :<br>" : "") + "<b>" + (cfg.signName || "") + "</b></div>" : "";
+  var trs = list.map(function (r, i) {
+    var dt = new Date(r.ds + "T00:00:00Z");
+    return "<tr style='background:" + (i % 2 ? "#f7f0ef" : "#ffffff") + "'><td style='padding:8px 10px;white-space:nowrap;font-weight:bold'>" + DAYS_AR[dt.getUTCDay()] + "</td><td style='padding:8px 10px;white-space:nowrap;color:#5f5b5c'>" + r.ds.split("-").reverse().join("/") + "</td><td style='padding:8px 10px'>" + r.txt + "</td></tr>";
+  }).join("");
+  return "<div dir='rtl' style='font-family:Tahoma,Arial;background:#f5f5f6;padding:18px'>" +
+    "<div style='max-width:560px;margin:auto;background:#fff;border-radius:20px;overflow:hidden;border:1.5px solid #e0dcdc'>" +
+    "<div style='background:#74403B;color:#fff;padding:16px 18px'><div style='font-size:12px;opacity:.85;margin-bottom:2px'>" + DEPT + "</div><div style='font-size:17px;font-weight:bold'>جدولك لشهر " + monthAr + "</div><div style='font-size:13px;opacity:.9'>" + (ev ? ev + " عيادة مسائية" : "") + (ev && cv ? " · " : "") + (cv ? cv + " تغطية" : "") + "</div></div>" +
+    "<div style='padding:16px 18px;font-size:14.5px;line-height:1.9;color:#161515'>د." + name + "،<br>هذه مهامك في شهر " + monthAr + " حسب الجدول المعتمد:" +
+    "<table style='width:100%;border-collapse:collapse;margin:10px 0;font-size:14px;border:1.5px solid #e0dcdc;border-radius:12px;overflow:hidden'>" + trs + "</table>" +
+    "<div style='font-size:12.5px;color:#8e8a8b'>قد يتغيّر الجدول عند الإجازات الطارئة — يصلك تذكير قبل كل مهمة بيوم وصباح نفس اليوم.</div>" +
+    "<a href='" + SITE_URL + "' style='display:inline-block;margin-top:10px;background:#74403B;color:#fff;text-decoration:none;padding:10px 18px;border-radius:14px;font-size:14px'>عرض الجدول المعتمد</a>" + sign + "</div>" +
+    "<div style='padding:10px 18px;background:#f7f5f5;color:#8e8a8b;font-size:11.5px'>رسالة تلقائية من " + DEPT + " — لا حاجة للرد.</div></div></div>";
+}
+
 /* ═════════════════ قاعدة البيانات ═════════════════ */
 function token_() {
   var props = PropertiesService.getScriptProperties();
@@ -478,6 +565,7 @@ function mailCfg_(st) {
   var m = (st.settings && st.settings.mail) || {};
   return { enabled: !!m.enabled, hour: (m.hour == null ? 18 : Number(m.hour)), morning: m.morning !== false, morningHour: (m.morningHour == null ? 6 : Number(m.morningHour)),
     evening: m.evening !== false, coverage: m.coverage !== false, summary: m.summary !== false, headEmail: m.headEmail || "",
+    monthly: m.monthly !== false, monthlyDay: (m.monthlyDay == null ? 25 : Number(m.monthlyDay)),
     signTitle: m.signTitle == null ? "رئيسة القسم" : m.signTitle, signName: m.signName == null ? "د. أمل العسكر" : m.signName };
 }
 function holidayMap_(list) {
@@ -3435,7 +3523,7 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
     </div>
     </>}
     {settingsTab==="mail" && (()=>{
-      const m = { enabled:false, hour:18, morning:true, morningHour:6, evening:true, coverage:true, summary:true, headEmail:"", signTitle:"رئيسة القسم", signName:"د. أمل العسكر", ...(s.mail||{}) };
+      const m = { enabled:false, hour:18, morning:true, morningHour:6, monthly:true, monthlyDay:25, evening:true, coverage:true, summary:true, headEmail:"", signTitle:"رئيسة القسم", signName:"د. أمل العسكر", ...(s.mail||{}) };
       const setM = (k,v) => setSettings(p=>({ ...p, mail:{ ...m, ...(p.mail||{}), [k]:v } }));
       const tmr = (()=>{ const d=new Date(); d.setDate(d.getDate()+1); return d.toISOString().split("T")[0]; })();
       const pd = mailPrevDate || tmr;
@@ -3476,6 +3564,12 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
             <span style={{ flex:1, fontSize:13.5, fontWeight:600 }}>☀️ التذكير الثاني — صباح نفس اليوم</span>
             <select disabled={!m.morning} value={m.morningHour} onChange={e=>setM("morningHour",+e.target.value)} style={{ ...sIn, width:"auto", opacity:m.morning?1:.5 }}>{[5,6,7,8].map(h=><option key={h} value={h}>{`${h}:00 صباحاً`}</option>)}</select>
           </div>
+          <div style={row}>
+            <input type="checkbox" checked={!!m.monthly} onChange={e=>setM("monthly",e.target.checked)} style={{ width:18, height:18 }} />
+            <span style={{ flex:1, fontSize:13.5, fontWeight:600 }}>📅 جدول الشهر القادم لكل طبيب — يوم</span>
+            <select disabled={!m.monthly} value={m.monthlyDay} onChange={e=>setM("monthlyDay",+e.target.value)} style={{ ...sIn, width:"auto", opacity:m.monthly?1:.5 }}>{[20,22,23,24,25,26,27,28].map(d=><option key={d} value={d}>{d} من الشهر</option>)}</select>
+          </div>
+          {m.monthly && <div style={{ fontSize:11.5, color:C.muted, margin:"4px 4px 0", lineHeight:1.7 }}>يُرسل الساعة {m.hour-12}:00 مساءً: كل مناوباته (عدا الثابتة في يومها) وكل تغطياته في الشهر القادم من الجدول المعتمد — اعتمد جدول الشهر القادم قبل هذا اليوم.</div>}
           {chk("evening","🌙 تذكير بالعيادة المسائية (للمتغيّرين فقط — الثابت في يومه لا يُذكَّر، ويُذكَّر بتغطياته فقط)")}
           {chk("coverage","🔄 تذكير بالتغطيات")}
           {chk("summary","📋 ملخص يومي لرئيس القسم بكل ما أُرسل")}
@@ -3523,7 +3617,7 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
               <li>افتح <a href="https://script.google.com/home/projects/create" target="_blank" rel="noreferrer" style={{ color:C.primary, fontWeight:700 }}>script.google.com ← مشروع جديد</a> بحساب Gmail الذي تريد الإرسال منه.</li>
               <li>امسح الموجود والصق الكود ← 💾 حفظ.</li>
               <li>من القائمة بالأعلى اختر الدالة <b dir="ltr">setup</b> ← ▶ تشغيل ← وافق على الصلاحيات (Advanced ← Go to project).</li>
-              <li>للتجربة: اختر <b dir="ltr">sendTestToMe</b> ← ▶ تشغيل — تصلك معاينة رسائل الغد لبريدك فقط.</li>
+              <li>للتجربة: اختر <b dir="ltr">sendTestToMe</b> ← ▶ تشغيل — تصلك معاينة رسائل الغد لبريدك فقط. ولمعاينة جدول الشهر القادم: <b dir="ltr">sendMonthTestToMe</b>.</li>
               <li>فعّل <b>«التذكير مفعّل»</b> أعلاه ← انتهى. يعمل تلقائياً كل يوم حتى لو كان جهازك مغلقاً.</li>
             </ol>
             <span style={{ color:C.muted }}>الحد: ١٠٠ رسالة يومياً لحساب Gmail العادي (القسم يحتاج ~٥–١٠).</span>
@@ -3534,7 +3628,7 @@ function SettingsPage({ settings, setSettings, showToast, holidays, setHolidays,
           </div>
           {mailStatus && <div style={{ marginTop:10, fontSize:12.5, padding:"9px 11px", borderRadius:11, background:"var(--surface2)", lineHeight:1.8 }}>
             {mailStatus==="none" ? "لم يُسجَّل أي تشغيل بعد — تأكد من خطوة setup." : <>
-              آخر تشغيل: <b>{new Date(mailStatus.lastRun).toLocaleString("ar",{dateStyle:"medium",timeStyle:"short"})}</b> — {mailStatus.when==="morning"?"تذكير الصباح":"تذكير المساء"} عن يوم <b>{dmy(mailStatus.date)}</b><br/>
+              آخر تشغيل: <b>{new Date(mailStatus.lastRun).toLocaleString("ar",{dateStyle:"medium",timeStyle:"short"})}</b> — {mailStatus.when==="month"?<>جدول شهر <b>{mailStatus.date}</b></>:<>{mailStatus.when==="morning"?"تذكير الصباح":"تذكير المساء"} عن يوم <b>{dmy(mailStatus.date)}</b></>}<br/>
               {mailStatus.skipped ? `لم يُرسل: ${mailStatus.skipped}` : <>وصل إلى: {(mailStatus.sent||[]).map(n=>"د."+n).join("، ")||"—"}</>}
               {(mailStatus.noEmail||[]).length>0 && <div style={{ color:C.err }}>بلا بريد: {mailStatus.noEmail.map(n=>"د."+n).join("، ")}</div>}
             </>}
