@@ -1820,6 +1820,20 @@ function ImportSheetModal({ doctors, nightData, coverages, defaultYear, onClose,
   </div>;
 }
 
+/* صندوق خطوة — مكوّن ثابت خارج الصفحة حتى لا يُعاد بناؤه مع كل نقرة (كان يُرجع التمرير للأعلى) */
+function EngStep({n,done,title,status,statusCol,children,locked,op,onToggle}) { return (
+        <div style={{ background:op?"var(--surface)":done?"var(--okSoft)":"var(--surface2)", border:`1.5px solid ${op?C.primary:done?"color-mix(in srgb,"+C.ok+" 35%,transparent)":C.line2}`, borderRadius:18, marginBottom:10, overflow:"hidden", transition:"border-color .15s" }}>
+          <div onClick={()=>!locked&&onToggle()} style={{ display:"flex", alignItems:"center", gap:10, padding:"13px 14px", cursor:locked?"default":"pointer", opacity:locked?.55:1 }}>
+            <span style={{ width:28, height:28, borderRadius:"50%", background:done?C.ok:C.primary, color:"#fff", fontSize:13.5, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{done?"✓":["","١","٢","٣"][n]}</span>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:14.5, fontWeight:800 }}>{title}</div>
+              <div style={{ fontSize:12, color:statusCol||C.sub, fontWeight:600, marginTop:1 }}>{status}</div>
+            </div>
+            {!locked && <span style={{ fontSize:12, fontWeight:700, color:C.primary, background:"var(--primarySoft)", borderRadius:999, padding:"5px 11px", flexShrink:0 }}>{op?"إغلاق ▲":done?"تعديل ▼":"فتح ▼"}</span>}
+          </div>
+          {op && <div className="fade" style={{ padding:"2px 14px 14px", borderTop:`1px solid ${C.line2}` }}><div style={{ height:10 }} />{children}</div>}
+        </div>); }
+
 function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight, setCoverages, showToast, logAudit, settings, holidays }) {
   const now = new Date();
   const restRule = settings?.restRule!==false;
@@ -1936,6 +1950,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const [dayReq, setDayReq] = useState(()=>S.get("v2_dayreq")||{});
   useEffect(()=>S.set("v2_dayreq",dayReq),[dayReq]);
   const [showSetup, setShowSetup] = useState(false);
+  const [openStep,setOpenStep] = useState(null);
   const [trimPick, setTrimPick] = useState(null); // {date, target} — عند تخفيض العدد لأقل من المعيّنين حالياً
   const setReq = (date,n) => { const val=Math.max(0,n); setDayReq(r=>({ ...r, [date]:val })); setNight(nd=> nd[date] ? {...nd, [date]:{...nd[date], eveningSlots:val}} : nd); };
   const decDay = (date,target) => { const assigned=(nightData[date]?.doctors)||[]; if(target>=0 && assigned.length>target){ setTrimPick({date,target}); } else { setReq(date,target); } };
@@ -1943,8 +1958,8 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const monthPrefix = `${mo.y}-${String(mo.m+1).padStart(2,"0")}`;
   const monthConfigured = useMemo(()=> days.some(d=>dayReq[d.date]!=null) || Object.keys(nightData).some(k=>k.startsWith(monthPrefix)), [days,dayReq,nightData,monthPrefix]);
   const needOf = date => nightData[date]?.closed ? 0 : (dayReq[date]!=null ? dayReq[date] : (monthConfigured ? reqPerDay : 0));
-  useEffect(()=>{ setShowSetup(!monthConfigured); }, [mo.y, mo.m]); // يُغلق تلقائياً عند الانتقال لأي شهر معتمد/مُعدّ مسبقاً، ويُفتح فقط للأشهر غير المُعدّة بعد — الصفحة تبقى مختصرة دائماً بشكل افتراضي
-  const createEmpty = () => { setOpenStep(2); setNight(nd=>{ const n={...nd}; days.forEach(({date})=>{ const need=(dayReq[date]!=null?dayReq[date]:reqPerDay); /* الاعتماد يستخدم نفس الأرقام الظاهرة في النافذة — كان needOf يُرجع ٠ لشهر جديد فلا يُنشأ أي يوم */ if(need>0){ n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:[], eveningSlots:need }; } }); return n; }); logAudit&&logAudit("إنشاء جدول مسائي فارغ حسب عدد العيادات"); showToast("تم إنشاء جدول فارغ — اختر الأطباء أو وزّع تلقائياً"); setShowSetup(false); };
+  useEffect(()=>{ setShowSetup(false); setOpenStep(null); }, [mo.y, mo.m]); /* عند فتح أي شهر تكون كل الخطوات مغلقة */
+  const createEmpty = () => { setOpenStep(null); setTimeout(()=>document.getElementById("eng-cal")?.scrollIntoView({behavior:"smooth",block:"start"}),150); setNight(nd=>{ const n={...nd}; days.forEach(({date})=>{ const need=(dayReq[date]!=null?dayReq[date]:reqPerDay); /* الاعتماد يستخدم نفس الأرقام الظاهرة في النافذة — كان needOf يُرجع ٠ لشهر جديد فلا يُنشأ أي يوم */ if(need>0){ n[date]={ ...(n[date]||{coverages:{am:[],pm:[],nextAm:[]},note:""}), doctors:[], eveningSlots:need }; } }); return n; }); logAudit&&logAudit("إنشاء جدول مسائي فارغ حسب عدد العيادات"); showToast("تم إنشاء جدول فارغ — اختر الأطباء أو وزّع تلقائياً"); setShowSetup(false); };
   const distributeFixed = () => { setNight(nd=>{ const n={...nd};
     // ── عدالة بين أصحاب نفس اليوم الثابت: لو أكثر من طبيب "ثابت" لنفس يوم الأسبوع (مثلاً ٥ أطباء كلهم الأحد) وعدد المطلوب أقل منهم،
     // كان الفائز دائماً نفس الطبيب (الأول بترتيب القائمة) بلا أي تناوب — الآن يُختار الأقل مناوبة هذه السنة، ثم مَن مرّت عليه مدة أطول منذ آخر مرة ──
@@ -2298,13 +2313,10 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
   const gapsUpcoming = gaps.filter(g=>g.date>=today);
   const gapsWeek = gaps.filter(g=>g.date>=today && g.date<=wkEnd);
   const gapsShown = gapSc==="upcoming" ? gapsUpcoming : gapSc==="week" ? gapsWeek : gaps;
-  const [openStep,setOpenStep] = useState(null);
   const stepInfo = (()=>{ const wd=days.filter(d=>!holidayInfo(d.date)); const need=wd.reduce((a,d)=>a+needOf(d.date),0); const got=wd.reduce((a,d)=>a+Math.min(needOf(d.date),((nightData[d.date]||{}).doctors||[]).length),0);
     const covN=coverages.filter(c=>c.date.startsWith(monthPrefix)).length; const s1=monthConfigured, s2=need>0&&got>=need, s3=s1&&gaps.length===0&&ana.conflicts.length===0;
     return { need, got, pct:need?Math.round(got/need*100):0, closedN:days.filter(d=>nightData[d.date]?.closed).length, covN, s1, s2, s3 }; })();
   const missEve = days.filter(d=>!holidayInfo(d.date) && !nightData[d.date]?.closed).map(d=>({ date:d.date, di:d.di, need:needOf(d.date), have:((nightData[d.date]||{}).doctors||[]).length })).filter(x=>x.have<x.need);
-  useEffect(()=>{ if(!monthConfigured) return; setOpenStep(!stepInfo.s2?2:!stepInfo.s3?3:null); }, [mo.y, mo.m]);
-  useEffect(()=>{ if(stepInfo.s2 && openStep===2) setOpenStep(stepInfo.s3?null:3); }, [stepInfo.s2]); /* اكتمال المسائي ← تُفتح خطوة التغطية تلقائياً */
   return <div className="fade">
     {/* month nav */}
     <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
@@ -2327,26 +2339,25 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
       const link = { display:"inline-flex", alignItems:"center", gap:5, background:"none", border:"none", cursor:"pointer", color:C.sub, fontSize:12, fontWeight:700, padding:"6px 4px", fontFamily:"inherit" };
       const isOpen = n => n===1 ? showSetup : openStep===n;
       const toggle = n => { if(n===1){ const o=!showSetup; setShowSetup(o); if(o) setOpenStep(null); } else { const o=openStep===n; setOpenStep(o?null:n); if(!o) setShowSetup(false); } };
-      const Step = ({n,done,title,status,statusCol,children,locked}) => { const op=isOpen(n); return (
-        <div style={{ background:op?"var(--surface)":done?"var(--okSoft)":"var(--surface2)", border:`1.5px solid ${op?C.primary:done?"color-mix(in srgb,"+C.ok+" 35%,transparent)":C.line2}`, borderRadius:18, marginBottom:10, overflow:"hidden", transition:"border-color .15s" }}>
-          <div onClick={()=>!locked&&toggle(n)} style={{ display:"flex", alignItems:"center", gap:10, padding:"13px 14px", cursor:locked?"default":"pointer", opacity:locked?.55:1 }}>
-            <span style={{ width:28, height:28, borderRadius:"50%", background:done?C.ok:C.primary, color:"#fff", fontSize:13.5, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{done?"✓":["","١","٢","٣"][n]}</span>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:14.5, fontWeight:800 }}>{title}</div>
-              <div style={{ fontSize:12, color:statusCol||C.sub, fontWeight:600, marginTop:1 }}>{status}</div>
-            </div>
-            {!locked && <span style={{ fontSize:12, fontWeight:700, color:C.primary, background:"var(--primarySoft)", borderRadius:999, padding:"5px 11px", flexShrink:0 }}>{op?"إغلاق ▲":done?"تعديل ▼":"فتح ▼"}</span>}
-          </div>
-          {op && <div className="fade" style={{ padding:"2px 14px 14px", borderTop:`1px solid ${C.line2}` }}><div style={{ height:10 }} />{children}</div>}
-        </div>); };
       return <div style={{ ...card(), padding:14, marginBottom:14 }}>
-        <Step n={1} done={s1} title="عدد العيادات المسائية لكل يوم" status={s1 ? `الافتراضي ${reqPerDay} لكل يوم${closedN?` · 🚫 ${closedN} يوم مغلق`:""}` : "لم يُنشأ جدول هذا الشهر بعد — افتح وحدّد الأعداد"} statusCol={s1?C.sub:C.warn}>
+        <EngStep op={isOpen(1)} onToggle={()=>toggle(1)} n={1} done={s1} title="عدد العيادات المسائية لكل يوم" status={s1 ? `الافتراضي ${reqPerDay} لكل يوم${closedN?` · 🚫 ${closedN} يوم مغلق`:""}` : "لم يُنشأ جدول هذا الشهر بعد — افتح وحدّد الأعداد"} statusCol={s1?C.sub:C.warn}>
                   <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6, flexWrap:"wrap" }}>
           <div style={{ flex:1, fontSize:12.5, fontWeight:800, color:C.sub }}>حدّد العدد لكل يوم ثم اعتمد</div>
           <label style={{ fontSize:11.5, color:C.sub, display:"inline-flex", alignItems:"center", gap:6 }}>الافتراضي<input type="number" min="0" max="10" value={reqPerDay} onChange={e=>setReqPerDay(Math.max(0,+e.target.value||0))} style={{ width:44, border:`1px solid ${C.line}`, borderRadius:7, padding:"4px", textAlign:"center" }} /></label>
         </div>
-        <div style={{ fontSize:11.5, color:C.muted, marginBottom:10 }}>«الافتراضي» لكل الأيام ويُحفظ للأشهر القادمة، وعدّل أي يوم بـ − / +.</div>
-        <div style={{ display:"flex", flexDirection:"column", gap:5, maxHeight:360, overflowY:"auto" }}>
+        <div style={{ fontSize:11.5, color:C.muted, marginBottom:10 }}>«الافتراضي» لكل الأيام ويُحفظ للأشهر القادمة. غيّر يوماً من أيام الأسبوع لكل الشهر دفعة واحدة، أو عدّل أي يوم منفرداً بالأسفل.</div>
+        {/* ── حسب يوم الأسبوع: يطبّق العدد على كل تواريخ ذلك اليوم في الشهر ── */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:6, marginBottom:12 }}>
+          {[0,1,2,3,4].map(wd=>{ const ds=days.filter(d=>d.di===wd).map(d=>d.date); if(!ds.length) return null; const vals=ds.map(dt=>dayReq[dt]!=null?dayReq[dt]:reqPerDay); const same=vals.every(v=>v===vals[0]); const cur=vals[0];
+            const setAll = n => { const v=Math.max(0,n); const blocked=ds.filter(dt=>((nightData[dt]?.doctors)||[]).length>v); ds.filter(dt=>!blocked.includes(dt)).forEach(dt=>setReq(dt,v)); if(blocked.length) showToast(`${blocked.length} يوم فيه أطباء أكثر من ${v} — عدّله منفرداً بالأسفل`,"warn"); };
+            return <div key={wd} style={{ display:"flex", alignItems:"center", gap:6, background:"var(--primarySoft)", borderRadius:11, padding:"7px 9px" }}>
+              <span style={{ flex:1, fontSize:12.5, fontWeight:800, color:C.primaryD }}>كل {DAYS[wd]}</span>
+              <button onClick={()=>setAll((same?cur:Math.max(...vals))-1)} style={{ ...sGhost, width:30, padding:"3px 0" }}>−</button>
+              <span style={{ minWidth:22, textAlign:"center", fontWeight:800, color:C.primary }}>{same?cur:"…"}</span>
+              <button onClick={()=>setAll((same?cur:Math.min(...vals))+1)} style={{ ...sGhost, width:30, padding:"3px 0" }}>+</button>
+            </div>; })}
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
           {days.map(({date,di,day})=>{ const v=dayReq[date]!=null?dayReq[date]:reqPerDay; const assignedDocs=((nightData[date]?.doctors)||[]).map(id=>fd(id)).filter(Boolean); return (
             <div key={date}>
             <div style={{ display:"flex", alignItems:"center", gap:10, background:"var(--surface2)", borderRadius:9, padding:"7px 11px" }}>
@@ -2373,9 +2384,9 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           <button onClick={()=>{ showToast("✓ تم حفظ العدد الافتراضي — سيبقى نفسه في كل الأشهر القادمة تلقائياً (لا يحتاج ضبطاً كل مرة)"); setShowSetup(false); }} style={{ ...sGhost, flex:1 }}>💾 حفظ الإعداد كقالب دائم</button>
           <button onClick={createEmpty} style={{ ...sBtn(C.primary), flex:1 }}>🗓 اعتماد وإنشاء الجدول (ابدأ التعبئة)</button>
         </div>
-        </Step>
+        </EngStep>
 
-        <Step n={2} done={s2} locked={!s1} title="توزيع المسائي" status={s1 ? `${got} / ${need} مناوبة · ${pct}%` : "بعد الخطوة ١"} statusCol={s2?C.ok:C.warn}>
+        <EngStep op={isOpen(2)} onToggle={()=>toggle(2)} n={2} done={s2} locked={!s1} title="توزيع المسائي" status={s1 ? `${got} / ${need} مناوبة · ${pct}%` : "بعد الخطوة ١"} statusCol={s2?C.ok:C.warn}>
           <div style={{ height:8, background:"var(--surface2)", borderRadius:5, overflow:"hidden", marginBottom:12 }}><div style={{ width:Math.min(100,pct)+"%", height:"100%", background:s2?C.ok:"var(--eve)" }} /></div>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:10 }}>
             <button onClick={distributeFixed} style={mini}>⚡ توزيع الثابتين</button>
@@ -2387,9 +2398,9 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
               {missEve.map(x=><button key={x.date} onClick={()=>setDayPanel(x.date)} style={{ border:`1.5px solid ${C.line}`, background:"var(--warnSoft)", color:"#7c5410", borderRadius:10, padding:"6px 10px", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>{DAYS[x.di]} {+x.date.slice(8)} · {x.have}/{x.need}</button>)}
             </div>
           </> : <div style={{ fontSize:12.5, color:C.ok, fontWeight:700 }}>✓ كل الأيام مكتملة المسائي</div>}
-        </Step>
+        </EngStep>
 
-        <Step n={3} done={s3} locked={!s1} title="تغطية العيادات" status={!s1 ? "بعد إنشاء الجدول" : (gaps.length||ana.conflicts.length) ? `${gaps.length} عيادة مكشوفة${ana.conflicts.length?` · ⛔ ${ana.conflicts.length} تعارض`:""} · 🔄 ${covN} تغطية` : `✓ لا عيادات مكشوفة · 🔄 ${covN} تغطية`} statusCol={!s1?C.muted:(gaps.length||ana.conflicts.length)?C.warn:C.ok}>
+        <EngStep op={isOpen(3)} onToggle={()=>toggle(3)} n={3} done={s3} locked={!s1} title="تغطية العيادات" status={!s1 ? "بعد إنشاء الجدول" : (gaps.length||ana.conflicts.length) ? `${gaps.length} عيادة مكشوفة${ana.conflicts.length?` · ⛔ ${ana.conflicts.length} تعارض`:""} · 🔄 ${covN} تغطية` : `✓ لا عيادات مكشوفة · 🔄 ${covN} تغطية`} statusCol={!s1?C.muted:(gaps.length||ana.conflicts.length)?C.warn:C.ok}>
           {(gaps.length===0 && ana.conflicts.length===0) ? <div style={{ fontSize:12.5, color:C.ok, fontWeight:700 }}>✓ لا عيادات مكشوفة ولا تعارضات هذا الشهر</div> : <div id="eng-fixes">      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:gaps.length?12:0, flexWrap:"wrap" }}>
         <div style={{ flex:1, fontSize:12.5, fontWeight:800, color:C.sub, minWidth:120 }}>الحلول المطلوبة</div>
         {gaps.length>0 && isCurMonth && <div style={{ display:"flex", background:"var(--surface2)", borderRadius:10, padding:3, gap:2 }}>
@@ -2423,7 +2434,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
           ); })}
       </div>}
       </>}</div>}
-        </Step>
+        </EngStep>
 
         {!(s1&&s2&&s3) && <button onClick={smartComplete} disabled={smartStep!==0||!s1} style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, width:"100%", padding:"12px 14px", marginTop:2, borderRadius:14, border:"none", cursor:(smartStep!==0||!s1)?"default":"pointer", fontWeight:800, fontSize:13.5, color:"#fff", background:C.primaryD, opacity:(smartStep!==0||!s1)?.55:1, fontFamily:"inherit" }}>
           {smartStep!==0 ? <>⏳ جارٍ التنفيذ — خطوة {smartStep} من 3…</> : !s1 ? <>🚀 ابدأ بالخطوة ١ ثم أكمل الباقي تلقائياً</> : <>🚀 أكمل الخطوتين ٢ و ٣ تلقائياً</>}
@@ -2480,7 +2491,7 @@ function EnginePage({ doctors, leaves, nightData, coverages, today, fd, setNight
     })()}
 
     {/* Section 2: evening schedule */}
-    <div style={{ ...card(), padding:16, marginBottom:14 }}>
+    <div id="eng-cal" style={{ ...card(), padding:16, marginBottom:14, scrollMarginTop:80 }}>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
         <div style={{ flex:1, fontSize:15, fontWeight:700, minWidth:140 }}>🌙 جدول المسائي <span style={{ fontWeight:400, color:C.muted, fontSize:12 }}>({view==="calendar"?days.length:view==="week"?weekDays.length:listDays.length})</span></div>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 بحث باسم طبيب أو تاريخ" style={{ ...sIn, flex:"1 1 170px", maxWidth:220, padding:"7px 10px", fontSize:12.5 }} />
